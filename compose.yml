@@ -1,0 +1,96 @@
+# ==============================================================================
+# docker-compose.yml  --  lego-cloudflare-certgen
+# ==============================================================================
+# Generates one SSL/TLS certificate batch and exits.
+# The Cloudflare API token is passed as a Docker secret (mounted at
+# /run/secrets/cloudflare_api_token) rather than as an environment variable,
+# so it is never visible in the container's environment.
+#
+# Setup
+# ------
+# 1. Create a .env file in this directory with your Cloudflare token:
+#
+#      echo "CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}" > .env
+#
+#    Docker Compose loads .env automatically for variable substitution.
+#    The token is then passed as a secret — NOT as an env var in the container.
+#
+#    IMPORTANT: Delete or shred .env after use to limit token exposure.
+#      rm -P .env   (macOS secure delete)
+#      shred -u .env
+#
+# 2. Copy template.env to certgen.env and fill in your settings
+#    (do NOT include CLOUDFLARE_API_KEY here — it comes from the secret):
+#
+#      cp template.env certgen.env
+#      # Edit certgen.env
+#
+# 3. Run (auto-removes the container after exit):
+#
+#      docker compose run --rm certgen
+#
+#    Or, if you prefer the standard compose workflow:
+#
+#      docker compose up
+#      docker compose down   # clean up container and secret after run
+#
+# Security notes
+# ---------------
+# - The Cloudflare token is mounted as a read-only file in /run/secrets/;
+#   it does not appear in 'docker inspect' or 'env' inside the container.
+# - 'docker compose run --rm' auto-removes the container on exit, ensuring
+#   no residual container holds the token in memory.
+# - Add .env and certgen.env to .gitignore.
+# ==============================================================================
+
+name: lego-cloudflare-certgen
+
+services:
+  certgen:
+    image: lego-cloudflare-certgen:lego4.34.0-v0.1
+
+    # Container environment variables (all except the Cloudflare token).
+    # Copy template.env to certgen.env and fill in your values.
+    env_file:
+      - ./certgen.env
+
+    # Certificates are written to this host directory.
+    # The directory will be created automatically if it does not exist.
+    volumes:
+      - ./ssl-certs:/ssl-certs
+
+    # The Cloudflare token is injected as a Docker secret, NOT as an env var.
+    # The entrypoint reads it from /run/secrets/cloudflare_api_token.
+    secrets:
+      - cloudflare_api_token
+
+    # One-shot: do not restart after the container exits.
+    restart: "no"
+
+    # Minimal Linux capability set:
+    #   CHOWN    -- set ownership of the output directory to the target UID/GID
+    #   SETUID   -- gosu drops from root -> certgen via setuid()
+    #   SETGID   -- gosu drops from root -> certgen via setgid()
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+
+# ------------------------------------------------------------------------------
+# Secret definition
+# Docker Compose reads CLOUDFLARE_API_TOKEN from the host environment.
+# When .env is present in this directory, Compose loads it automatically,
+# making CLOUDFLARE_API_TOKEN available here without it appearing in the
+# container's environment variables.
+#
+# IMPORTANT: After running, delete .env to remove the token from disk:
+#   rm -P .env   /   shred -u .env
+# ------------------------------------------------------------------------------
+secrets:
+  cloudflare_api_token:
+    environment: "CLOUDFLARE_API_TOKEN"
+    
