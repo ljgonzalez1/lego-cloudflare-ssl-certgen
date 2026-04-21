@@ -93,4 +93,3 @@ services:
 secrets:
   cloudflare_api_token:
     environment: "CLOUDFLARE_API_TOKEN"
-    
