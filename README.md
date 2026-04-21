@@ -49,7 +49,10 @@ cp template.env certgen.env
 
 # 2. Fill all the required fields
 
-# 3. Run - token is read from your shell environment, never stored in the file
+# 3. Create directory for certificates
+mkdir $(pwd)/ssl-certs
+
+# 4. Run - token is read from your shell environment, never stored in the file
 docker run --rm \
   --env-file ./certgen.env \
   --env CLOUDFLARE_API_KEY="${CLOUDFLARE_API_KEY}" \
@@ -76,6 +79,9 @@ echo "CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}" > .env
 # 2. Copy and edit the container env file (no token needed here)
 cp template.env certgen.env
 # Edit certgen.env with your TZ, EMAIL, DOMAINS, etc.
+
+# 3. Create directory for certificates
+mkdir ./ssl-certs
 
 # 3. Run (auto-removes the container on exit)
 docker compose run --rm certgen
