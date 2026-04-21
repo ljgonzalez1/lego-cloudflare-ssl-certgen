@@ -47,7 +47,7 @@ name: lego-cloudflare-certgen
 
 services:
   certgen:
-    image: lego-cloudflare-certgen:lego4.34.0-v0.1
+    image: ljgonzalez/lego-cloudflare-certgen:lego4.34.0-v1.0
 
     # Container environment variables (all except the Cloudflare token).
     # Copy template.env to certgen.env and fill in your values.
