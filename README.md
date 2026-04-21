@@ -27,14 +27,14 @@ Running lego directly works perfectly well. This image exists for two quality-of
 
 ---
 
-### Image is not yet in [DockerHub](https://hub.docker.com/), so you'll need to build it yourself first 
+### Image is now on dockerhub. You can build it anyway if you want
 
 #### How to build?
 
 ```bash
 cd build
 # Build the image
-docker build -t lego-cloudflare-certgen:lego4.34.0-v0.1 .
+docker build -t lego-cloudflare-certgen:lego4.34.0-v1.0 .
 ```
 
 ---
@@ -62,7 +62,7 @@ docker run --rm \
   --cap-add CHOWN \
   --cap-add SETUID \
   --cap-add SETGID \
-  lego-cloudflare-certgen:lego4.34.0-v0.1
+  ljgonzalez/lego-cloudflare-certgen:lego4.34.0-v1.0
 ```
 
 > :warning: **`--rm` is important.** Without it, the stopped container persists on disk and its environment variables (including `CLOUDFLARE_API_KEY`) remain readable via `docker inspect`. Always use `--rm` with `docker run`.
