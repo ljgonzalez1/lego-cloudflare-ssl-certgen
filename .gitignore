@@ -1,4 +1,4 @@
 .directory
 .swp
 *.kate-swp
-build
+ssl-certs
