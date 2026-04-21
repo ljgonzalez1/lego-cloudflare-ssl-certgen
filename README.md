@@ -83,10 +83,10 @@ cp template.env certgen.env
 # 3. Create directory for certificates
 mkdir ./ssl-certs
 
-# 3. Run (auto-removes the container on exit)
+# 4. Run (auto-removes the container on exit)
 docker compose run --rm certgen
 
-# 4. ⚠️ Delete .env after use (at least the Cloudflare token just to be sure).
+# 5. ⚠️ Delete .env after use (at least the Cloudflare token just to be sure).
 shred -u .env   # or: rm -P .env  (macOS)
 ```
 
