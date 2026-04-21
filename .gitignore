@@ -2,3 +2,4 @@
 .swp
 *.kate-swp
 ssl-certs
+certgen.env
