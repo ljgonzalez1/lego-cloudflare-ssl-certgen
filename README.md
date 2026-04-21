@@ -6,6 +6,7 @@
 
 ---
 
+![Readbe Banner Image](assets/readme-banner.png)
 
 ---
 
