@@ -136,7 +136,7 @@ _lego_args+=("${_domain_flags[@]}")
 # environment; lego reads them automatically for the cloudflare provider.
 # ------------------------------------------------------------------------------
 printf '\n'
-if lego "${_lego_args[@]}" run; then
+if lego run "${_lego_args[@]}"; then
     printf '\n'
     log_ok "Certificate successfully generated!"
     log_ok "Certificates : ${CERT_OUTPUT_DIR}/certificates/"
