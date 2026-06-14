@@ -13,9 +13,8 @@ ARG LEGO_TARBALL=lego_${LEGO_VERSION}_${LEGO_ARCH}.tar.gz
 ARG LEGO_BASE_URL=https://github.com/go-acme/lego/releases/download/${LEGO_VERSION}
 
 ARG LEGO_URL=${LEGO_BASE_URL}/${LEGO_TARBALL}
-ARG LEGO_CHECKSUMS_URL=${LEGO_BASE_URL}/${LEGO_CHECKSUMS}
-
 ARG LEGO_CHECKSUMS=lego_${LEGO_VERSION_NUM}_checksums.txt
+ARG LEGO_CHECKSUMS_URL=${LEGO_BASE_URL}/${LEGO_CHECKSUMS}
 
 ARG LEGO_SHA256=""
 
@@ -24,7 +23,7 @@ ARG LEGO_SHA256=""
 # ------------------------------------------------------------------------------
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="SSL/TLS cert generation via lego + Cloudflare DNS challenge" \
-      org.opencontainers.image.version="0.2" \
+      org.opencontainers.image.version="2.0" \
       org.opencontainers.image.url="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
       com.certgen.lego.version="${LEGO_VERSION}" \
       com.certgen.lego.arch="${LEGO_ARCH}"
@@ -35,7 +34,6 @@ LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
 ENV TZ=Etc/UTC \
     EMAIL="" \
     PRODUCTION=false \
-    DOMAINS="" \
     CLOUDFLARE_API_KEY="" \
     PROPAGATION_SECONDS=60 \
     DNS_RESOLVERS="1.1.1.1:53,8.8.8.8:53,1.0.0.1:53" \
