@@ -1,97 +1,36 @@
 # ==============================================================================
 # Dockerfile  --  lego-cloudflare-certgen
 # ==============================================================================
-# Automated SSL/TLS certificate generation via Let's Encrypt using the lego
-# ACME client with Cloudflare DNS-01 challenge.  No inbound ports required.
-#
-# Lego version : v4.34.0  (linux_386 — statically-linked Go binary)
-# Base image   : debian:bookworm-slim
-# ==============================================================================
-#
-# Build
-# -----
-#   docker build -t lego-cloudflare-certgen:lego4.34.0-v0.1 .
-#
-# Run (env-file)
-# ---------------
-#   docker run --rm \
-#     --env-file ./example.env \
-#     --env CLOUDFLARE_API_KEY="${CLOUDFLARE_API_KEY}" \
-#     --volume "$(pwd)/ssl-certs:/ssl-certs" \
-#     --security-opt no-new-privileges:true \
-#     --cap-drop ALL \
-#     --cap-add CHOWN \
-#     --cap-add SETUID \
-#     --cap-add SETGID \
-#     lego-cloudflare-certgen:lego4.34.0-v0.1
-#
-# Run (all inline env vars)
-# --------------------------
-#   docker run --rm \
-#     --env CLOUDFLARE_API_KEY="${CLOUDFLARE_API_KEY}" \
-#     --env EMAIL='you@example.com' \
-#     --env 'DOMAINS=*.example.com,example.com' \
-#     --env ACCEPT_LEGO_TOS=true \
-#     --volume "$(pwd)/ssl-certs:/ssl-certs" \
-#     --security-opt no-new-privileges:true \
-#     --cap-drop ALL \
-#     --cap-add CHOWN \
-#     --cap-add SETUID \
-#     --cap-add SETGID \
-#     lego-cloudflare-certgen:lego4.34.0-v0.1
-#
-# Run (docker compose — recommended; token passed as Docker secret)
-# ------------------------------------------------------------------
-#   docker compose run --rm certgen
-#
-# Capabilities needed
-# --------------------
-#   CHOWN    -- entrypoint chowns the output directory to the target UID/GID
-#   SETUID   -- gosu calls setuid() to drop from root to certgen
-#   SETGID   -- gosu calls setgid() to drop from root to certgen
-#   All other capabilities are dropped.
-# ==============================================================================
 
-FROM debian:bookworm-slim
+FROM debian:13.5-slim
 
-# ------------------------------------------------------------------------------
-# Build-time arguments
-# All values are baked into the image; none are required at docker run time.
-# ------------------------------------------------------------------------------
 ARG LEGO_VERSION=v5.2.1
-ARG LEGO_ARCH=linux_386
-ARG LEGO_TARBALL=lego_${LEGO_VERSION}_${LEGO_ARCH}.tar.gz
-ARG LEGO_URL=https://github.com/go-acme/lego/releases/download/${LEGO_VERSION}/${LEGO_TARBALL}
+ARG LEGO_VERSION_NUM=5.2.1
 
-# Optional SHA-256 checksum for the lego archive.
-# To obtain it, run:
-#   wget -qO- https://github.com/go-acme/lego/releases/download/v4.34.0/lego_v4.34.0_linux_386.tar.gz.sha256sum
-# Leave empty to skip verification (not recommended for production builds).
+ARG LEGO_ARCH=linux_amd64
+
+ARG LEGO_TARBALL=lego_${LEGO_VERSION}_${LEGO_ARCH}.tar.gz
+ARG LEGO_BASE_URL=https://github.com/go-acme/lego/releases/download/${LEGO_VERSION}
+
+ARG LEGO_URL=${LEGO_BASE_URL}/${LEGO_TARBALL}
+ARG LEGO_CHECKSUMS_URL=${LEGO_BASE_URL}/${LEGO_CHECKSUMS}
+
+ARG LEGO_CHECKSUMS=lego_${LEGO_VERSION_NUM}_checksums.txt
+
 ARG LEGO_SHA256=""
 
 # ------------------------------------------------------------------------------
 # Image metadata  (OCI standard labels)
 # ------------------------------------------------------------------------------
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
-      org.opencontainers.image.description="SSL/TLS cert generation via lego + Cloudflare DNS-01 challenge" \
-      org.opencontainers.image.version="0.1" \
-      org.opencontainers.image.url="https://github.com/go-acme/lego" \
+      org.opencontainers.image.description="SSL/TLS cert generation via lego + Cloudflare DNS challenge" \
+      org.opencontainers.image.version="0.2" \
+      org.opencontainers.image.url="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
       com.certgen.lego.version="${LEGO_VERSION}" \
       com.certgen.lego.arch="${LEGO_ARCH}"
 
 # ------------------------------------------------------------------------------
-# Runtime environment defaults
-# Every variable here can be overridden at docker run time via --env or
-# --env-file.  None of these are used during the image build itself.
-#
-# NOTE: 'UID' and 'GID' clash with bash's readonly $UID / $GID built-ins.
-#       The entrypoint reads them with 'printenv UID' / 'printenv GID' to
-#       bypass bash's variable namespace and read the process environment
-#       directly.  This is intentional and documented in validate_env.sh.
-#
-# NOTE: CLOUDFLARE_API_KEY is intentionally left empty here.  It must be
-#       supplied at runtime either via --env or via a Docker secret
-#       (cloudflare_api_token) when using docker compose.
+# Environment Variables
 # ------------------------------------------------------------------------------
 ENV TZ=Etc/UTC \
     EMAIL="" \
@@ -106,7 +45,7 @@ ENV TZ=Etc/UTC \
 
 # ------------------------------------------------------------------------------
 # System packages
-# DEBIAN_FRONTEND is set as ARG (build-only); it is NOT present at runtime.
+# DEBIAN_FRONTEND is set as ARG (build-only).
 # ------------------------------------------------------------------------------
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -119,35 +58,88 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------------------------
-# Install lego
+# Install lego  (with MANDATORY SHA-256 verification)
 #
-# linux_386 is a fully statically-linked Go binary; no shared libraries are
-# required.  It runs on any x86_64 Linux kernel that has CONFIG_IA32_EMULATION
-# enabled (standard on every major distribution).
-# For a native amd64 server, change LEGO_ARCH to linux_amd64.
+# Verification flow (the build FAILS and stops on any mismatch):
+#   1. Download the release tarball.
+#   2. Download the official combined checksums file for this exact version.
+#   3. Extract the expected hash for the EXACT tarball name (end-anchored, so a
+#      '<name>.sbom.json' line cannot match by accident on releases that ship
+#      SBOM entries, e.g. v5.2.x).  No entry => version/arch misconfigured.
+#   4. Compute the actual sha256sum of the downloaded tarball.
+#   5. Compare.  On mismatch: print expected vs actual and exit 1.
+#   6. (Optional) If LEGO_SHA256 is pinned, assert it equals the upstream hash.
 #
-# Token length is validated at runtime (30-50 chars, no whitespace);
-# this is a basic structural sanity check and not a cryptographic guarantee.
+# Only grep / sha256sum (coreutils) / shell builtins are used here - no awk or
+# cut dependency, so this works on a bare debian:bookworm-slim.
 # ------------------------------------------------------------------------------
+RUN set -eu \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      wget \
+      tar \
+ && rm -rf /var/lib/apt/lists/*
+ 
 RUN set -eu \
  && echo ">>> Downloading lego ${LEGO_VERSION} (${LEGO_ARCH}) ..." \
  && wget -qO /tmp/lego.tar.gz "${LEGO_URL}" \
- && if [ -n "${LEGO_SHA256}" ]; then \
-        echo ">>> Verifying SHA-256 checksum ..." ; \
-        printf '%s  /tmp/lego.tar.gz\n' "${LEGO_SHA256}" | sha256sum --check --strict ; \
-    else \
-        echo ">>> WARNING: LEGO_SHA256 not set; skipping checksum verification." ; \
+ && echo ">>> Downloading checksums: ${LEGO_CHECKSUMS_URL} ..." \
+ && wget -qO /tmp/lego_checksums.txt "${LEGO_CHECKSUMS_URL}"
+
+ 
+RUN set -eu \
+ && echo ">>> Looking up expected checksum for ${LEGO_TARBALL} ..." \
+ && _expected="" \
+ && while read -r _sum _name; do \
+        if [ "${_name}" = "${LEGO_TARBALL}" ]; then \
+            _expected="${_sum}" ; \
+            break ; \
+        fi ; \
+    done < /tmp/lego_checksums.txt \
+ && if [ -z "${_expected}" ]; then \
+        echo "ERROR: no checksum entry found for '${LEGO_TARBALL}'." >&2 ; \
+        echo "       Check LEGO_VERSION / LEGO_ARCH against:" >&2 ; \
+        echo "       ${LEGO_CHECKSUMS_URL}" >&2 ; \
+        exit 1 ; \
     fi \
+ && _actual="$(sha256sum /tmp/lego.tar.gz)" \
+ && _actual="${_actual%% *}" \
+ && echo ">>> Verifying SHA-256 ..." \
+ && if [ "${_expected}" != "${_actual}" ]; then \
+        echo "============================================================" >&2 ; \
+        echo "ERROR: SHA-256 CHECKSUM MISMATCH - aborting build" >&2 ; \
+        echo "  file     : ${LEGO_TARBALL}" >&2 ; \
+        echo "  expected : ${_expected}" >&2 ; \
+        echo "  actual   : ${_actual}" >&2 ; \
+        echo "============================================================" >&2 ; \
+        exit 1 ; \
+    fi \
+ && echo ">>> Checksum OK: ${_actual}" \
+ && if [ -n "${LEGO_SHA256}" ] && [ "${LEGO_SHA256}" != "${_expected}" ]; then \
+        echo "============================================================" >&2 ; \
+        echo "ERROR: pinned LEGO_SHA256 does not match the upstream checksum" >&2 ; \
+        echo "  pinned   : ${LEGO_SHA256}" >&2 ; \
+        echo "  upstream : ${_expected}" >&2 ; \
+        echo "  (a swapped/tampered checksums file would trigger this)" >&2 ; \
+        echo "============================================================" >&2 ; \
+        exit 1 ; \
+    fi
+
+RUN set -eu \
  && echo ">>> Extracting lego binary ..." \
- && tar -xzf /tmp/lego.tar.gz -C /usr/local/bin lego \
- && rm -f /tmp/lego.tar.gz \
- && chmod 755 /usr/local/bin/lego \
+ && mkdir -p /tmp/lego-bin \
+ && tar -xzf /tmp/lego.tar.gz -C /tmp/lego-bin lego \
+ && chmod 755 /tmp/lego-bin/lego
+
+RUN set -eu \
  && echo ">>> Verifying lego binary ..." \
- && lego --version
+ && /tmp/lego-bin/lego --version
+
 
 # ------------------------------------------------------------------------------
 # Non-root user for certificate operations
-# Default UID/GID 1000:1000 — remapped at runtime by entrypoint.sh when the
+# Default UID/GID 1000:1000 - remapped at runtime by entrypoint.sh when the
 # UID/GID env vars differ.
 # ------------------------------------------------------------------------------
 RUN groupadd --gid 1000 certgen \
