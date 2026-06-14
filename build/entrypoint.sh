@@ -201,12 +201,5 @@ export CLOUDFLARE_PROPAGATION_TIMEOUT="${VALIDATED_PROPAGATION}"
 # ACME_SERVER, VALIDATED_EMAIL, VALIDATED_DOMAINS, VALIDATED_DNS_RESOLVERS,
 # VALIDATED_TZ, CERT_OUTPUT_DIR are already exported above.
 
-# ==============================================================================
-# Drop privileges and hand off to run_lego.sh
-# gosu: drops from root -> certgen via setuid()/setgid() and exec's the target.
-# --security-opt no-new-privileges:true (set in docker run) prevents the child
-# process from ever regaining elevated privileges through SUID bits or file
-# capabilities.
-# ==============================================================================
 log_section "🚀 Starting certificate request (dropping to UID ${CERT_UID})"
 exec gosu "${CERT_UID}:${CERT_GID}" /usr/local/bin/run_lego.sh
