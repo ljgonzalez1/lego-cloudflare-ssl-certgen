@@ -58,6 +58,10 @@ services:
     # The directory will be created automatically if it does not exist.
     volumes:
       - ./ssl-certs:/ssl-certs
+      # Optional: provide the domains for the certificate as a file instead of
+      # the DOMAINS env var (one domain per line).  When this file is mounted it
+      # takes precedence over DOMAINS.  Uncomment and adjust the host path:
+      - ./my_domains.txt:/domains.txt:ro
 
     # The Cloudflare token is injected as a Docker secret, NOT as an env var.
     # The entrypoint reads it from /run/secrets/cloudflare_api_token.
