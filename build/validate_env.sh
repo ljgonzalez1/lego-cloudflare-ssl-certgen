@@ -15,12 +15,17 @@
 #   1. CLOUDFLARE_API_KEY  environment variable  (docker run --env)
 #   2. /run/secrets/cloudflare_api_token  Docker secret  (docker compose)
 #
+# Domain source resolution (handled by validate_domains.sh):
+#   - mounted file /domains.txt  (takes precedence), OR
+#   - DOMAINS environment variable
+#
 # Sets on success (all exported):
 #   VALIDATED_TZ          -- verified IANA timezone string
 #   VALIDATED_EMAIL       -- trimmed e-mail address
 #   VALIDATED_PRODUCTION  -- "true" or "false" (normalised to lowercase)
 #   ACME_SERVER           -- Let's Encrypt directory URL derived from PRODUCTION
 #   VALIDATED_DOMAINS     -- cleaned, validated domain string (comma-separated)
+#   DOMAINS_SOURCE        -- human-readable description of the domain source
 #   VALIDATED_CF_KEY      -- Cloudflare API token (from env var or secret file)
 #   VALIDATED_PROPAGATION -- propagation timeout in seconds (string)
 #   VALIDATED_DNS_RESOLVERS -- comma-separated host:port resolver list
@@ -40,6 +45,10 @@ fi
 # Internal error accumulator
 _ERRORS=()
 _vfail() { _ERRORS+=("$*"); }
+
+# Domain cleaning/validation helpers (define resolve_domains, etc.)
+# shellcheck source=validate_domains.sh
+. /usr/local/bin/validate_domains.sh
 
 # ------------------------------------------------------------------------------
 # TZ -- IANA timezone
@@ -119,7 +128,7 @@ if [[ -z "${_v_cf_key}" ]]; then
     _vfail "CLOUDFLARE_API_KEY: token not found"
     _vfail "    Provide it via:"
     _vfail "      docker run  ->  --env CLOUDFLARE_API_KEY=\${CLOUDFLARE_API_KEY}"
-    _vfail "      docker compose ->  cloudflare_api_token secret (see docker-compose.yml)"
+    _vfail "      docker compose ->  cloudflare_api_token secret (see compose.yml)"
 else
     _v_klen="${#_v_cf_key}"
     if [[ "${_v_klen}" -lt 30 || "${_v_klen}" -gt 50 ]] \
@@ -131,62 +140,19 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# DOMAINS -- comma-separated list of domain names / wildcard domains
+# DOMAINS -- domain list for the certificate
 #
-# Accepts values with surrounding quotes to allow safe shell quoting of
-# wildcards, e.g.:
-#   --env 'DOMAINS=*.example.com,example.com'          <- shell single-quotes
-#   --env DOMAINS='"*.example.com,example.com"'        <- literal quotes in value
-# Both forms produce the same validated domain list.
+# The actual source selection (mounted /domains.txt file vs DOMAINS env var),
+# cleaning, de-duplication, trailing-dot/quote/whitespace stripping and
+# per-domain validation lives in validate_domains.sh::resolve_domains, which
+# sets VALIDATED_DOMAINS and DOMAINS_SOURCE on success or records errors via
+# _vfail.
+#
+# '|| true' keeps a failing resolve_domains from tripping the sourcing script's
+# 'set -e' before every other validation error has been collected; the _ERRORS
+# array is what ultimately triggers the failure exit below.
 # ------------------------------------------------------------------------------
-_v_dom_raw="${DOMAINS:-}"
-
-# Strip one pair of surrounding single or double quotes if present
-_v_dom="${_v_dom_raw}"
-if [[ "${_v_dom}" =~ ^[\"\'] && "${_v_dom}" =~ [\"\']$ ]]; then
-    _v_dom="${_v_dom:1:${#_v_dom}-2}"
-fi
-
-# Trim leading/trailing ASCII whitespace
-_v_dom="${_v_dom#"${_v_dom%%[! $'\t']*}"}"
-_v_dom="${_v_dom%"${_v_dom##*[! $'\t']}"}"
-
-if [[ -z "${_v_dom}" ]]; then
-    _vfail "DOMAINS: required but not set"
-else
-    # RFC 1123 label pattern (1-63 chars, alphanumeric + internal hyphens,
-    # applied to each label after stripping an optional leading wildcard '*.').
-    _v_label_re='^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$'
-
-    _v_valid_count=0
-    IFS=',' read -ra _v_dom_list <<< "${_v_dom}"
-    for _v_d in "${_v_dom_list[@]}"; do
-        # Strip whitespace from each individual entry
-        _v_d="${_v_d// /}"
-        [[ -z "${_v_d}" ]] && continue
-
-        # A bare '*.' is not a valid entry
-        if [[ "${_v_d}" == "*." ]]; then
-            _vfail "DOMAINS: bare wildcard '*.' is not a valid domain entry"
-            continue
-        fi
-
-        # Strip leading wildcard before format validation
-        _v_d_base="${_v_d#\*.}"
-
-        if ! [[ "${_v_d_base}" =~ ${_v_label_re} ]]; then
-            _vfail "DOMAINS: invalid domain format '${_v_d}'"
-        else
-            _v_valid_count=$(( _v_valid_count + 1 ))
-        fi
-    done
-
-    if [[ "${_v_valid_count}" -eq 0 ]]; then
-        _vfail "DOMAINS: no valid domain entries found after parsing"
-    else
-        VALIDATED_DOMAINS="${_v_dom}"
-    fi
-fi
+resolve_domains || true
 
 # ------------------------------------------------------------------------------
 # PROPAGATION_SECONDS -- DNS TXT record propagation wait
@@ -245,8 +211,7 @@ if [[ "${#_ERRORS[@]}" -gt 0 ]]; then
         log_err "  ${_v_e}"
     done
     unset _ERRORS _v_tz _v_email _v_prod_raw _v_prod _v_tos_raw _v_tos
-    unset _v_cf_key _v_klen _cf_secret_path _v_dom_raw _v_dom _v_dom_list
-    unset _v_d _v_d_base _v_label_re _v_valid_count _v_prop _v_dns
+    unset _v_cf_key _v_klen _cf_secret_path _v_prop _v_dns
     unset _v_raw_uid _v_raw_gid _v_e
     unset -f _vfail
     return 1
@@ -254,12 +219,11 @@ fi
 
 # Export validated variables for subsequent use in entrypoint.sh and run_lego.sh
 export VALIDATED_TZ VALIDATED_EMAIL VALIDATED_PRODUCTION ACME_SERVER
-export VALIDATED_DOMAINS VALIDATED_CF_KEY VALIDATED_PROPAGATION
+export VALIDATED_DOMAINS DOMAINS_SOURCE VALIDATED_CF_KEY VALIDATED_PROPAGATION
 export VALIDATED_DNS_RESOLVERS CERT_UID CERT_GID
 
 # Clean up internal variables
 unset _ERRORS _v_tz _v_email _v_prod_raw _v_prod _v_tos_raw _v_tos
-unset _v_cf_key _v_klen _cf_secret_path _v_dom_raw _v_dom _v_dom_list
-unset _v_d _v_d_base _v_label_re _v_valid_count _v_prop _v_dns
+unset _v_cf_key _v_klen _cf_secret_path _v_prop _v_dns
 unset _v_raw_uid _v_raw_gid
 unset -f _vfail
