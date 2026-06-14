@@ -126,7 +126,7 @@ log_info "Email        : ${VALIDATED_EMAIL}"
 log_info "Timezone     : ${VALIDATED_TZ}"
 log_info "Propagation  : ${VALIDATED_PROPAGATION}s"
 log_info "DNS resolvers: ${VALIDATED_DNS_RESOLVERS}"
-log_info "Domains src  : ${DOMAINS_SOURCE:-env var DOMAINS}"
+log_info "Domains src  : ${DOMAINS_SOURCE:-file /domains.txt}"
 log_info "Domains      : ${VALIDATED_DOMAINS}"
 log_info "Target UID   : ${CERT_UID}  GID: ${CERT_GID}"
 
