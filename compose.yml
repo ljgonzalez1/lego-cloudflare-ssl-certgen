@@ -47,7 +47,7 @@ name: lego-cloudflare-certgen
 
 services:
   certgen:
-    image: ljgonzalez/lego-cloudflare-certgen:lego5.2.1-v2.0
+    image: ljgonzalez/lego-cloudflare-certgen:lego4.34.0-v1.0
 
     # Container environment variables (all except the Cloudflare token).
     # Copy template.env to certgen.env and fill in your values.
@@ -58,8 +58,6 @@ services:
     # The directory will be created automatically if it does not exist.
     volumes:
       - ./ssl-certs:/ssl-certs
-      # File must exist before running the compose
-      - ./domains.txt:/domains.txt:ro
 
     # The Cloudflare token is injected as a Docker secret, NOT as an env var.
     # The entrypoint reads it from /run/secrets/cloudflare_api_token.

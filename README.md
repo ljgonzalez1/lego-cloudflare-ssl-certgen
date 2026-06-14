@@ -1,121 +1,98 @@
 # :closed_lock_with_key: lego-cloudflare-certgen
 
-> One-shot Docker container for SSL/TLS certificate generation via **Let's Encrypt**,
-> [lego](https://github.com/go-acme/lego) **v5.2.1**, and the **Cloudflare DNS-01**
-> challenge. No HTTP ports or web server are required.
+> One-shot Docker container for automated SSL/TLS certificate generation
+> via **Let's Encrypt** using [lego](https://github.com/go-acme/lego) v4.34.0
+> and **Cloudflare DNS-01 challenge**. No HTTP ports or web server required.
 
 ---
 
-![Readme Banner Image](assets/readme-banner.png)
+![Readbe Banner Image](assets/readme-banner.png)
 
 ---
 
-## What this image does
+## :sparkles: Why use this instead of running lego directly?
 
-This container runs `lego` once, requests one certificate covering every domain
-listed in `/domains.txt`, writes the resulting files under `/ssl-certs/<timestamp>/`,
-and exits.
+Running lego directly works perfectly well. This image exists for two quality-of-life improvements:
 
-The domain list is always expected at:
-```text
-/domains.txt
-```
-or custom file. When running the container locally, mount your host file as `/domains.txt:ro`.
+1. **Store your configuration in a `.env` file.** Instead of typing long `--email`, `--domains`, and `--dns` flags on every run, keep your settings in a file and reuse them.
+
+2. **Use Docker Compose for a repeatable, secrets-safe workflow.** Docker Compose passes the Cloudflare API token as a [Docker secret](https://docs.docker.com/compose/use-secrets/) - mounted as a read-only file inside the container - rather than as an environment variable. This means the token never appears in `docker inspect`, process listings, or container logs.
 
 ---
 
-## Requirements
+## :whale: Requirements
 
 - Docker Engine
-- A Cloudflare DNS API token with permission to edit DNS records for the relevant zones
-- A `domains.txt` file with the names that must be included in the certificate
+- A Cloudflare **DNS API token** with `Zone > DNS > Edit` permission
 
 ---
 
-## Image
+### Image is now on dockerhub. You can build it anyway if you want
 
-Published image:
-```text
-ljgonzalez/lego-cloudflare-certgen:lego5.2.1-v2.0
-```
-
-Build locally only if you need to rebuild or modify the image:
+#### How to build?
 
 ```bash
-docker build -t ljgonzalez/lego-cloudflare-certgen:latest .
+cd build
+# Build the image
+docker build -t lego-cloudflare-certgen:lego4.34.0-v1.0 .
 ```
 
 ---
 
-## Quick start with `docker run`
+## :rocket: Quick start
 
-### 1. Create the environment file
+### Option A - `docker run` (simple, token in shell environment)
 
 ```bash
+# 1. Copy and edit the env file (do NOT put the token here - pass it via --env)
 cp template.env certgen.env
-```
 
-Edit `certgen.env`. At minimum, set:
+# 2. Fill all the required fields
 
-```env
-EMAIL=you@example.com
-ACCEPT_LEGO_TOS=true
-PRODUCTION=false
-```
+# 3. Create directory for certificates
+mkdir $(pwd)/ssl-certs
 
-Keep `PRODUCTION=false` for tests. Set `PRODUCTION=true` only when you are ready
-to request real browser-trusted certificates.
-
-### 2. Create `./domains.txt`
-
-```text
-example.com
-*.example.com
-*.sub.example.com
-example.io
-```
-
-The file is mounted read-only into the container as `/domains.txt`.
-
-### 3. Create the output directory
-
-```bash
-mkdir -p ./ssl-certs
-```
-
-### 4. Export the Cloudflare token in your shell
-
-```bash
-export CLOUDFLARE_API_KEY="your-cloudflare-api-token"
-```
-
-Do not store the token in `certgen.env` unless you intentionally accept that risk.
-With `docker run`, environment variables are visible through Docker container
-metadata while the container exists. Use `--rm` so the stopped container is removed.
-
-### 5. Run
-
-```bash
+# 4. Run - token is read from your shell environment, never stored in the file
 docker run --rm \
   --env-file ./certgen.env \
   --env CLOUDFLARE_API_KEY="${CLOUDFLARE_API_KEY}" \
   --volume "$(pwd)/ssl-certs:/ssl-certs" \
-  --volume "$(pwd)/domains.txt:/domains.txt:ro" \
   --security-opt no-new-privileges:true \
   --cap-drop ALL \
   --cap-add CHOWN \
   --cap-add SETUID \
   --cap-add SETGID \
-  ljgonzalez/lego-cloudflare-certgen:lego5.2.1-v2.0
+  ljgonzalez/lego-cloudflare-certgen:lego4.34.0-v1.0
 ```
+
+> :warning: **`--rm` is important.** Without it, the stopped container persists on disk and its environment variables (including `CLOUDFLARE_API_KEY`) remain readable via `docker inspect`. Always use `--rm` with `docker run`.
 
 ---
 
-## Output
+### Option B - Docker Compose (recommended; token passed as secret)
 
-Certificates are written to a timestamped directory:
+```bash
+# 1. Create a .env file for the Compose secret
+#    Docker Compose loads .env automatically from the project directory.
+echo "CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}" > .env
 
-```text
+# 2. Copy and edit the container env file (no token needed here)
+cp template.env certgen.env
+# Edit certgen.env with your TZ, EMAIL, DOMAINS, etc.
+
+# 3. Create directory for certificates
+mkdir ./ssl-certs
+
+# 4. Run (auto-removes the container on exit)
+docker compose run --rm certgen
+
+# 5. ⚠️ Delete .env after use (at least the Cloudflare token just to be sure).
+shred -u .env   # or: rm -P .env  (macOS)
+```
+
+Certificates appear in `./ssl-certs/<timestamp>/`. For example:
+
+```
 ssl-certs/
 └── 2026-04-20_17.18.00_GMT-3/
     ├── accounts/
@@ -128,93 +105,120 @@ ssl-certs/
         └── example.com.key
 ```
 
-The exact certificate filename is chosen by `lego`, usually based on the first
-domain in `domains.txt`.
-
 ---
 
-## Configuration reference
+## :gear: Configuration reference
 
-Variables are read from `certgen.env`, except for the Cloudflare token when you
-pass it separately with `--env CLOUDFLARE_API_KEY=...`.
+All variables are optional unless marked **required**.
 
 | Variable | Default | Required | Description |
-|---|---:|:---:|---|
-| `TZ` | `Etc/UTC` | No | IANA timezone used for timestamps and output directory names |
-| `EMAIL` | - | Yes | Let's Encrypt account e-mail for expiry notifications |
-| `PRODUCTION` | `false` | No | `false` uses Let's Encrypt staging; `true` issues real trusted certificates |
-| `CLOUDFLARE_API_KEY` | - | Yes | Cloudflare DNS API token. Prefer passing it via `--env` or Docker secret |
-| `PROPAGATION_SECONDS` | `60` | No | Seconds to wait for DNS TXT record propagation |
-| `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | No | Resolvers used by lego to verify TXT record visibility |
-| `ACCEPT_LEGO_TOS` | `false` | Yes | Must be `true` to accept the Let's Encrypt Terms of Service |
-| `UID` | `1000` | No | Host UID that should own the generated certificate files |
-| `GID` | `1000` | No | Host GID that should own the generated certificate files |
+|---|---|---|---|
+| `TZ` | `Etc/UTC` | :x: |  [IANA timezone](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for log timestamps and output directory names |
+| `EMAIL` | - | :heavy_check_mark: | Let's Encrypt account e-mail for expiry notifications |
+| `PRODUCTION` | `false` | :warning: | Set `true` to issue real, trusted certificates (rate-limited) |
+| `DOMAINS` | - | :heavy_check_mark: | Comma-separated domain list. Wildcards (`*.example.com`) supported |
+| `CLOUDFLARE_API_KEY` | - | :heavy_check_mark: | Cloudflare DNS API token (env var or Docker secret) |
+| `PROPAGATION_SECONDS` | `60` | :x: | Seconds to wait for DNS TXT record propagation |
+| `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | :x: | Resolvers used to verify TXT record visibility |
+| `ACCEPT_LEGO_TOS` | `false` | :warning: | Needs to be `true`. Accept [Let's Encrypt Terms of Service](https://letsencrypt.org/repository/) |
+| `UID` | `1000` | :x: | Certificate file owner (UID on the host volume) |
+| `GID` | `1000` | :x: | Certificate file group (GID on the host volume) |
+
+### Wildcard domains and shell quoting
+
+When passing `DOMAINS` via `--env` on the command line, always quote the value to prevent the shell from glob-expanding `*`:
+
+```bash
+--env 'DOMAINS=*.example.com,example.com'   # safe - single quotes
+--env DOMAINS="*.example.com,example.com"   # safe - double quotes (if no files match)
+--env DOMAINS=*.example.com,example.com     # just don't
+```
+
+When using `--env-file` or `certgen.env`, no quoting is necessary; Docker reads the file literally.
 
 ---
 
-## Cloudflare API token
+## :key: Cloudflare API token
 
-Create a Cloudflare API token with the minimum permissions needed for DNS-01:
+Create a token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) with the following permissions:
 
 | Resource | Permission |
 |---|---|
 | Zone - DNS | Edit |
-| Zone - Zone | Read |
+| Zone - Zone | Read (if using zone-scoped tokens) |
 
-Scope the token only to the zones you need. For example, if `domains.txt`
-contains `example.com` and `example.io`, the token should not have access to
-unrelated zones.
+Scope the token to only the zones (domains) you intend to certificate.
 
 ---
 
-## Security notes
+## :shield: Security
 
-The suggested `docker run` drops every Linux capability and adds back only the
-capabilities required by the entrypoint:
+The container runs with the absolute minimum Linux capabilities required to do its job:
 
 | Capability | Why it is needed |
 |---|---|
-| `CHOWN` | The root phase sets ownership of `/ssl-certs` and the timestamped output directory |
-| `SETUID` | `gosu` drops from root to the non-root `certgen` user |
-| `SETGID` | `gosu` drops to the configured group |
+| `CHOWN` | Entrypoint (root phase) sets ownership of the output directory to the target UID/GID |
+| `SETUID` | `gosu` calls `setuid()` to drop from root to `certgen` |
+| `SETGID` | `gosu` calls `setgid()` to drop from root to `certgen` |
 
-`--security-opt no-new-privileges:true` prevents the process from gaining new
-privileges through SUID bits or file capabilities.
+All other capabilities are dropped via `--cap-drop ALL`. `--security-opt no-new-privileges:true` prevents the child process from ever gaining elevated privileges through SUID bits or file capabilities.
 
-The token is more exposed when passed with `--env` than when passed as a Docker
-secret. For one-shot `docker run`, always keep `--rm` so the stopped container and
-its environment are removed when the run ends.
+### Docker Compose secrets vs environment variables
 
----
+| Method | Token visible in `docker inspect`? | Token visible in `env` inside container? |
+|---|---|---|
+| `--env CLOUDFLARE_API_KEY=...` | :white_check_mark: Yes | :white_check_mark: Yes |
+| Docker secret (`/run/secrets/`) | :x: No | :x: No |
 
-## Project files
+Use Docker Compose with secrets whenever possible.
 
-Required files
-```text
-.
-├── ssl-certs/
-├── compose.yaml             # if you are going to use Docker Compose
-├── ssl-certs.env
-├── .env                     # if you are going to use Docker Compose
-└── domains.txt              # runtime domain list mounted as /domains.txt:ro
+### Recommended `.gitignore`
+
+```gitignore
+.env
+certgen.env
+ssl-certs/
 ```
 
-If using `docker compose`, the `.env` file must contain your Cloudflare API key.
+---
+
+## :file_folder: File structure
+
+```
+.
+├── build
+│   ├── Dockerfile          # Image definition
+│   ├── entrypoint.sh       # Root phase: validation, user setup, privilege drop
+│   ├── run_lego.sh         # Non-root phase: executes lego
+│   └── validate_env.sh     # Sourced module: validates all environment variables
+├── compose.yml             # Compose workflow with Docker secrets
+├── example.env             # Annotated sample configuration
+├── LICENSE
+├── README.md
+└── template.env            # Blank configuration template
+
+```
+
+Runtime files you create:
+
+```
+.
+├── .env                    # CLOUDFLARE_API_TOKEN for Compose secret (delete after use)
+└── certgen.env             # Container config (copy of template.env, filled in)
+```
 
 ---
 
-## Notes
+## :information_source: Notes
 
-- Staging is the default. `PRODUCTION=false` uses Let's Encrypt staging, which is
-  suitable for testing but not trusted by browsers.
-- One run creates one certificate, which may contain multiple SAN entries from
-  `domains.txt`.
-- Re-run the container to renew or regenerate certificates.
-- Production issuance is rate-limited. Test with staging first.
+- **Staging by default.** `PRODUCTION=false` uses Let's Encrypt's staging environment. Staging certificates are not trusted by browsers but have much more relaxed rate limits. Always test with staging first.
+
+- **One certificate per run.** Each `docker run` / `docker compose run` generates one certificate (which may cover multiple domains). Re-run to renew.
+
+- **Rate limits.** Let's Encrypt allows 5 duplicate certificates per registered domain per week in production. Staging has no meaningful rate limit for testing.
 
 ---
 
-## Licence
+## :page_facing_up: Licence
 
-This project is a wrapper around [lego](https://github.com/go-acme/lego), which is
-licensed under the MIT Licence. Refer to the lego repository for its terms.
+This project is a thin wrapper around [lego](https://github.com/go-acme/lego), which is licenced under the [MIT Licence](https://github.com/go-acme/lego/blob/master/LICENSE). Refer to the lego repository for its terms.

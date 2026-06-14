@@ -3,9 +3,3 @@
 *.kate-swp
 ssl-certs
 certgen.env
-.env
-*.env
-!example.env
-!template.env
-!dot.env
-domains*

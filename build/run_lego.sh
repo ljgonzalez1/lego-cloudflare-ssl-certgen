@@ -33,12 +33,12 @@ else
     _C_RED='' _C_GRN='' _C_YLW='' _C_BLU='' _C_MAG='' _C_CYN=''
 fi
 
-log_info()    { printf '%s[*]  %s%s\n'  "${_C_CYN}"            "$*" "${_C_RST}";     }
-log_step()    { printf '%s[>]  %s%s\n'  "${_C_BLU}"            "$*" "${_C_RST}";     }
-log_ok()      { printf '%s[OK] %s%s\n'  "${_C_GRN}"            "$*" "${_C_RST}";     }
-log_warn()    { printf '%s[!]  %s%s\n'  "${_C_YLW}"            "$*" "${_C_RST}";     }
-log_err()     { printf '%s[X]  %s%s\n'  "${_C_RED}"            "$*" "${_C_RST}" >&2; }
-log_section() { printf '\n%s=== %s ===%s\n' "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}"; }
+log_info()    { printf '%s\xe2\x84\xb9\xef\xb8\x8f  %s%s\n'   "${_C_CYN}"           "$*" "${_C_RST}";     }
+log_step()    { printf '%s\xf0\x9f\x94\xb9 %s%s\n'            "${_C_BLU}"           "$*" "${_C_RST}";     }
+log_ok()      { printf '%s\xe2\x9c\x85 %s%s\n'                "${_C_GRN}"           "$*" "${_C_RST}";     }
+log_warn()    { printf '%s\xe2\x9a\xa0\xef\xb8\x8f  %s%s\n'   "${_C_YLW}"          "$*" "${_C_RST}";     }
+log_err()     { printf '%s\xe2\x9d\x8c %s%s\n'                "${_C_RED}"           "$*" "${_C_RST}" >&2; }
+log_section() { printf '\n%s%s%s\n'                            "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}";     }
 
 # ------------------------------------------------------------------------------
 # Internal sanity check: all required vars must be set.
@@ -136,7 +136,7 @@ _lego_args+=("${_domain_flags[@]}")
 # environment; lego reads them automatically for the cloudflare provider.
 # ------------------------------------------------------------------------------
 printf '\n'
-if lego run "${_lego_args[@]}"; then
+if lego "${_lego_args[@]}" run; then
     printf '\n'
     log_ok "Certificate successfully generated!"
     log_ok "Certificates : ${CERT_OUTPUT_DIR}/certificates/"
