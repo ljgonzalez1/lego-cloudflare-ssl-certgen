@@ -16,14 +16,11 @@ This container runs `lego` once, requests one certificate covering every domain
 listed in `/domains.txt`, writes the resulting files under `/ssl-certs/<timestamp>/`,
 and exits.
 
-Domains are no longer passed through a `DOMAINS` environment variable. The domain
-list is always expected at:
-
+The domain list is always expected at:
 ```text
 /domains.txt
 ```
-
-When running the container locally, mount your host file as `/domains.txt:ro`.
+or custom file. When running the container locally, mount your host file as `/domains.txt:ro`.
 
 ---
 
@@ -38,7 +35,6 @@ When running the container locally, mount your host file as `/domains.txt:ro`.
 ## Image
 
 Published image:
-
 ```text
 ljgonzalez/lego-cloudflare-certgen:lego5.2.1-v2.0
 ```
@@ -46,7 +42,7 @@ ljgonzalez/lego-cloudflare-certgen:lego5.2.1-v2.0
 Build locally only if you need to rebuild or modify the image:
 
 ```bash
-docker build -t ljgonzalez/lego-cloudflare-certgen:lego5.2.1-v2.0 .
+docker build -t ljgonzalez/lego-cloudflare-certgen:latest .
 ```
 
 ---
@@ -81,15 +77,6 @@ example.io
 
 The file is mounted read-only into the container as `/domains.txt`.
 
-Supported input rules:
-
-- one domain per line is recommended
-- commas are also accepted as separators
-- blank lines are ignored
-- duplicate entries are removed while preserving the first occurrence
-- trailing dots are removed, for example `example.com.` becomes `example.com`
-- wildcard domains are supported only as the left-most label, for example `*.example.com`
-
 ### 3. Create the output directory
 
 ```bash
@@ -121,16 +108,6 @@ docker run --rm \
   --cap-add SETGID \
   ljgonzalez/lego-cloudflare-certgen:lego5.2.1-v2.0
 ```
-
-Your proposed command was correct in the important parts. The required domain
-mount is:
-
-```bash
---volume "$(pwd)/domains.txt:/domains.txt:ro"
-```
-
-and `mkdir -p ./ssl-certs` is safer than plain `mkdir` because it does not fail
-when the directory already exists.
 
 ---
 
@@ -173,9 +150,6 @@ pass it separately with `--env CLOUDFLARE_API_KEY=...`.
 | `UID` | `1000` | No | Host UID that should own the generated certificate files |
 | `GID` | `1000` | No | Host GID that should own the generated certificate files |
 
-`DOMAINS` is intentionally not part of the configuration anymore. Use
-`./domains.txt` mounted as `/domains.txt:ro`.
-
 ---
 
 ## Cloudflare API token
@@ -213,31 +187,19 @@ its environment are removed when the run ends.
 
 ---
 
-## Recommended `.gitignore`
-
-```gitignore
-.env
-certgen.env
-ssl-certs/
-```
-
-Do not ignore `domains.txt` if you want the repository to include the intended
-certificate domain list. If the domain list is private for your use case, add it
-to `.gitignore` manually.
-
----
-
 ## Project files
 
 Required files
-
 ```text
 .
+├── ssl-certs/
 ├── compose.yaml             # if you are going to use Docker Compose
 ├── ssl-certs.env
-├── .env
+├── .env                     # if you are going to use Docker Compose
 └── domains.txt              # runtime domain list mounted as /domains.txt:ro
 ```
+
+If using `docker compose`, the `.env` file must contain your Cloudflare API key.
 
 ---
 
