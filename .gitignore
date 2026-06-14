@@ -7,3 +7,5 @@ certgen.env
 *.env
 !example.env
 !template.env
+domains.txt
+!dot.env
