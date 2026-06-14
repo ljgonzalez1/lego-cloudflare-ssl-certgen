@@ -5,6 +5,7 @@
 # Phase 1 (root):
 #   1. Dependency pre-flight (lego, gosu, cloudflare provider)
 #   2. Source validate_env.sh  -- validates all env vars, sets VALIDATED_* vars
+#      (validate_env.sh sources validate_domains.sh for the domain handling)
 #   3. Announce mode (staging / production)
 #   4. Adjust certgen user to requested UID/GID
 #   5. Prepare output directory with correct ownership
@@ -14,12 +15,13 @@
 #
 # Phase 2 (certgen, non-root):
 #   run_lego.sh executes lego and reports success / failure.
+#
+# All console output is plain 7-bit ASCII plus ANSI colour escapes only.
 # ==============================================================================
 set -euo pipefail
 
 # ------------------------------------------------------------------------------
 # Terminal detection and ANSI colour codes (pure ASCII escape sequences)
-# Printed strings (log messages) may contain UTF-8 / emoji.
 # ------------------------------------------------------------------------------
 if [[ -t 1 ]]; then
     _C_RST=$'\033[0m'
@@ -35,12 +37,22 @@ else
     _C_RED='' _C_GRN='' _C_YLW='' _C_BLU='' _C_MAG='' _C_CYN=''
 fi
 
-log_info()    { printf '%s\xe2\x84\xb9\xef\xb8\x8f  %s%s\n'   "${_C_CYN}"         "$*" "${_C_RST}";     }
-log_step()    { printf '%s\xf0\x9f\x94\xb9 %s%s\n'            "${_C_BLU}"         "$*" "${_C_RST}";     }
-log_ok()      { printf '%s\xe2\x9c\x85 %s%s\n'                "${_C_GRN}"         "$*" "${_C_RST}";     }
-log_warn()    { printf '%s\xe2\x9a\xa0\xef\xb8\x8f  %s%s\n'   "${_C_YLW}"        "$*" "${_C_RST}";     }
-log_err()     { printf '%s\xe2\x9d\x8c %s%s\n'                "${_C_RED}"         "$*" "${_C_RST}" >&2; }
-log_section() { printf '\n%s%s%s\n'                            "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}";  }
+log_info()    { printf '%s[*]  %s%s\n'  "${_C_CYN}"            "$*" "${_C_RST}";     }
+log_step()    { printf '%s[>]  %s%s\n'  "${_C_BLU}"            "$*" "${_C_RST}";     }
+log_ok()      { printf '%s[OK] %s%s\n'  "${_C_GRN}"            "$*" "${_C_RST}";     }
+log_warn()    { printf '%s[!]  %s%s\n'  "${_C_YLW}"            "$*" "${_C_RST}";     }
+log_err()     { printf '%s[X]  %s%s\n'  "${_C_RED}"            "$*" "${_C_RST}" >&2; }
+log_section() { printf '\n%s=== %s ===%s\n' "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}"; }
+
+log_banner() {
+    printf '%s' "${_C_BOLD}${_C_CYN}"
+    printf '%s\n' \
+        '+============================================================+' \
+        '|                 lego-cloudflare-certgen                    |' \
+        '|   SSL/TLS certificate generation via ACME + Cloudflare     |' \
+        '+============================================================+'
+    printf '%s' "${_C_RST}"
+}
 
 # ------------------------------------------------------------------------------
 # Timestamp  ->  "YYYY-MM-DD_HH.MM.SS_GMT[+-]H"
@@ -60,7 +72,9 @@ make_timestamp() {
 # PHASE 1 -- root
 # ==============================================================================
 
-log_section "🔧 Dependency checks"
+log_banner
+
+log_section "Dependency checks"
 
 # -- required binaries ---------------------------------------------------------
 _missing=()
@@ -89,7 +103,7 @@ log_ok "cloudflare DNS provider: available"
 # ==============================================================================
 # Environment validation (sets VALIDATED_* and CERT_UID / CERT_GID)
 # ==============================================================================
-log_section "🔍 Validating environment"
+log_section "Validating environment"
 
 # shellcheck source=validate_env.sh
 . /usr/local/bin/validate_env.sh
@@ -98,11 +112,11 @@ log_section "🔍 Validating environment"
 # Mode announcement
 # ==============================================================================
 if [[ "${VALIDATED_PRODUCTION}" == "true" ]]; then
-    log_section "🚨 PRODUCTION MODE"
+    log_section "PRODUCTION MODE"
     log_warn "Issuing REAL, browser-trusted certificates via Let's Encrypt."
     log_warn "Rate limit: 5 duplicate certificates per registered domain per week."
 else
-    log_section "🧪 STAGING MODE"
+    log_section "STAGING MODE"
     log_warn "Using Let's Encrypt STAGING — certificates will NOT be trusted by browsers."
     log_warn "Relaxed rate limits apply.  Safe for testing and development."
 fi
@@ -112,13 +126,14 @@ log_info "Email        : ${VALIDATED_EMAIL}"
 log_info "Timezone     : ${VALIDATED_TZ}"
 log_info "Propagation  : ${VALIDATED_PROPAGATION}s"
 log_info "DNS resolvers: ${VALIDATED_DNS_RESOLVERS}"
+log_info "Domains src  : ${DOMAINS_SOURCE:-env var DOMAINS}"
 log_info "Domains      : ${VALIDATED_DOMAINS}"
 log_info "Target UID   : ${CERT_UID}  GID: ${CERT_GID}"
 
 # ==============================================================================
 # Volume / mount check
 # ==============================================================================
-log_section "💾 Volume check"
+log_section "Volume check"
 
 if findmnt -M /ssl-certs >/dev/null 2>&1; then
     log_ok "/ssl-certs is a mounted volume"
@@ -131,7 +146,7 @@ fi
 # ==============================================================================
 # Certgen user setup  (adjust UID/GID to match requested values)
 # ==============================================================================
-log_section "👤 User setup"
+log_section "User setup"
 
 # Check for UID collision with an existing system user other than 'certgen'
 _uid_owner="$(getent passwd "${CERT_UID}" | cut -d: -f1 2>/dev/null || true)"
@@ -167,7 +182,7 @@ log_ok "certgen user: UID=$(id -u certgen)  GID=$(id -g certgen)"
 # ==============================================================================
 # Output directory preparation
 # ==============================================================================
-log_section "📁 Preparing output directory"
+log_section "Preparing output directory"
 
 CERT_OUTPUT_DIR="/ssl-certs/$(make_timestamp "${VALIDATED_TZ}")"
 export CERT_OUTPUT_DIR
@@ -201,5 +216,5 @@ export CLOUDFLARE_PROPAGATION_TIMEOUT="${VALIDATED_PROPAGATION}"
 # ACME_SERVER, VALIDATED_EMAIL, VALIDATED_DOMAINS, VALIDATED_DNS_RESOLVERS,
 # VALIDATED_TZ, CERT_OUTPUT_DIR are already exported above.
 
-log_section "🚀 Starting certificate request (dropping to UID ${CERT_UID})"
+log_section "Starting certificate request (dropping to UID ${CERT_UID})"
 exec gosu "${CERT_UID}:${CERT_GID}" /usr/local/bin/run_lego.sh
