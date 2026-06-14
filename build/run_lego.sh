@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# run_lego.sh  --  Certificate request execution  (runs as certgen, non-root)
+# entrypoint.sh  --  Container entry point  (runs as root)
 # ==============================================================================
-# Called by entrypoint.sh via:  exec gosu <uid>:<gid> /usr/local/bin/run_lego.sh
+# Phase 1 (root):
+#   1. Dependency pre-flight (lego, gosu, cloudflare provider)
+#   2. Source validate_env.sh  -- validates all env vars, sets VALIDATED_* vars
+#      (validate_env.sh sources validate_domains.sh for the domain handling)
+#   3. Announce mode (staging / production)
+#   4. Adjust certgen user to requested UID/GID
+#   5. Prepare output directory with correct ownership
+#   6. Verify write access as target user
+#   7. Export all vars required by run_lego.sh
+#   8. exec gosu -> run_lego.sh  (privilege drop, root -> certgen)
 #
-# All inputs arrive as exported environment variables set by entrypoint.sh:
-#   CF_DNS_API_TOKEN              -- Cloudflare DNS API token (for lego)
-#   CLOUDFLARE_PROPAGATION_TIMEOUT -- propagation wait (seconds, for lego)
-#   ACME_SERVER                   -- Let's Encrypt directory URL
-#   VALIDATED_EMAIL               -- account email
-#   VALIDATED_DOMAINS             -- comma-separated domain list
-#   VALIDATED_DNS_RESOLVERS       -- comma-separated host:port resolvers
-#   VALIDATED_TZ                  -- timezone (already set as TZ by entrypoint)
-#   CERT_OUTPUT_DIR               -- absolute path for this run's output
+# Phase 2 (certgen, non-root):
+#   run_lego.sh executes lego and reports success / failure.
+#
+# All console output is plain 7-bit ASCII plus ANSI colour escapes only.
 # ==============================================================================
 set -euo pipefail
 
 # ------------------------------------------------------------------------------
-# Terminal detection and ANSI colour codes
+# Terminal detection and ANSI colour codes (pure ASCII escape sequences)
 # ------------------------------------------------------------------------------
 if [[ -t 1 ]]; then
     _C_RST=$'\033[0m'
@@ -33,124 +37,184 @@ else
     _C_RED='' _C_GRN='' _C_YLW='' _C_BLU='' _C_MAG='' _C_CYN=''
 fi
 
-log_info()    { printf '%s\xe2\x84\xb9\xef\xb8\x8f  %s%s\n'   "${_C_CYN}"           "$*" "${_C_RST}";     }
-log_step()    { printf '%s\xf0\x9f\x94\xb9 %s%s\n'            "${_C_BLU}"           "$*" "${_C_RST}";     }
-log_ok()      { printf '%s\xe2\x9c\x85 %s%s\n'                "${_C_GRN}"           "$*" "${_C_RST}";     }
-log_warn()    { printf '%s\xe2\x9a\xa0\xef\xb8\x8f  %s%s\n'   "${_C_YLW}"          "$*" "${_C_RST}";     }
-log_err()     { printf '%s\xe2\x9d\x8c %s%s\n'                "${_C_RED}"           "$*" "${_C_RST}" >&2; }
-log_section() { printf '\n%s%s%s\n'                            "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}";     }
+log_info()    { printf '%s[*]  %s%s\n'  "${_C_CYN}"            "$*" "${_C_RST}";     }
+log_step()    { printf '%s[>]  %s%s\n'  "${_C_BLU}"            "$*" "${_C_RST}";     }
+log_ok()      { printf '%s[OK] %s%s\n'  "${_C_GRN}"            "$*" "${_C_RST}";     }
+log_warn()    { printf '%s[!]  %s%s\n'  "${_C_YLW}"            "$*" "${_C_RST}";     }
+log_err()     { printf '%s[X]  %s%s\n'  "${_C_RED}"            "$*" "${_C_RST}" >&2; }
+log_section() { printf '\n%s=== %s ===%s\n' "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}"; }
+
+log_banner() {
+    printf '%s' "${_C_BOLD}${_C_CYN}"
+    printf '%s\n' \
+        '+============================================================+' \
+        '|                 lego-cloudflare-certgen                    |' \
+        '|   SSL/TLS certificate generation via ACME + Cloudflare     |' \
+        '+============================================================+'
+    printf '%s' "${_C_RST}"
+}
 
 # ------------------------------------------------------------------------------
-# Internal sanity check: all required vars must be set.
-# These should always be set by entrypoint.sh; this guard catches internal bugs.
+# Timestamp  ->  "YYYY-MM-DD_HH.MM.SS_GMT[+-]H"
+# Uses the *validated* TZ at call time.  Called after validate_env.sh has run.
 # ------------------------------------------------------------------------------
-_required_vars=(
-    CF_DNS_API_TOKEN
-    CLOUDFLARE_PROPAGATION_TIMEOUT
-    ACME_SERVER
-    VALIDATED_EMAIL
-    VALIDATED_DOMAINS
-    CERT_OUTPUT_DIR
-)
-_internal_errors=()
-for _rv in "${_required_vars[@]}"; do
-    if [[ -z "${!_rv:-}" ]]; then
-        _internal_errors+=("${_rv}")
-    fi
-done
-if [[ "${#_internal_errors[@]}" -gt 0 ]]; then
-    log_err "Internal error: the following variables were not passed by entrypoint.sh:"
-    for _ie in "${_internal_errors[@]}"; do
-        log_err "  ${_ie}"
-    done
+make_timestamp() {
+    local tz="${1:-${VALIDATED_TZ:-Etc/UTC}}"
+    local epoch offset_raw sign hours
+    epoch="$(TZ="${tz}" date +%s)"
+    offset_raw="$(TZ="${tz}" date --date="@${epoch}" +%z)"   # e.g. -0300 or +0530
+    sign="${offset_raw:0:1}"                                  # + or -
+    hours="$((10#${offset_raw:1:2}))"                         # strip leading zero
+    TZ="${tz}" date --date="@${epoch}" +"%Y-%m-%d_%H.%M.%S_GMT${sign}${hours}"
+}
+
+# ==============================================================================
+# PHASE 1 -- root
+# ==============================================================================
+
+log_banner
+
+log_section "Dependency checks"
+
+# -- required binaries ---------------------------------------------------------
+_missing=()
+command -v lego  >/dev/null 2>&1 || _missing+=("lego")
+command -v gosu  >/dev/null 2>&1 || _missing+=("gosu")
+command -v findmnt >/dev/null 2>&1 || _missing+=("findmnt (util-linux)")
+
+if [[ "${#_missing[@]}" -gt 0 ]]; then
+    log_err "Missing required tool(s): ${_missing[*]}"
+    log_err "This should not happen in the official image. Please rebuild."
     exit 1
 fi
 
-# ------------------------------------------------------------------------------
-# Build the --domains flags
-# Re-parse the validated comma-separated string into individual flags.
-# ------------------------------------------------------------------------------
-_domain_flags=()
-_domain_count=0
-IFS=',' read -ra _dom_list <<< "${VALIDATED_DOMAINS}"
-for _d in "${_dom_list[@]}"; do
-    _d="${_d// /}"                  # strip any residual whitespace
-    if [[ -n "${_d}" ]]; then
-        _domain_flags+=("--domains" "${_d}")
-        _domain_count=$(( _domain_count + 1 ))
-    fi
-done
-
-if [[ "${_domain_count}" -eq 0 ]]; then
-    log_err "Internal error: parsed zero domains from VALIDATED_DOMAINS='${VALIDATED_DOMAINS}'"
+# -- cloudflare DNS provider availability -------------------------------------
+if ! lego dnshelp 2>&1 | grep -qw "cloudflare"; then
+    log_err "This lego binary does not support the 'cloudflare' DNS provider."
+    log_err "Download the correct release from:"
+    log_err "  https://github.com/go-acme/lego/releases"
     exit 1
 fi
 
-# ------------------------------------------------------------------------------
-# Build the --dns.resolvers flags
-# Each resolver is passed as a separate flag for maximum compatibility.
-# ------------------------------------------------------------------------------
-_resolver_flags=()
-if [[ -n "${VALIDATED_DNS_RESOLVERS:-}" ]]; then
-    IFS=',' read -ra _res_list <<< "${VALIDATED_DNS_RESOLVERS}"
-    for _r in "${_res_list[@]}"; do
-        _r="${_r// /}"
-        [[ -n "${_r}" ]] && _resolver_flags+=("--dns.resolvers" "${_r}")
-    done
-fi
+log_ok "lego    : $(lego --version 2>&1 | head -1)"
+log_ok "gosu    : $(gosu --version 2>&1 | tr -d '\n')"
+log_ok "cloudflare DNS provider: available"
 
-# ------------------------------------------------------------------------------
-# Summary
-# ------------------------------------------------------------------------------
-log_info "Requesting certificate for ${_domain_count} domain(s):"
-for _d in "${_dom_list[@]}"; do
-    _d="${_d// /}"
-    [[ -n "${_d}" ]] && log_step "  ${_d}"
-done
-printf '\n'
-log_info "ACME server  : ${ACME_SERVER}"
-log_info "Output path  : ${CERT_OUTPUT_DIR}"
+# ==============================================================================
+# Environment validation (sets VALIDATED_* and CERT_UID / CERT_GID)
+# ==============================================================================
+log_section "Validating environment"
 
-# ------------------------------------------------------------------------------
-# Build complete lego argument array
-# ------------------------------------------------------------------------------
-_lego_args=(
-    "--accept-tos"
-    "--email"    "${VALIDATED_EMAIL}"
-    "--dns"      "cloudflare"
-    "--server"   "${ACME_SERVER}"
-    "--path"     "${CERT_OUTPUT_DIR}"
-)
+# shellcheck source=validate_env.sh
+. /usr/local/bin/validate_env.sh
 
-# Append resolver flags (may be empty)
-if [[ "${#_resolver_flags[@]}" -gt 0 ]]; then
-    _lego_args+=("${_resolver_flags[@]}")
-fi
-
-# Append domain flags
-_lego_args+=("${_domain_flags[@]}")
-
-# ------------------------------------------------------------------------------
-# Execute lego
-# CF_DNS_API_TOKEN and CLOUDFLARE_PROPAGATION_TIMEOUT are already in the
-# environment; lego reads them automatically for the cloudflare provider.
-# ------------------------------------------------------------------------------
-printf '\n'
-if lego "${_lego_args[@]}" run; then
-    printf '\n'
-    log_ok "Certificate successfully generated!"
-    log_ok "Certificates : ${CERT_OUTPUT_DIR}/certificates/"
-    log_ok "Account data : ${CERT_OUTPUT_DIR}/accounts/"
-    printf '\n'
+# ==============================================================================
+# Mode announcement
+# ==============================================================================
+if [[ "${VALIDATED_PRODUCTION}" == "true" ]]; then
+    log_section "PRODUCTION MODE"
+    log_warn "Issuing REAL, browser-trusted certificates via Let's Encrypt."
+    log_warn "Rate limit: 5 duplicate certificates per registered domain per week."
 else
-    _rc=$?
-    printf '\n'
-    log_err "lego exited with error code ${_rc}."
-    log_err "Review the lego output above for details."
-    log_err "Common causes:"
-    log_err "  - DNS TXT record propagation timeout (increase PROPAGATION_SECONDS)"
-    log_err "  - Invalid or insufficient Cloudflare API token permissions"
-    log_err "  - Domain not in Cloudflare DNS"
-    log_err "  - Let's Encrypt rate limit reached (use PRODUCTION=false for testing)"
-    exit "${_rc}"
+    log_section "STAGING MODE"
+    log_warn "Using Let's Encrypt STAGING — certificates will NOT be trusted by browsers."
+    log_warn "Relaxed rate limits apply.  Safe for testing and development."
 fi
+
+log_info "ACME server  : ${ACME_SERVER}"
+log_info "Email        : ${VALIDATED_EMAIL}"
+log_info "Timezone     : ${VALIDATED_TZ}"
+log_info "Propagation  : ${VALIDATED_PROPAGATION}s"
+log_info "DNS resolvers: ${VALIDATED_DNS_RESOLVERS}"
+log_info "Domains src  : ${DOMAINS_SOURCE:-env var DOMAINS}"
+log_info "Domains      : ${VALIDATED_DOMAINS}"
+log_info "Target UID   : ${CERT_UID}  GID: ${CERT_GID}"
+
+# ==============================================================================
+# Volume / mount check
+# ==============================================================================
+log_section "Volume check"
+
+if findmnt -M /ssl-certs >/dev/null 2>&1; then
+    log_ok "/ssl-certs is a mounted volume"
+else
+    log_warn "/ssl-certs is NOT a mounted volume."
+    log_warn "Certificates will be generated inside the container and LOST when it exits."
+    log_warn "Pass:  --volume /host/path:/ssl-certs"
+fi
+
+# ==============================================================================
+# Certgen user setup  (adjust UID/GID to match requested values)
+# ==============================================================================
+log_section "User setup"
+
+# Check for UID collision with an existing system user other than 'certgen'
+_uid_owner="$(getent passwd "${CERT_UID}" | cut -d: -f1 2>/dev/null || true)"
+if [[ -n "${_uid_owner}" && "${_uid_owner}" != "certgen" ]]; then
+    log_err "UID ${CERT_UID} is already used by system user '${_uid_owner}'."
+    log_err "Choose a different UID in your .env (current: UID=${CERT_UID})."
+    exit 1
+fi
+
+_gid_owner="$(getent group "${CERT_GID}" | cut -d: -f1 2>/dev/null || true)"
+if [[ -n "${_gid_owner}" && "${_gid_owner}" != "certgen" ]]; then
+    log_err "GID ${CERT_GID} is already used by group '${_gid_owner}'."
+    log_err "Choose a different GID in your .env (current: GID=${CERT_GID})."
+    exit 1
+fi
+
+# Adjust certgen GID if needed (must change group before user)
+_cur_gid="$(id -g certgen 2>/dev/null || echo '')"
+if [[ "${_cur_gid}" != "${CERT_GID}" ]]; then
+    log_step "Adjusting certgen GID: ${_cur_gid} -> ${CERT_GID}"
+    groupmod --gid "${CERT_GID}" certgen
+fi
+
+# Adjust certgen UID if needed
+_cur_uid="$(id -u certgen 2>/dev/null || echo '')"
+if [[ "${_cur_uid}" != "${CERT_UID}" ]]; then
+    log_step "Adjusting certgen UID: ${_cur_uid} -> ${CERT_UID}"
+    usermod --uid "${CERT_UID}" certgen
+fi
+
+log_ok "certgen user: UID=$(id -u certgen)  GID=$(id -g certgen)"
+
+# ==============================================================================
+# Output directory preparation
+# ==============================================================================
+log_section "Preparing output directory"
+
+CERT_OUTPUT_DIR="/ssl-certs/$(make_timestamp "${VALIDATED_TZ}")"
+export CERT_OUTPUT_DIR
+
+log_step "Output path: ${CERT_OUTPUT_DIR}"
+
+mkdir -p "${CERT_OUTPUT_DIR}"
+# Give certgen ownership of both the top-level /ssl-certs and the timestamped dir
+chown "${CERT_UID}:${CERT_GID}" /ssl-certs "${CERT_OUTPUT_DIR}"
+
+# Verify write access as the target user (not as root)
+if ! gosu "${CERT_UID}:${CERT_GID}" test -w "${CERT_OUTPUT_DIR}"; then
+    log_err "Write permission check FAILED."
+    log_err "User UID=${CERT_UID} cannot write to ${CERT_OUTPUT_DIR}."
+    log_err "Options:"
+    log_err "  1. Ensure the host volume directory is owned by UID ${CERT_UID}:"
+    log_err "       chown ${CERT_UID}:${CERT_GID} /host/path/to/ssl-certs"
+    log_err "  2. Use a UID/GID that matches the host directory owner."
+    exit 1
+fi
+
+log_ok "Write access verified for UID ${CERT_UID} on ${CERT_OUTPUT_DIR}"
+
+# ==============================================================================
+# Export all variables needed by run_lego.sh
+# (gosu preserves the process environment, so these carry through exec)
+# ==============================================================================
+export TZ="${VALIDATED_TZ}"
+export CF_DNS_API_TOKEN="${VALIDATED_CF_KEY}"
+export CLOUDFLARE_PROPAGATION_TIMEOUT="${VALIDATED_PROPAGATION}"
+# ACME_SERVER, VALIDATED_EMAIL, VALIDATED_DOMAINS, VALIDATED_DNS_RESOLVERS,
+# VALIDATED_TZ, CERT_OUTPUT_DIR are already exported above.
+
+log_section "Starting certificate request (dropping to UID ${CERT_UID})"
+exec gosu "${CERT_UID}:${CERT_GID}" /usr/local/bin/run_lego.sh
