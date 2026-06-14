@@ -159,13 +159,15 @@ RUN mkdir -p /ssl-certs \
 # ------------------------------------------------------------------------------
 # Scripts
 # ------------------------------------------------------------------------------
-COPY entrypoint.sh    /usr/local/bin/entrypoint.sh
-COPY validate_env.sh  /usr/local/bin/validate_env.sh
-COPY run_lego.sh      /usr/local/bin/run_lego.sh
+COPY entrypoint.sh        /usr/local/bin/entrypoint.sh
+COPY validate_env.sh      /usr/local/bin/validate_env.sh
+COPY validate_domains.sh  /usr/local/bin/validate_domains.sh
+COPY run_lego.sh          /usr/local/bin/run_lego.sh
 
 RUN chmod 755 \
         /usr/local/bin/entrypoint.sh \
         /usr/local/bin/validate_env.sh \
+        /usr/local/bin/validate_domains.sh \
         /usr/local/bin/run_lego.sh
 
 # ------------------------------------------------------------------------------
