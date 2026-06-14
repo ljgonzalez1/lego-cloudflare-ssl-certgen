@@ -1,0 +1,4 @@
+example.com
+*.example.com
+*.sub.example.com
+example.io
