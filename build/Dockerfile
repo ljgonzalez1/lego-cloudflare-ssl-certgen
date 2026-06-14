@@ -58,7 +58,7 @@ FROM debian:bookworm-slim
 # Build-time arguments
 # All values are baked into the image; none are required at docker run time.
 # ------------------------------------------------------------------------------
-ARG LEGO_VERSION=v4.34.0
+ARG LEGO_VERSION=v5.2.1
 ARG LEGO_ARCH=linux_386
 ARG LEGO_TARBALL=lego_${LEGO_VERSION}_${LEGO_ARCH}.tar.gz
 ARG LEGO_URL=https://github.com/go-acme/lego/releases/download/${LEGO_VERSION}/${LEGO_TARBALL}
