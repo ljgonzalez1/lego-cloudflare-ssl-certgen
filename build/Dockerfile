@@ -84,7 +84,6 @@ RUN set -eu \
  && wget -qO /tmp/lego.tar.gz "${LEGO_URL}" \
  && echo ">>> Downloading checksums: ${LEGO_CHECKSUMS_URL} ..." \
  && wget -qO /tmp/lego_checksums.txt "${LEGO_CHECKSUMS_URL}"
-
  
 RUN set -eu \
  && echo ">>> Looking up expected checksum for ${LEGO_TARBALL} ..." \
@@ -133,6 +132,8 @@ RUN set -eu \
 RUN set -eu \
  && echo ">>> Verifying lego binary ..." \
  && /tmp/lego-bin/lego --version
+ 
+RUN mv /tmp/lego-bin/lego /usr/local/bin/lego
 
 
 # ------------------------------------------------------------------------------
