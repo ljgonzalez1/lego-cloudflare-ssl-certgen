@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# validate_domains.sh  --  Domain cleaning and validation module
+# validate_domains.sh  --  Domain file cleaning and validation module
 # ==============================================================================
 # SOURCE this file (it only defines functions); do NOT execute it directly.
 # Sourced by validate_env.sh, which provides _vfail() / the _ERRORS array used
@@ -9,18 +9,16 @@
 #
 # Public entry point:
 #   resolve_domains
-#     Picks the domain source (mounted file OR the DOMAINS env var), cleans and
-#     validates it, and on success exports:
+#     Reads /domains.txt, cleans and validates it, and on success exports:
 #       VALIDATED_DOMAINS  -- comma-separated, cleaned, de-duplicated list
 #       DOMAINS_SOURCE     -- human-readable description of where it came from
 #     On any problem it records errors via _vfail() and returns 1.
 #
-# Source selection:
-#   - If DOMAINS_FILE (default /domains.txt) exists, FILE mode is used and the
-#     DOMAINS env var is ignored.
-#   - Otherwise the DOMAINS env var is used.
+# Domain source:
+#   - A readable regular file must be mounted at /domains.txt.
+#   - The old DOMAINS environment variable is intentionally not used.
 #
-# Cleaning rules applied to every entry (file lines and/or comma-separated):
+# Cleaning rules applied to every entry:
 #   - entries may be separated by newlines and/or commas
 #   - surrounding single/double quotes are removed
 #   - leading/trailing whitespace is removed (internal whitespace is NOT, so it
@@ -152,34 +150,23 @@ _domains_file_accessible() {
 # resolve_domains  ->  sets VALIDATED_DOMAINS / DOMAINS_SOURCE or records errors
 # ------------------------------------------------------------------------------
 resolve_domains() {
-    local domains_file="${DOMAINS_FILE:-/domains.txt}"
-    local raw source_desc
+    local domains_file="/domains.txt"
+    local raw source_desc="file ${domains_file}"
 
-    if [[ -e "${domains_file}" ]]; then
-        # ---- FILE mode (takes precedence over the env var) -------------------
-        _domains_file_accessible "${domains_file}" || return 1
-        raw="$(cat -- "${domains_file}")"
-        if [[ -n "${DOMAINS:-}" ]]; then
-            source_desc="file ${domains_file} (DOMAINS env var ignored)"
-        else
-            source_desc="file ${domains_file}"
-        fi
-    else
-        # ---- ENV VAR mode ----------------------------------------------------
-        raw="${DOMAINS:-}"
-        source_desc="env var DOMAINS"
-        if [[ -z "$(_domains_trim "${raw}")" ]]; then
-            _vfail "DOMAINS: required but not set"
-            _vfail "    Set the DOMAINS env var, or mount a domains file at ${domains_file}"
-            return 1
-        fi
+    if [[ ! -e "${domains_file}" ]]; then
+        _vfail "DOMAINS file: required file '${domains_file}' was not found"
+        _vfail '    Mount it with: --volume "$(pwd)/domains.txt:/domains.txt:ro"'
+        return 1
     fi
+
+    _domains_file_accessible "${domains_file}" || return 1
+    raw="$(cat -- "${domains_file}")"
 
     local cleaned
     cleaned="$(domains_clean_list "${raw}")"
 
     if [[ -z "${cleaned}" ]]; then
-        _vfail "DOMAINS: no usable domain entries found in ${source_desc}"
+        _vfail "DOMAINS file: no usable domain entries found in ${source_desc}"
         return 1
     fi
 
@@ -190,7 +177,7 @@ resolve_domains() {
         if domains_validate_entry "${d}"; then
             valid+=("${d}")
         else
-            _vfail "DOMAINS: invalid domain '${d}' (from ${source_desc})"
+            _vfail "DOMAINS file: invalid domain '${d}' (from ${source_desc})"
             invalid=1
         fi
     done <<< "${cleaned}"
@@ -199,7 +186,7 @@ resolve_domains() {
         return 1
     fi
     if [[ "${#valid[@]}" -eq 0 ]]; then
-        _vfail "DOMAINS: no valid domain entries found in ${source_desc}"
+        _vfail "DOMAINS file: no valid domain entries found in ${source_desc}"
         return 1
     fi
 
