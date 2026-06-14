@@ -8,7 +8,7 @@
 # is provided below in case the file is tested in isolation.
 #
 # Reads from environment:
-#   TZ, EMAIL, PRODUCTION, DOMAINS, CLOUDFLARE_API_KEY,
+#   TZ, EMAIL, PRODUCTION, CLOUDFLARE_API_KEY,
 #   PROPAGATION_SECONDS, DNS_RESOLVERS, ACCEPT_LEGO_TOS, UID, GID
 #
 # Cloudflare token resolution order:
@@ -16,8 +16,7 @@
 #   2. /run/secrets/cloudflare_api_token  Docker secret  (docker compose)
 #
 # Domain source resolution (handled by validate_domains.sh):
-#   - mounted file /domains.txt  (takes precedence), OR
-#   - DOMAINS environment variable
+#   - mounted file /domains.txt
 #
 # Sets on success (all exported):
 #   VALIDATED_TZ          -- verified IANA timezone string
@@ -140,10 +139,9 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# DOMAINS -- domain list for the certificate
+# /domains.txt -- domain list for the certificate
 #
-# The actual source selection (mounted /domains.txt file vs DOMAINS env var),
-# cleaning, de-duplication, trailing-dot/quote/whitespace stripping and
+# Cleaning, de-duplication, trailing-dot/quote/whitespace stripping and
 # per-domain validation lives in validate_domains.sh::resolve_domains, which
 # sets VALIDATED_DOMAINS and DOMAINS_SOURCE on success or records errors via
 # _vfail.
