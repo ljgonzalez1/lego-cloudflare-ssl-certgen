@@ -2,264 +2,129 @@
 # ==============================================================================
 # validate_env.sh  --  Environment variable validation module
 # ==============================================================================
-# SOURCE this file from entrypoint.sh; do NOT execute it directly.
-#
-# Requires log_err() to be defined by the sourcing script.  A minimal fallback
-# is provided below in case the file is tested in isolation.
-#
-# Reads from environment:
-#   TZ, EMAIL, PRODUCTION, DOMAINS, CLOUDFLARE_API_KEY,
-#   PROPAGATION_SECONDS, DNS_RESOLVERS, ACCEPT_LEGO_TOS, UID, GID
-#
-# Cloudflare token resolution order:
-#   1. CLOUDFLARE_API_KEY  environment variable  (docker run --env)
-#   2. /run/secrets/cloudflare_api_token  Docker secret  (docker compose)
-#
-# Sets on success (all exported):
-#   VALIDATED_TZ          -- verified IANA timezone string
-#   VALIDATED_EMAIL       -- trimmed e-mail address
-#   VALIDATED_PRODUCTION  -- "true" or "false" (normalised to lowercase)
-#   ACME_SERVER           -- Let's Encrypt directory URL derived from PRODUCTION
-#   VALIDATED_DOMAINS     -- cleaned, validated domain string (comma-separated)
-#   VALIDATED_CF_KEY      -- Cloudflare API token (from env var or secret file)
-#   VALIDATED_PROPAGATION -- propagation timeout in seconds (string)
-#   VALIDATED_DNS_RESOLVERS -- comma-separated host:port resolver list
-#   CERT_UID              -- integer UID for certificate file ownership
-#   CERT_GID              -- integer GID for certificate file ownership
-#
-# On validation failure:
-#   All errors are collected and printed at once, then the function returns 1.
-#   Because the sourcing script uses set -e, a return 1 exits the process.
+# Sourced by entrypoint.sh for UID/GID and run_lego.sh for issuance settings.
 # ==============================================================================
 
-# Fallback logger used when sourced outside entrypoint.sh (e.g. unit-testing)
-if ! declare -f log_err >/dev/null 2>&1; then
-    log_err() { printf 'ERROR: %s\n' "$*" >&2; }
-fi
-
-# Internal error accumulator
-_ERRORS=()
-_vfail() { _ERRORS+=("$*"); }
-
-# ------------------------------------------------------------------------------
-# TZ -- IANA timezone
-# ------------------------------------------------------------------------------
-_v_tz="${TZ:-Etc/UTC}"
-if ! TZ="${_v_tz}" date >/dev/null 2>&1; then
-    _vfail "TZ: invalid or unrecognised timezone '${_v_tz}'"
-    _vfail "    Valid examples: Etc/UTC  America/Santiago  Europe/London"
+if [[ -t 1 ]]; then
+    _C_RST=$'\033[0m' _C_BOLD=$'\033[1m'
+    _C_RED=$'\033[31m' _C_GRN=$'\033[32m' _C_YLW=$'\033[33m'
+    _C_BLU=$'\033[34m' _C_MAG=$'\033[35m' _C_CYN=$'\033[36m'
 else
-    VALIDATED_TZ="${_v_tz}"
+    _C_RST='' _C_BOLD=''
+    _C_RED='' _C_GRN='' _C_YLW='' _C_BLU='' _C_MAG='' _C_CYN=''
 fi
 
-# ------------------------------------------------------------------------------
-# EMAIL -- Let's Encrypt account contact address
-# ------------------------------------------------------------------------------
-_v_email="${EMAIL:-}"
-if [[ -z "${_v_email}" ]]; then
-    _vfail "EMAIL: required but not set"
-elif ! [[ "${_v_email}" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
-    _vfail "EMAIL: invalid e-mail address structure ('${_v_email}')"
-else
-    VALIDATED_EMAIL="${_v_email}"
-fi
+log_info()    { printf '%sℹ️  %s%s\n' "${_C_CYN}" "$*" "${_C_RST}"; }
+log_step()    { printf '%s🔹 %s%s\n' "${_C_BLU}" "$*" "${_C_RST}"; }
+log_ok()      { printf '%s✅ %s%s\n' "${_C_GRN}" "$*" "${_C_RST}"; }
+log_warn()    { printf '%s⚠️  %s%s\n' "${_C_YLW}" "$*" "${_C_RST}"; }
+log_err()     { printf '%s❌ %s%s\n' "${_C_RED}" "$*" "${_C_RST}" >&2; }
+log_section() { printf '\n%s%s%s\n' "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}"; }
 
-# ------------------------------------------------------------------------------
-# PRODUCTION -- staging vs real certificate issuance
-# Empty value is treated as the default (false).
-# ------------------------------------------------------------------------------
-_v_prod_raw="${PRODUCTION:-false}"
-_v_prod="${_v_prod_raw,,}"   # bash lowercase expansion
-if [[ "${_v_prod}" != "true" && "${_v_prod}" != "false" ]]; then
-    _vfail "PRODUCTION: must be 'true' or 'false', got '${_v_prod_raw}'"
-else
-    VALIDATED_PRODUCTION="${_v_prod}"
-fi
+validate_identity() {
+    # Bash reserves UID as a read-only variable. Read the supplied env value.
+    local raw_uid raw_gid
+    raw_uid="${CERT_UID:-$(printenv UID 2>/dev/null || true)}"
+    raw_gid="${CERT_GID:-${GID:-}}"
+    raw_uid="${raw_uid:-1000}"
+    raw_gid="${raw_gid:-1000}"
 
-# Derive ACME server URL from PRODUCTION
-if [[ "${VALIDATED_PRODUCTION:-false}" == "true" ]]; then
-    ACME_SERVER="https://acme-v02.api.letsencrypt.org/directory"
-else
-    ACME_SERVER="https://acme-staging-v02.api.letsencrypt.org/directory"
-fi
-
-# ------------------------------------------------------------------------------
-# ACCEPT_LEGO_TOS -- explicit consent to Let's Encrypt Terms of Service
-# The --accept-tos flag in lego accepts the Let's Encrypt Subscriber Agreement.
-# ------------------------------------------------------------------------------
-_v_tos_raw="${ACCEPT_LEGO_TOS:-false}"
-_v_tos="${_v_tos_raw,,}"
-if [[ "${_v_tos}" != "true" ]]; then
-    _vfail "ACCEPT_LEGO_TOS: must be set to 'true' to accept the Let's Encrypt Terms of Service"
-    _vfail "    See: https://letsencrypt.org/repository/"
-fi
-
-# ------------------------------------------------------------------------------
-# CLOUDFLARE_API_KEY -- Cloudflare DNS API token
-#
-# Resolution order:
-#   1. CLOUDFLARE_API_KEY environment variable  (docker run --env)
-#   2. /run/secrets/cloudflare_api_token file   (docker compose secrets)
-#
-# The token is validated for basic structural integrity.
-# Error messages are intentionally vague (no structural hints).
-# ------------------------------------------------------------------------------
-_v_cf_key="${CLOUDFLARE_API_KEY:-}"
-
-# Fallback: try Docker secret mount (populated by docker compose)
-if [[ -z "${_v_cf_key}" ]]; then
-    _cf_secret_path="/run/secrets/cloudflare_api_token"
-    if [[ -r "${_cf_secret_path}" ]]; then
-        # Strip all whitespace (handles trailing newlines from secret file)
-        _v_cf_key="$(tr -d '[:space:]' < "${_cf_secret_path}")"
+    if ! [[ "${raw_uid}" =~ ^[0-9]{1,10}$ ]] || (( 10#${raw_uid} < 1 || 10#${raw_uid} > 4294967294 )); then
+        log_err "UID must be an integer from 1 to 4294967294."
+        return 2
     fi
-fi
-
-if [[ -z "${_v_cf_key}" ]]; then
-    _vfail "CLOUDFLARE_API_KEY: token not found"
-    _vfail "    Provide it via:"
-    _vfail "      docker run  ->  --env CLOUDFLARE_API_KEY=\${CLOUDFLARE_API_KEY}"
-    _vfail "      docker compose ->  cloudflare_api_token secret (see docker-compose.yml)"
-else
-    _v_klen="${#_v_cf_key}"
-    if [[ "${_v_klen}" -lt 30 || "${_v_klen}" -gt 50 ]] \
-    || [[ "${_v_cf_key}" =~ [[:space:]] ]]; then
-        _vfail "CLOUDFLARE_API_KEY: invalid token structure"
-    else
-        VALIDATED_CF_KEY="${_v_cf_key}"
+    if ! [[ "${raw_gid}" =~ ^[0-9]{1,10}$ ]] || (( 10#${raw_gid} < 1 || 10#${raw_gid} > 4294967294 )); then
+        log_err "GID must be an integer from 1 to 4294967294."
+        return 2
     fi
-fi
+    CERT_UID="$((10#${raw_uid}))"
+    CERT_GID="$((10#${raw_gid}))"
+    export CERT_UID CERT_GID
+}
 
-# ------------------------------------------------------------------------------
-# DOMAINS -- comma-separated list of domain names / wildcard domains
-#
-# Accepts values with surrounding quotes to allow safe shell quoting of
-# wildcards, e.g.:
-#   --env 'DOMAINS=*.example.com,example.com'          <- shell single-quotes
-#   --env DOMAINS='"*.example.com,example.com"'        <- literal quotes in value
-# Both forms produce the same validated domain list.
-# ------------------------------------------------------------------------------
-_v_dom_raw="${DOMAINS:-}"
+validate_env() {
+    local production="${PRODUCTION:-false}"
+    local accepted="${ACCEPT_LEGO_TOS:-false}"
+    local resolvers="${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}"
+    local resolver port
+    local resolver_pattern='^([a-zA-Z0-9_.-]+|\[[0-9a-fA-F:.]+\]):[0-9]{1,5}$'
+    local -a errors=()
 
-# Strip one pair of surrounding single or double quotes if present
-_v_dom="${_v_dom_raw}"
-if [[ "${_v_dom}" =~ ^[\"\'] && "${_v_dom}" =~ [\"\']$ ]]; then
-    _v_dom="${_v_dom:1:${#_v_dom}-2}"
-fi
+    VALIDATED_TZ="${TZ:-Etc/UTC}"
+    if [[ "${VALIDATED_TZ}" == /* || "${VALIDATED_TZ}" == *..* ||
+          ! -f "/usr/share/zoneinfo/${VALIDATED_TZ}" ]]; then
+        errors+=("TZ: expected an IANA timezone such as Etc/UTC or America/Santiago.")
+    fi
 
-# Trim leading/trailing ASCII whitespace
-_v_dom="${_v_dom#"${_v_dom%%[! $'\t']*}"}"
-_v_dom="${_v_dom%"${_v_dom##*[! $'\t']}"}"
-
-if [[ -z "${_v_dom}" ]]; then
-    _vfail "DOMAINS: required but not set"
-else
-    # RFC 1123 label pattern (1-63 chars, alphanumeric + internal hyphens,
-    # applied to each label after stripping an optional leading wildcard '*.').
-    _v_label_re='^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$'
-
-    _v_valid_count=0
-    IFS=',' read -ra _v_dom_list <<< "${_v_dom}"
-    for _v_d in "${_v_dom_list[@]}"; do
-        # Strip whitespace from each individual entry
-        _v_d="${_v_d// /}"
-        [[ -z "${_v_d}" ]] && continue
-
-        # A bare '*.' is not a valid entry
-        if [[ "${_v_d}" == "*." ]]; then
-            _vfail "DOMAINS: bare wildcard '*.' is not a valid domain entry"
-            continue
+    VALIDATED_EMAIL="${EMAIL:-}"
+    if [[ -n "${VALIDATED_EMAIL}" || "${CERTGEN_ACTION}" == issue ]]; then
+        if ! [[ "${VALIDATED_EMAIL}" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
+            errors+=("EMAIL: enter a valid Let's Encrypt contact address.")
         fi
-
-        # Strip leading wildcard before format validation
-        _v_d_base="${_v_d#\*.}"
-
-        if ! [[ "${_v_d_base}" =~ ${_v_label_re} ]]; then
-            _vfail "DOMAINS: invalid domain format '${_v_d}'"
-        else
-            _v_valid_count=$(( _v_valid_count + 1 ))
-        fi
-    done
-
-    if [[ "${_v_valid_count}" -eq 0 ]]; then
-        _vfail "DOMAINS: no valid domain entries found after parsing"
-    else
-        VALIDATED_DOMAINS="${_v_dom}"
     fi
-fi
 
-# ------------------------------------------------------------------------------
-# PROPAGATION_SECONDS -- DNS TXT record propagation wait
-# Empty value defaults to 60.
-# ------------------------------------------------------------------------------
-_v_prop="${PROPAGATION_SECONDS:-60}"
-if ! [[ "${_v_prop}" =~ ^[0-9]+$ ]]; then
-    _vfail "PROPAGATION_SECONDS: must be a non-negative integer, got '${_v_prop}'"
-else
-    VALIDATED_PROPAGATION="${_v_prop}"
-fi
+    VALIDATED_PRODUCTION="${production,,}"
+    case "${VALIDATED_PRODUCTION}" in
+        true) ACME_SERVER=https://acme-v02.api.letsencrypt.org/directory ;;
+        false) ACME_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory ;;
+        *) errors+=("PRODUCTION: expected true or false.") ;;
+    esac
 
-# ------------------------------------------------------------------------------
-# DNS_RESOLVERS -- servers used by lego to verify TXT record propagation
-# Optional; defaults to Cloudflare (primary + secondary) and Google DNS.
-# Empty value is treated as the default.
-# ------------------------------------------------------------------------------
-_v_dns="${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}"
-if [[ -z "${_v_dns}" ]]; then
-    # Belt-and-suspenders: should not happen given the :- default above
-    _vfail "DNS_RESOLVERS: must not be empty (default: 1.1.1.1:53,8.8.8.8:53,1.0.0.1:53)"
-else
-    VALIDATED_DNS_RESOLVERS="${_v_dns}"
-fi
+    if [[ "${CERTGEN_ACTION}" == issue && "${accepted,,}" != true ]]; then
+        errors+=("ACCEPT_LEGO_TOS: set to true after reviewing https://letsencrypt.org/repository/")
+    fi
 
-# ------------------------------------------------------------------------------
-# UID / GID -- certificate file ownership
-#
-# bash declares $UID as a readonly built-in (current process UID).
-# We use 'printenv' to read the value from the *process environment* directly,
-# bypassing bash's variable namespace.  This correctly returns the value set by
-# 'docker run --env UID=...' or '--env-file' without conflict.
-# ------------------------------------------------------------------------------
-_v_raw_uid="$(printenv UID 2>/dev/null || true)"
-_v_raw_gid="$(printenv GID 2>/dev/null || true)"
+    VALIDATED_PROPAGATION="${PROPAGATION_SECONDS:-60}"
+    if ! [[ "${VALIDATED_PROPAGATION}" =~ ^[0-9]{1,10}$ ]] ||
+        (( 10#${VALIDATED_PROPAGATION} > 2147483647 )); then
+        errors+=("PROPAGATION_SECONDS: expected a non-negative integer in seconds.")
+    else
+        VALIDATED_PROPAGATION="$((10#${VALIDATED_PROPAGATION}))"
+    fi
 
-CERT_UID="${_v_raw_uid:-1000}"
-CERT_GID="${_v_raw_gid:-1000}"
+    resolvers="${resolvers// /}"
+    IFS=',' read -ra VALIDATED_DNS_RESOLVERS <<< "${resolvers}"
+    if [[ "${resolvers}" == *, || "${resolvers}" =~ [[:space:]] ]]; then
+        errors+=("DNS_RESOLVERS: expected comma-separated host:port entries.")
+    else
+        for resolver in "${VALIDATED_DNS_RESOLVERS[@]}"; do
+            port="${resolver##*:}"
+            if ! [[ "${resolver}" =~ ${resolver_pattern} ]] ||
+                (( 10#${port} < 1 || 10#${port} > 65535 )); then
+                errors+=("DNS_RESOLVERS: invalid resolver '${resolver}'.")
+            fi
+        done
+    fi
 
-if ! [[ "${CERT_UID}" =~ ^[0-9]+$ ]]; then
-    _vfail "UID: must be a non-negative integer, got '${CERT_UID}'"
-elif [[ "${CERT_UID}" -eq 0 ]]; then
-    _vfail "UID: running lego as root (UID 0) is not permitted"
-fi
+    if (( ${#errors[@]} )); then
+        log_err "Environment validation failed."
+        printf '  %s\n' "${errors[@]}" >&2
+        return 2
+    fi
+}
 
-if ! [[ "${CERT_GID}" =~ ^[0-9]+$ ]]; then
-    _vfail "GID: must be a non-negative integer, got '${CERT_GID}'"
-fi
+configure_cloudflare() {
+    local secret=/run/secrets/cloudflare_api_token
+    local token="${CLOUDFLARE_API_KEY:-${CF_DNS_API_TOKEN:-${CLOUDFLARE_API_TOKEN:-}}}"
+    local use_file=false
 
-# ------------------------------------------------------------------------------
-# Report all collected errors at once, then return failure to the sourcing script
-# ------------------------------------------------------------------------------
-if [[ "${#_ERRORS[@]}" -gt 0 ]]; then
-    log_err "Environment validation failed (${#_ERRORS[@]} error(s)):"
-    for _v_e in "${_ERRORS[@]}"; do
-        log_err "  ${_v_e}"
-    done
-    unset _ERRORS _v_tz _v_email _v_prod_raw _v_prod _v_tos_raw _v_tos
-    unset _v_cf_key _v_klen _cf_secret_path _v_dom_raw _v_dom _v_dom_list
-    unset _v_d _v_d_base _v_label_re _v_valid_count _v_prop _v_dns
-    unset _v_raw_uid _v_raw_gid _v_e
-    unset -f _vfail
-    return 1
-fi
+    if [[ -z "${token}" && -r "${secret}" ]]; then
+        token="$(< "${secret}")"
+        use_file=true
+    fi
+    if ! [[ "${token}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        log_err "Provide a valid Cloudflare DNS API token through the Compose secret or CLOUDFLARE_API_KEY."
+        return 2
+    fi
 
-# Export validated variables for subsequent use in entrypoint.sh and run_lego.sh
-export VALIDATED_TZ VALIDATED_EMAIL VALIDATED_PRODUCTION ACME_SERVER
-export VALIDATED_DOMAINS VALIDATED_CF_KEY VALIDATED_PROPAGATION
-export VALIDATED_DNS_RESOLVERS CERT_UID CERT_GID
-
-# Clean up internal variables
-unset _ERRORS _v_tz _v_email _v_prod_raw _v_prod _v_tos_raw _v_tos
-unset _v_cf_key _v_klen _cf_secret_path _v_dom_raw _v_dom _v_dom_list
-unset _v_d _v_d_base _v_label_re _v_valid_count _v_prop _v_dns
-unset _v_raw_uid _v_raw_gid
-unset -f _vfail
+    # The wrapper's legacy CLOUDFLARE_API_KEY setting is an API token.
+    # Clear lego's legacy Global API Key settings before passing that token.
+    unset CLOUDFLARE_API_KEY CLOUDFLARE_API_KEY_FILE CF_API_KEY CF_API_KEY_FILE CLOUDFLARE_API_TOKEN
+    unset CF_DNS_API_TOKEN CF_DNS_API_TOKEN_FILE CLOUDFLARE_DNS_API_TOKEN CLOUDFLARE_DNS_API_TOKEN_FILE
+    if [[ "${use_file}" == true ]]; then
+        export CF_DNS_API_TOKEN_FILE="${secret}"
+    else
+        export CF_DNS_API_TOKEN="${token}"
+    fi
+    export CLOUDFLARE_PROPAGATION_TIMEOUT="${VALIDATED_PROPAGATION}"
+}

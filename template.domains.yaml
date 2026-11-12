@@ -1,0 +1,16 @@
+# Each key is a folder name and represents one independent certificate.
+# Wildcards MUST be quoted in YAML.
+certificateA:
+  - example.com
+  - www.example.com
+  - "*.example.com"
+  - "*.cloud.example.com"
+
+certificateB:
+  - example.net
+  - api.example.net
+  - "*.example.net"
+
+certificateC:
+  - example2.net
+  - app.example2.net
