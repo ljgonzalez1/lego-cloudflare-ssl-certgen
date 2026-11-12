@@ -49,6 +49,7 @@ cp template.env certgen.env
 mkdir -p ./ssl-certs
 
 # 4. Export CLOUDFLARE_API_KEY with your Cloudflare DNS API token, then run.
+# Replace ljgonzalez/lego-cloudflare-certgen:lego4.34.0-2.0 by lego-cloudflare-certgen:lego4.34.0-2.0 if you want to use the local image
 docker run --rm \
   --env-file ./certgen.env \
   --env CLOUDFLARE_API_KEY \
@@ -59,7 +60,7 @@ docker run --rm \
   --cap-add CHOWN \
   --cap-add SETUID \
   --cap-add SETGID \
-  lego-cloudflare-certgen:lego4.34.0-2.0
+  ljgonzalez/lego-cloudflare-certgen:lego4.34.0-2.0
 ```
 
 > :warning: **`--rm` is important.** Docker can show container environment variables in `docker inspect`. `--rm` removes the container when it exits.
