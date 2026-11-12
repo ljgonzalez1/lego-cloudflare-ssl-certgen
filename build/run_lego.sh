@@ -1,156 +1,132 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# run_lego.sh  --  Certificate request execution  (runs as certgen, non-root)
+# run_lego.sh  --  Certificate requests  (runs as the target UID/GID)
 # ==============================================================================
-# Called by entrypoint.sh via:  exec gosu <uid>:<gid> /usr/local/bin/run_lego.sh
-#
-# All inputs arrive as exported environment variables set by entrypoint.sh:
-#   CF_DNS_API_TOKEN              -- Cloudflare DNS API token (for lego)
-#   CLOUDFLARE_PROPAGATION_TIMEOUT -- propagation wait (seconds, for lego)
-#   ACME_SERVER                   -- Let's Encrypt directory URL
-#   VALIDATED_EMAIL               -- account email
-#   VALIDATED_DOMAINS             -- comma-separated domain list
-#   VALIDATED_DNS_RESOLVERS       -- comma-separated host:port resolvers
-#   VALIDATED_TZ                  -- timezone (already set as TZ by entrypoint)
-#   CERT_OUTPUT_DIR               -- absolute path for this run's output
+# Reads the complete YAML before calling lego once per selected group.
 # ==============================================================================
 set -euo pipefail
+umask 077
 
-# ------------------------------------------------------------------------------
-# Terminal detection and ANSI colour codes
-# ------------------------------------------------------------------------------
-if [[ -t 1 ]]; then
-    _C_RST=$'\033[0m'
-    _C_BOLD=$'\033[1m'
-    _C_RED=$'\033[31m'
-    _C_GRN=$'\033[32m'
-    _C_YLW=$'\033[33m'
-    _C_BLU=$'\033[34m'
-    _C_MAG=$'\033[35m'
-    _C_CYN=$'\033[36m'
-else
-    _C_RST='' _C_BOLD=''
-    _C_RED='' _C_GRN='' _C_YLW='' _C_BLU='' _C_MAG='' _C_CYN=''
-fi
+script_dir="$(dirname -- "${BASH_SOURCE[0]}")"
 
-log_info()    { printf '%s\xe2\x84\xb9\xef\xb8\x8f  %s%s\n'   "${_C_CYN}"           "$*" "${_C_RST}";     }
-log_step()    { printf '%s\xf0\x9f\x94\xb9 %s%s\n'            "${_C_BLU}"           "$*" "${_C_RST}";     }
-log_ok()      { printf '%s\xe2\x9c\x85 %s%s\n'                "${_C_GRN}"           "$*" "${_C_RST}";     }
-log_warn()    { printf '%s\xe2\x9a\xa0\xef\xb8\x8f  %s%s\n'   "${_C_YLW}"          "$*" "${_C_RST}";     }
-log_err()     { printf '%s\xe2\x9d\x8c %s%s\n'                "${_C_RED}"           "$*" "${_C_RST}" >&2; }
-log_section() { printf '\n%s%s%s\n'                            "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}";     }
+# shellcheck source=validate_env.sh
+. "${script_dir}/validate_env.sh"
 
-# ------------------------------------------------------------------------------
-# Internal sanity check: all required vars must be set.
-# These should always be set by entrypoint.sh; this guard catches internal bugs.
-# ------------------------------------------------------------------------------
-_required_vars=(
-    CF_DNS_API_TOKEN
-    CLOUDFLARE_PROPAGATION_TIMEOUT
-    ACME_SERVER
-    VALIDATED_EMAIL
-    VALIDATED_DOMAINS
-    CERT_OUTPUT_DIR
-)
-_internal_errors=()
-for _rv in "${_required_vars[@]}"; do
-    if [[ -z "${!_rv:-}" ]]; then
-        _internal_errors+=("${_rv}")
+# Preserve the original YYYY-MM-DD_HH.MM.SS_GMT[+-]H folder names.
+make_timestamp() {
+    local epoch="$1" offset hours
+    offset="$(date --date="@${epoch}" +%z)" || return
+    hours="$((10#${offset:1:2}))"
+    date --date="@${epoch}" +"%Y-%m-%d_%H.%M.%S_GMT${offset:0:1}${hours}"
+}
+
+run_group() {
+    local group="$1" domains="$2"
+    local parent="${CERTGEN_OUTPUT%/}/${group}"
+    local epoch stamp requested expires target domain
+    local -a domain_list domain_flags=()
+
+    IFS=',' read -ra domain_list <<< "${domains}"
+    epoch="$(date +%s)" || return
+    stamp="$(make_timestamp "${epoch}")" || return
+
+    if [[ "${CERTGEN_ACTION}" == issue ]]; then
+        if [[ -L "${parent}" ]] || ! mkdir -p -- "${parent}"; then
+            log_err "Cannot use certificate folder: ${parent}"
+            return 1
+        fi
+        # Reserve a unique timestamp folder even if two runs start together.
+        until mkdir -- "${parent}/${stamp}" 2>/dev/null; do
+            if [[ ! -e "${parent}/${stamp}" && ! -L "${parent}/${stamp}" ]]; then
+                log_err "Cannot create timestamp folder: ${parent}/${stamp}"
+                return 1
+            fi
+            epoch="$((epoch + 1))"
+            stamp="$(make_timestamp "${epoch}")" || return
+        done
     fi
-done
-if [[ "${#_internal_errors[@]}" -gt 0 ]]; then
-    log_err "Internal error: the following variables were not passed by entrypoint.sh:"
-    for _ie in "${_internal_errors[@]}"; do
-        log_err "  ${_ie}"
-    done
-    exit 1
-fi
 
-# ------------------------------------------------------------------------------
-# Build the --domains flags
-# Re-parse the validated comma-separated string into individual flags.
-# ------------------------------------------------------------------------------
-_domain_flags=()
-_domain_count=0
-IFS=',' read -ra _dom_list <<< "${VALIDATED_DOMAINS}"
-for _d in "${_dom_list[@]}"; do
-    _d="${_d// /}"                  # strip any residual whitespace
-    if [[ -n "${_d}" ]]; then
-        _domain_flags+=("--domains" "${_d}")
-        _domain_count=$(( _domain_count + 1 ))
+    requested="$(make_timestamp "$((epoch + 55))")" || return
+    expires="$(make_timestamp "$((epoch + 90 * 86400 - 12 * 3600))")" || return
+    target="${parent}/${stamp}/requested_${requested}_expires_${expires}"
+
+    log_section "🚀 ${group}"
+    log_info "Output path: ${target}"
+    log_info "Domains (${#domain_list[@]}):"
+    for domain in "${domain_list[@]}"; do
+        log_step "${domain}"
+        domain_flags+=(--domains "${domain}")
+    done
+
+    if [[ "${CERTGEN_ACTION}" == dry-run ]]; then
+        return 0
     fi
-done
 
-if [[ "${_domain_count}" -eq 0 ]]; then
-    log_err "Internal error: parsed zero domains from VALIDATED_DOMAINS='${VALIDATED_DOMAINS}'"
-    exit 1
+    mkdir -- "${target}" || return
+    if lego "${lego_args[@]}" --path "${target}" "${domain_flags[@]}" run; then
+        log_ok "Certificates: ${target}/certificates/"
+        log_ok "Account data: ${target}/accounts/"
+    else
+        log_err "${group}: lego exited with code $?."
+        return 1
+    fi
+}
+
+groups="$(python3 "${script_dir}/read_domains.py" "${CERTGEN_CONFIG}" "$@")"
+if [[ "${CERTGEN_ACTION}" == list ]]; then
+    while IFS=$'\t' read -r group domains; do
+        IFS=',' read -ra domain_list <<< "${domains}"
+        printf '%s: %s domains\n' "${group}" "${#domain_list[@]}"
+    done <<< "${groups}"
+    exit 0
 fi
 
-# ------------------------------------------------------------------------------
-# Build the --dns.resolvers flags
-# Each resolver is passed as a separate flag for maximum compatibility.
-# ------------------------------------------------------------------------------
-_resolver_flags=()
-if [[ -n "${VALIDATED_DNS_RESOLVERS:-}" ]]; then
-    IFS=',' read -ra _res_list <<< "${VALIDATED_DNS_RESOLVERS}"
-    for _r in "${_res_list[@]}"; do
-        _r="${_r// /}"
-        [[ -n "${_r}" ]] && _resolver_flags+=("--dns.resolvers" "${_r}")
+validate_env
+export TZ="${VALIDATED_TZ}"
+
+if [[ "${CERTGEN_ACTION}" == issue ]]; then
+    configure_cloudflare
+    if ! [[ -d "${CERTGEN_OUTPUT}" && -w "${CERTGEN_OUTPUT}" && -x "${CERTGEN_OUTPUT}" ]]; then
+        log_err "Output directory must be writable by UID ${CERT_UID} and GID ${CERT_GID}: ${CERTGEN_OUTPUT}"
+        exit 1
+    fi
+    if ! command -v lego >/dev/null; then
+        log_err "lego is missing. Rebuild the image."
+        exit 1
+    fi
+fi
+
+if [[ "${VALIDATED_PRODUCTION}" == true ]]; then
+    log_section "🚨 PRODUCTION MODE"
+else
+    log_section "🧪 STAGING MODE"
+fi
+log_info "ACME server: ${ACME_SERVER}"
+log_info "Timezone: ${TZ}"
+log_info "Target UID: ${CERT_UID}  GID: ${CERT_GID}"
+
+lego_args=(--accept-tos --email "${VALIDATED_EMAIL}" --dns cloudflare --server "${ACME_SERVER}")
+for resolver in "${VALIDATED_DNS_RESOLVERS[@]}"; do
+    lego_args+=(--dns.resolvers "${resolver}")
+done
+
+succeeded=()
+failed=()
+while IFS=$'\t' read -r group domains; do
+    if run_group "${group}" "${domains}"; then
+        succeeded+=("${group}")
+    else
+        failed+=("${group}")
+    fi
+done <<< "${groups}"
+
+if [[ "${CERTGEN_ACTION}" == issue ]]; then
+    log_section "📋 Certificate request summary"
+    for group in "${succeeded[@]}"; do
+        log_ok "${group}"
+    done
+    for group in "${failed[@]}"; do
+        log_err "${group}"
     done
 fi
-
-# ------------------------------------------------------------------------------
-# Summary
-# ------------------------------------------------------------------------------
-log_info "Requesting certificate for ${_domain_count} domain(s):"
-for _d in "${_dom_list[@]}"; do
-    _d="${_d// /}"
-    [[ -n "${_d}" ]] && log_step "  ${_d}"
-done
-printf '\n'
-log_info "ACME server  : ${ACME_SERVER}"
-log_info "Output path  : ${CERT_OUTPUT_DIR}"
-
-# ------------------------------------------------------------------------------
-# Build complete lego argument array
-# ------------------------------------------------------------------------------
-_lego_args=(
-    "--accept-tos"
-    "--email"    "${VALIDATED_EMAIL}"
-    "--dns"      "cloudflare"
-    "--server"   "${ACME_SERVER}"
-    "--path"     "${CERT_OUTPUT_DIR}"
-)
-
-# Append resolver flags (may be empty)
-if [[ "${#_resolver_flags[@]}" -gt 0 ]]; then
-    _lego_args+=("${_resolver_flags[@]}")
-fi
-
-# Append domain flags
-_lego_args+=("${_domain_flags[@]}")
-
-# ------------------------------------------------------------------------------
-# Execute lego
-# CF_DNS_API_TOKEN and CLOUDFLARE_PROPAGATION_TIMEOUT are already in the
-# environment; lego reads them automatically for the cloudflare provider.
-# ------------------------------------------------------------------------------
-printf '\n'
-if lego "${_lego_args[@]}" run; then
-    printf '\n'
-    log_ok "Certificate successfully generated!"
-    log_ok "Certificates : ${CERT_OUTPUT_DIR}/certificates/"
-    log_ok "Account data : ${CERT_OUTPUT_DIR}/accounts/"
-    printf '\n'
-else
-    _rc=$?
-    printf '\n'
-    log_err "lego exited with error code ${_rc}."
-    log_err "Review the lego output above for details."
-    log_err "Common causes:"
-    log_err "  - DNS TXT record propagation timeout (increase PROPAGATION_SECONDS)"
-    log_err "  - Invalid or insufficient Cloudflare API token permissions"
-    log_err "  - Domain not in Cloudflare DNS"
-    log_err "  - Let's Encrypt rate limit reached (use PRODUCTION=false for testing)"
-    exit "${_rc}"
-fi
+(( ${#failed[@]} == 0 ))
