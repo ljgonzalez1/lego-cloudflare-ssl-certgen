@@ -38,7 +38,7 @@ api:
 docker run --rm -t --env-file .env \
   -v "$PWD/domains.yaml:/app/domains.yaml:ro" \
   -v "$PWD/ssl-certs:/ssl-certs" \
-  ljgonzalez/lego-cloudflare-certgen:3.4.1
+  ljgonzalez/lego-cloudflare-certgen:3.4.2
 ```
 
 The default endpoint is Let's Encrypt staging. Append `--production` after the image name to request production certificates. The `-t` option enables ANSI colors.
@@ -88,22 +88,22 @@ Run from the project directory. Substitute a platform from the table as needed. 
 ```bash
 docker buildx build --platform linux/amd64 --load \
   --progress=plain \
-  -t ljgonzalez/lego-cloudflare-certgen:3.4.1 ./build
+  -t ljgonzalez/lego-cloudflare-certgen:3.4.2 ./build
 ```
 
 ```bash
 docker run --rm --entrypoint lego \
-  ljgonzalez/lego-cloudflare-certgen:3.4.1 --version
+  ljgonzalez/lego-cloudflare-certgen:3.4.2 --version
 
 docker run --rm \
   -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
-  ljgonzalez/lego-cloudflare-certgen:3.4.1 --list
+  ljgonzalez/lego-cloudflare-certgen:3.4.2 --list
 ```
 
 Inspect the size of the local image in MiB:
 
 ```bash
-docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.4.1 |
+docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.4.2 |
   awk '{printf "%.1f MiB\n", $1 / 1048576}'
 ```
 
@@ -120,7 +120,7 @@ docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.4
 | `PROPAGATION_SECONDS` | `360` | Maximum wait for TXT propagation per challenge |
 | `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | Comma-separated resolvers |
 | `DOMAINS_FILE` | `./domains.yaml` | Host YAML path for Compose |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.1` | Image used by Compose |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.2` | Image used by Compose |
 | `CERTGEN_ENV_FILE` | `./.env` | Settings file used by Compose |
 
 ### DNS-01 and wildcard names
@@ -165,6 +165,32 @@ The ANSI table counts attempted, issued, failed and skipped DNS names per certif
 The simulated staging run below uses the [sample YAML for `example.com` and `example.org`](examples/terminal.domains.yaml), with ordinary names, subdomains and nested wildcards. It shows eight names attempted, four issued and four failed after a simulated TXT propagation timeout.
 
 ![ANSI terminal report for a simulated certificate run](assets/certgen-terminal-example.png)
+
+## 🔐 Alpine image findings and lego version
+
+Docker Scout reported the following entries in the base layer of the scanned Alpine 3.24.4 image. The entries concern user-space libraries packaged by Alpine. The scores and fix revisions below are those shown in the scan.
+
+| CVE | Package in scan | Scout score | Fix revision shown by Scout |
+|---|---|---|---|
+| CVE-2026-4738 | `zlib 1.3.2-r1` | 9.4 (Critical) | `1.4-r0` |
+| CVE-2026-107891 | `musl 1.2.6-r3` | 8.1 (High) | `1.2.6-r6` |
+| CVE-2026-95692 | `openssl 3.5.9-r0` | N/A | `3.5.9-r1` |
+| CVE-2026-88823 | `openssl 3.5.9-r0` | N/A | `3.5.9-r1` |
+| CVE-2026-95691 | `openssl 3.5.9-r0` | N/A | `3.5.9-r1` |
+| CVE-2026-88822 | `openssl 3.5.9-r0` | N/A | `3.5.9-r1` |
+| CVE-2026-107496 | `openssl 3.5.9-r0` | N/A | `3.5.9-r1` |
+
+### CVE-2026-4738 · zlib
+
+The issue involves out-of-bounds pointer arithmetic in the contributed `infback9` Deflate64 decoder. The report originally described the copy bundled with GDAL. The zlib maintainer notes that the affected pointers return to a valid range before use and that the arithmetic can trap on capability hardware such as CHERI. Exposure depends on whether a process executes the affected decoder. Alpine 3.24 lists `1.4-r0` as the fixed revision. [zlib release notes](https://zlib.net/) · [Alpine security tracker](https://security.alpinelinux.org/vuln/CVE-2026-4738)
+
+### CVE-2026-107891 · musl libc
+
+Integer overflows in `regcomp()` can lead to undersized allocations and out-of-bounds heap writes when a program compiles an untrusted regular expression. The upstream advisory describes crashes and possible code execution under application-dependent conditions. **Alpine 3.24 stable lists `1.2.6-r3` as fixed**, which matches the revision in the scan. The `1.2.6-r6` revision corresponds to **edge**. [musl advisory](https://www.openwall.com/lists/musl/2026/10/21/1) · [Alpine security tracker](https://security.alpinelinux.org/vuln/CVE-2026-107891)
+
+OpenSSL's 10 November 2026 advisory assigns Low severity to the five OpenSSL entries. The APK revision in the table is the fix target shown by Docker Scout. [OpenSSL advisory](https://openssl-library.org/news/secadv/20261110.txt)
+
+A future release will rebuild on a newer Alpine image with the applicable fixes and scan the resulting image digest. This release pins the older lego `v4.34.0` for simplicity. The project plans to migrate to lego `5.Y.X` after testing the CLI and Cloudflare DNS-01 on the supported architectures. [lego releases](https://github.com/go-acme/lego/releases)
 
 ## :page_facing_up: License
 
