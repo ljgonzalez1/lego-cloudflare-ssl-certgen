@@ -29,7 +29,7 @@ The container wraps lego with YAML configuration, Compose secrets and a certific
 
 ## 🛠️ Build and publish
 
-Version **3.4.0** runs on **Alpine 3.24.4** with **lego v4.34.0**. Build from the directory that contains this README.
+Version **3.4.1** runs on **Alpine 3.24.4** with **lego v4.34.0**. Build from the directory that contains this README.
 
 | Target | Buildx platform | Official lego archive |
 |---|---|---|
@@ -64,11 +64,11 @@ Use your target platform in place of `linux/amd64`. `--load` loads this single-p
 
 ```bash
 docker buildx build --builder lego-multiarch --platform linux/amd64 \
-  --progress=plain --load -t ljgonzalez/lego-cloudflare-certgen:3.4.0 ./build
+  --progress=plain --load -t ljgonzalez/lego-cloudflare-certgen:3.4.1 ./build
 
-docker run --rm --entrypoint lego ljgonzalez/lego-cloudflare-certgen:3.4.0 --version
+docker run --rm --entrypoint lego ljgonzalez/lego-cloudflare-certgen:3.4.1 --version
 docker run --rm -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
-  ljgonzalez/lego-cloudflare-certgen:3.4.0 --list
+  ljgonzalez/lego-cloudflare-certgen:3.4.1 --list
 ```
 
 ### Measure the Alpine runtime image
@@ -76,7 +76,7 @@ docker run --rm -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
 The final stage installs Bash, the CA bundle, PyYAML with Python, `su-exec` and timezone data using `apk add --no-cache`. Only the stripped lego executable and its license cross from the download stage. Compare both local builds on the same platform using the reported image size, in MiB.
 
 ```bash
-for version in 3.2 3.4.0; do
+for version in 3.2 3.4.1; do
   docker image inspect --format '{{.Size}}' "ljgonzalez/lego-cloudflare-certgen:$version" |
     awk -v version="$version" '{printf "%s: %.1f MiB\n", version, $1 / 1048576}'
 done
@@ -92,19 +92,19 @@ docker login --username ljgonzalez
 docker buildx build --builder lego-multiarch \
   --platform linux/amd64,linux/386,linux/arm/v7,linux/arm64 \
   --progress=plain \
-  -t ljgonzalez/lego-cloudflare-certgen:alpine-3.24.4-lego4.34.0-3.4.0 \
-  -t ljgonzalez/lego-cloudflare-certgen:alpine-3.24-lego4.34-3.4.0 \
-  -t ljgonzalez/lego-cloudflare-certgen:lego4.34.0-3.4.0 \
-  -t ljgonzalez/lego-cloudflare-certgen:lego4.34-3.4.0 \
+  -t ljgonzalez/lego-cloudflare-certgen:alpine-3.24.4-lego4.34.0-3.4.1 \
+  -t ljgonzalez/lego-cloudflare-certgen:alpine-3.24-lego4.34-3.4.1 \
+  -t ljgonzalez/lego-cloudflare-certgen:lego4.34.0-3.4.1 \
+  -t ljgonzalez/lego-cloudflare-certgen:lego4.34-3.4.1 \
   -t ljgonzalez/lego-cloudflare-certgen:latest \
-  -t ljgonzalez/lego-cloudflare-certgen:3.4.0 \
+  -t ljgonzalez/lego-cloudflare-certgen:3.4.1 \
   --push ./build
 ```
 
 One `--push` publishes the same multi-platform index under each tag. Publish the release intended for `latest` last.
 
 ```bash
-for tag in alpine-3.24.4-lego4.34.0-3.4.0 alpine-3.24-lego4.34-3.4.0 lego4.34.0-3.4.0 lego4.34-3.4.0 latest 3.4.0; do
+for tag in alpine-3.24.4-lego4.34.0-3.4.1 alpine-3.24-lego4.34-3.4.1 lego4.34.0-3.4.1 lego4.34-3.4.1 latest 3.4.1; do
   docker buildx imagetools inspect "ljgonzalez/lego-cloudflare-certgen:$tag" || break
 done
 ```
@@ -146,7 +146,7 @@ Compose forwards the token as a secret file and reads the other settings from `.
 ```bash
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:3.4.0
+  ljgonzalez/lego-cloudflare-certgen:3.4.1
 ```
 
 Docker Engine 23 and later accept relative bind paths. On older versions, use `"$PWD/domains.yaml:/app/domains.yaml:ro"` and `"$PWD/ssl-certs:/ssl-certs"`. The default Docker capabilities include CHOWN, SETUID and SETGID. `-t` enables ANSI output. [Docker run](https://docs.docker.com/reference/cli/docker/container/run/#volume) · [Default capabilities](https://docs.docker.com/engine/containers/run/#runtime-privilege-and-linux-capabilities)
@@ -198,7 +198,7 @@ All variables are optional unless marked **required**.
 | `UID` | `1000` | :x: | UID used to write certificates and ACME account data |
 | `GID` | `1000` | :x: | GID used to write certificates and ACME account data |
 | `DOMAINS_FILE` | `./domains.yaml` | :x: | Host YAML path for Compose |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.0` | :x: | Image used by Compose |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.1` | :x: | Image used by Compose |
 | `CERTGEN_ENV_FILE` | `./.env` | :x: | Settings file read by the Compose service |
 
 ### Certificate groups and wildcard domains
@@ -290,7 +290,7 @@ Each row counts the DNS names of one selected certificate. The footer totals tho
 
 The request issues one certificate for all its names. A failed order counts all requested names as failed even when some individual DNS challenges passed. Failed or skipped groups produce a nonzero exit status after the report. Check the preceding lego or setup error for the cause.
 
-Run the local regression tests with `python3 -B -m unittest discover -s tests -v` from the repository root. They require Bash, Python 3 and PyYAML. The tests use local fixtures for lego and the release archives.
+Run the local regression tests with `python3 -B -m unittest discover -s tests -v` from the repository root. They require Bash, Python 3 and PyYAML. The 34 tests use local fixtures for lego and the release archives. Coverage includes YAML and CLI validation, token routing, failed and skipped groups, timestamp collisions, ANSI layout and checksums.
 
 ---
 
