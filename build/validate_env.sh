@@ -119,6 +119,16 @@ validate_env() {
         invalid_setting "PROPAGATION_SECONDS: expected a non-negative integer in seconds."
     fi
 
+    VALIDATED_ORDER_TIMEOUT=${ORDER_TIMEOUT_SECONDS:-auto}
+    case "$VALIDATED_ORDER_TIMEOUT" in
+        [Aa][Uu][Tt][Oo]) VALIDATED_ORDER_TIMEOUT=auto ;;
+        *)
+            if ! VALIDATED_ORDER_TIMEOUT=$(parse_uint "$VALIDATED_ORDER_TIMEOUT" 10 2147483647); then
+                invalid_setting "ORDER_TIMEOUT_SECONDS: expected auto, 0 or a positive number of seconds."
+            fi
+            ;;
+    esac
+
     resolvers=${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}
     VALIDATED_DNS_RESOLVERS=
     while [ "${resolvers#* }" != "$resolvers" ]; do
