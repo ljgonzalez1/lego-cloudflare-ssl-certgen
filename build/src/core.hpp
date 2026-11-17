@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 namespace certgen {
@@ -11,5 +12,7 @@ void write_summary();
 void write_identity();
 void set_output_owner(const char* path, const char* uid, const char* gid);
 void write_output_path(const char* mode, const char* root, const char* group);
+std::uint64_t time_limit(std::uint64_t names, std::uint64_t propagation);
+void write_time_limit(const char* names, const char* propagation);
 int supervise(const char* limit, char* command[]);
 }
