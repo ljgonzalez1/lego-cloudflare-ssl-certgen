@@ -52,7 +52,7 @@ ARG TARGETVARIANT
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
-      org.opencontainers.image.version="4.0.0" \
+      org.opencontainers.image.version="4.0.1" \
       org.opencontainers.image.licenses="MIT" \
       com.certgen.alpine.version="${ALPINE_VERSION}" \
       com.certgen.lego.version="${LEGO_VERSION}"

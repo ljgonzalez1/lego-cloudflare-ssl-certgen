@@ -340,7 +340,7 @@ void write_domains(int argc, char* argv[]) {
             std::cout << group.name << '\t';
             const char* separator = "";
             for (const auto& domain : group.domains) {
-                std::cout << separator << domain.value;
+                std::cout << separator << lowercase(domain.value);
                 separator = ",";
             }
             std::cout << '\n';

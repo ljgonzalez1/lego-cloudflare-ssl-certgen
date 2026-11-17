@@ -44,22 +44,43 @@ SH
 cat > "$work/bin/lego" <<'SH'
 #!/bin/sh
 set -eu
+PATH=/usr/local/bin:/usr/bin:/bin
 {
     printf 'order\ntoken=%s\ntoken_file=%s\nlegacy_key=%s\ncname=%s\npropagation=%s\n' \
         "${CF_DNS_API_TOKEN:-}" "${CF_DNS_API_TOKEN_FILE:-}" "${CLOUDFLARE_API_KEY:-}" \
         "$LEGO_DISABLE_CNAME_SUPPORT" "$CLOUDFLARE_PROPAGATION_TIMEOUT"
     printf '%s\n' "$@"
 } >> "$TEST_LEGO_LOG"
+path=
+first=
+previous=
 for argument do
     case "$argument" in
         fail.example.org) exit 17 ;;
+        nocert.example.org) exit 0 ;;
         ratelimited.example.org)
+            # Ignore SIGTERM so only SIGKILL can stop this stand-in.
+            trap '' TERM
             printf '[WARN] retry: acme: error: 429 :: urn:ietf:params:acme:error:rateLimited :: too many certificates\n' >&2
             exec sleep 30
             ;;
-        hang.example.org) exec sleep 30 ;;
+        hang.example.org)
+            trap '' TERM
+            exec sleep 30
+            ;;
     esac
+    case "$previous" in
+        --path) path=$argument ;;
+        --domains) [ -n "$first" ] || first=$argument ;;
+    esac
+    previous=$argument
 done
+case "$first" in
+    '*.'*) first="_${first#\*}" ;;
+esac
+mkdir -p -- "$path/certificates"
+printf 'certificate\n' > "$path/certificates/$first.crt"
+printf 'key\n' > "$path/certificates/$first.key"
 SH
 cat > "$work/bin/curl" <<'SH'
 #!/bin/sh
@@ -85,7 +106,7 @@ for command in dig host nslookup getent; do
     ln -s forbidden-dns "$work/bin/$command"
 done
 export PATH="$work/bin:$PATH"
-unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAME_SUPPORT ORDER_TIMEOUT_SECONDS \
+unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAME_SUPPORT \
     CERT_UID CERT_GID PROPAGATION_SECONDS DNS_RESOLVERS TEST_CALLER_UID TEST_CALLER_GID \
     LEGO_TARBALL LEGO_URL LEGO_SHA256 TARGETARCH TARGETVARIANT
 export UID=1000 GID=1000 EMAIL=test@example.com CLOUDFLARE_API_TOKEN=fixture-token \
@@ -422,41 +443,111 @@ YAML
     diff -u "$work/expected" "$work/rows"
 }
 
+# Print the summary rows as group:attempted:issued:failed:skipped:status:
+summary_rows() {
+    awk -F '|' '/^[|] [a-z]+ / || /^[|] TOTAL / {
+        for (n = 2; n < NF; n++) { gsub(/^ +| +$/, "", $n); printf "%s:", $n }
+        print ""
+    }' "$stdout"
+}
+
+process_gone() {
+    [ ! -e "/proc/$1" ] || grep -q '^State:[[:space:]]*Z' "/proc/$1/status"
+}
+
+core_time_limit() {
+    # (120 s + names x (propagation + 60 s)) x 1.5, rounded up, at most 7200 s.
+    for case in '1 0 270' '9 60 1800' '12 60 2340' '9 360 5850' '5 360 3330' \
+            '96 60 7200' '100 2147483647 7200'; do
+        set -- $case
+        expect_status 0 certgen-core time-limit "$1" "$2"
+        [ "$(cat -- "$stdout")" = "$3" ]
+    done
+    for case in '0 60' '101 60' '1 2147483648' 'x 1' '1 -1'; do
+        expect_status 2 certgen-core time-limit $case
+    done
+    expect_status 0 cli --dry-run --only first --only second
+    assert_contains 'Time limit: 3330s (56 min)' "$stdout"
+    assert_contains 'Time limit: 1440s (24 min)' "$stdout"
+    PROPAGATION_SECONDS=60 expect_status 0 cli --dry-run --only first
+    assert_contains 'Time limit: 1080s (18 min)' "$stdout"
+}
+
+core_supervise() {
+    expect_status 3 certgen-core supervise 5 /bin/sh -c 'echo out; echo err >&2; exit 3'
+    assert_line out "$stdout"
+    assert_line err "$stderr"
+    expect_status 127 certgen-core supervise 5 "$work/missing-command"
+    expect_status 2 certgen-core supervise 0 true
+    # A deadline sends SIGKILL at once, even to a process that ignores SIGTERM,
+    # and reaches everything in lego's process group.
+    started=$(date +%s)
+    expect_status 124 certgen-core supervise 1 /bin/sh -c \
+        'trap "" TERM; sleep 30 & echo $! > "$1"; wait' sh "$work/background.pid"
+    [ $(($(date +%s) - started)) -lt 5 ]
+    sleep 1
+    process_gone "$(cat -- "$work/background.pid")"
+    # Output from lego is still relayed when a leftover process keeps the pipe open.
+    started=$(date +%s)
+    expect_status 4 certgen-core supervise 5 /bin/sh -c 'echo before >&2; (exec sleep 3) & exit 4'
+    [ $(($(date +%s) - started)) -lt 3 ]
+    assert_line before "$stderr"
+}
+
 cli_stops_on_rate_limit() {
-    printf 'limited: [ratelimited.example.org]\n' >> "$file"
+    printf "limited: [ratelimited.example.org, www.limited.example.org, '*.limited.example.org']\n" >> "$file"
     started=$(date +%s)
     expect_status 1 cli --only limited --only first
-    [ $(($(date +%s) - started)) -lt 10 ]
+    [ $(($(date +%s) - started)) -lt 5 ]
     assert_contains 'urn:ietf:params:acme:error:rateLimited' "$stderr"
-    assert_contains "limited: Let's Encrypt rate limit reached" "$stderr"
+    assert_contains "limited: Let's Encrypt rate limit reached. lego was stopped." "$stderr"
     assert_contains 'Certificates: 2 attempted, 1 issued, 1 failed, 0 skipped.' "$stdout"
+    summary_rows > "$work/rows"
+    printf 'first:5:5:0:0:ISSUED:\nlimited:3:0:3:0:FAILED:\nTOTAL:8:5:3:0::\n' > "$work/expected"
+    diff -u "$work/expected" "$work/rows"
 }
 
 cli_stops_at_time_limit() {
-    printf 'stuck: [hang.example.org]\n' >> "$file"
+    printf "stuck: [hang.example.org, '*.stuck.example.org']\nlast: [last.example.org]\n" >> "$file"
+    # Shorten only the computed limit; supervise, lego and the scripts stay real.
+    mkdir -- "$work/short-limit"
+    cat > "$work/short-limit/certgen-core" <<SH
+#!/bin/sh
+if [ "\$1" = time-limit ]; then
+    echo 1
+else
+    exec "$work/bin/certgen-core" "\$@"
+fi
+SH
+    chmod +x "$work/short-limit/certgen-core"
     started=$(date +%s)
-    ORDER_TIMEOUT_SECONDS=1 expect_status 1 cli --only stuck
-    [ $(($(date +%s) - started)) -lt 10 ]
-    assert_contains 'stuck: lego stopped after the 1s time limit' "$stderr"
-    assert_contains 'Certificates: 1 attempted, 0 issued, 1 failed, 0 skipped.' "$stdout"
+    PATH="$work/short-limit:$PATH" expect_status 1 cli --only stuck --only last
+    [ $(($(date +%s) - started)) -lt 5 ]
+    assert_contains 'stuck: lego did not finish within 1s and was stopped with SIGKILL.' "$stderr"
+    assert_line 'last.example.org' "$TEST_LEGO_LOG"
+    summary_rows > "$work/rows"
+    printf 'stuck:2:0:2:0:FAILED:\nlast:1:1:0:0:ISSUED:\nTOTAL:3:1:2:0::\n' > "$work/expected"
+    diff -u "$work/expected" "$work/rows"
 }
 
-cli_time_limit_settings() {
-    expect_status 0 cli --dry-run --only first
-    assert_contains 'Time limit: 3600s' "$stdout"
-    PROPAGATION_SECONDS=1000 expect_status 0 cli --dry-run --only first
-    assert_contains 'Time limit: 5600s' "$stdout"
-    ORDER_TIMEOUT_SECONDS=AUTO PROPAGATION_SECONDS=1000 expect_status 0 cli --dry-run --only second
-    assert_contains 'Time limit: 3600s' "$stdout"
-    ORDER_TIMEOUT_SECONDS=0 expect_status 0 cli --dry-run --only first
-    assert_contains 'Time limit: none' "$stdout"
-    ORDER_TIMEOUT_SECONDS=0090 expect_status 0 cli --dry-run --only first
-    assert_contains 'Time limit: 90s' "$stdout"
-    for value in -1 1h 2147483648; do
-        ORDER_TIMEOUT_SECONDS=$value expect_status 2 cli
-        assert_contains 'ORDER_TIMEOUT_SECONDS:' "$stderr"
-    done
-    [ ! -s "$TEST_LEGO_LOG" ]
+cli_requires_saved_certificate() {
+    printf "missing: [nocert.example.org, '*.nocert.example.org']\nwild: ['*.wild.example.org', wild.example.org]\n" >> "$file"
+    expect_status 1 cli --only missing --only wild
+    assert_contains 'missing: lego finished, but no certificate was saved' "$stderr"
+    find "$output/wild" -name '_.wild.example.org.crt' | grep -q .
+    summary_rows > "$work/rows"
+    printf 'missing:2:0:2:0:FAILED:\nwild:2:2:0:0:ISSUED:\nTOTAL:4:2:2:0::\n' > "$work/expected"
+    diff -u "$work/expected" "$work/rows"
+}
+
+cli_lowercases_names() {
+    printf 'mixed: [Mixed.Example.ORG, "*.Apps.Example.org"]\n' >> "$file"
+    expect_status 0 read_domains mixed
+    assert_line 'mixed	mixed.example.org,*.apps.example.org' "$stdout"
+    expect_status 0 cli --only mixed
+    assert_line 'mixed.example.org' "$TEST_LEGO_LOG"
+    assert_absent 'Mixed.Example.ORG' "$TEST_LEGO_LOG"
+    find "$output/mixed" -name 'mixed.example.org.crt' | grep -q .
 }
 
 cli_retries_and_timestamps() {
@@ -630,9 +721,12 @@ check 'Compose secret is passed through lego’s token-file option' cli_routes_s
 check 'Invalid CNAME delegation setting skips issuance' cli_rejects_invalid_delegation
 check 'Missing output path skips issuance' cli_missing_output
 check 'Mixed group outcomes, continuation, order and precise totals' cli_group_results
-check 'Rate limit stops lego without waiting for Retry-After' cli_stops_on_rate_limit
-check 'Per-certificate time limit stops a stalled lego' cli_stops_at_time_limit
-check 'Automatic, disabled and invalid time limits' cli_time_limit_settings
+check 'Computed time limit: estimate x 1.5, at most two hours' core_time_limit
+check 'Supervisor exit codes, SIGKILL and process group' core_supervise
+check 'Rate limit kills lego and fails every name of that certificate' cli_stops_on_rate_limit
+check 'Time limit kills a stalled lego and the next group still runs' cli_stops_at_time_limit
+check 'Exit status 0 without certificate files counts as failed' cli_requires_saved_certificate
+check 'DNS names are passed to lego in lowercase' cli_lowercases_names
 check 'Concurrent runs reserve distinct timestamp paths' cli_retries_and_timestamps
 check 'Actual Linux UID/GID and output directory preview' core_runtime
 check 'Issuance with only the shell, C++ binary and lego on PATH' cli_minimal_runtime
