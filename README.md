@@ -272,6 +272,7 @@ Settings are optional unless marked **required**.
 | `PRODUCTION` | `false` | :x: | `true` issues browser-trusted certificates. `false` uses staging. |
 | `TZ` | `Etc/UTC` | :x: | IANA timezone used in folder names and log timestamps |
 | `PROPAGATION_SECONDS` | `360` | :x: | Maximum wait for TXT propagation per challenge, in seconds |
+| `ORDER_TIMEOUT_SECONDS` | `auto` | :x: | Time limit for each certificate request. `auto` allows `PROPAGATION_SECONDS` per name plus 10 minutes, and at least 1 hour. `0` disables the limit. |
 | `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | :x: | Comma-separated `host:port` resolvers used to check TXT visibility |
 | `UID` | `1000` | :x: | Non-zero UID that owns the certificates and ACME account data |
 | `GID` | `1000` | :x: | Non-zero GID that owns the certificates and ACME account data |
@@ -480,7 +481,7 @@ docker buildx build --builder lego-multiarch \
 
 ## :test_tube: Tests
 
-`tests/run.sh` holds 38 offline tests. They cover YAML and CLI validation, credential handling, the DNS-01 arguments for A, AAAA, CNAME, wildcard and planned names, concurrent output paths, mixed certificate results, ANSI alignment and the release checksums. Local stand-ins replace lego and curl, so nothing touches the network. GitHub Actions runs them on every push and pull request.
+`tests/run.sh` holds 41 offline tests. They cover YAML and CLI validation, credential handling, the DNS-01 arguments for A, AAAA, CNAME, wildcard and planned names, rate limits and time limits, concurrent output paths, mixed certificate results, ANSI alignment and the release checksums. Local stand-ins replace lego and curl, so nothing touches the network. GitHub Actions runs them on every push and pull request.
 
 On Debian or Ubuntu:
 
@@ -496,7 +497,7 @@ docker run --rm -v "$PWD:/src:ro" -w /src alpine:3.24.4 \
   sh -c 'apk add --no-cache build-base yaml-dev util-linux-misc >/dev/null && sh tests/run.sh'
 ```
 
-The last line should read `38 passed, 0 failed, 0 skipped`. Three terminal tests need the util-linux `script` command. Without it they are skipped.
+The last line should read `41 passed, 0 failed, 0 skipped`. Three terminal tests need the util-linux `script` command. Without it they are skipped.
 
 The scripts in `build/` must keep their executable bit in Git, because `entrypoint.sh` runs `run_lego.sh` directly. If the tests stop with `Bail out! … is not executable`, restore the bit and commit:
 
@@ -615,7 +616,7 @@ A future release will use a newer Alpine image and check the fixes against its d
 | `build/entrypoint.sh` | CLI parsing, output directory and privilege drop |
 | `build/validate_env.sh` | Logging and configuration validation |
 | `build/run_lego.sh` | One lego request per selected certificate |
-| `build/src/` | C++ YAML validator, runtime helpers and ANSI report |
+| `build/src/` | C++ YAML validator, runtime helpers, lego watchdog and ANSI report |
 | `tests/run.sh` | Offline regression tests |
 | `.github/workflows/tests.yml` | Runs the tests on GitHub Actions |
 
@@ -627,7 +628,9 @@ A future release will use a newer Alpine image and check the fixes against its d
 - **One certificate per group.** Groups run in YAML order. If one fails, the rest still run and the exit status is nonzero. Retry a single group with `--only`.
 - **Fresh output every time.** Each run creates a new timestamped folder per group. Nothing is overwritten.
 - **Renewal.** The container issues new certificates and exits. Schedule it, for example with cron or a systemd timer, to renew before expiry.
-- **Rate limits.** Production limits apply per registered domain and per identical set of names. See [Let's Encrypt rate limits](https://letsencrypt.org/docs/rate-limits/).
+- **Rate limits.** Production limits apply per registered domain and per identical set of names. Every run requests new certificates, so repeated production runs for the same group use up the limit of 5 per week quickly. Test with staging first. See [Let's Encrypt rate limits](https://letsencrypt.org/docs/rate-limits/).
+- **No waiting on rate limits.** When Let's Encrypt answers with a rate limit, lego would sleep until the `Retry-After` time, often many hours. The container stops that request at once, marks the group as failed and continues with the next one. The lego output above the summary shows when to retry.
+- **Time limit per certificate.** If a request takes longer than `ORDER_TIMEOUT_SECONDS`, lego is stopped and the group is marked as failed. A request stopped while waiting for propagation can leave `_acme-challenge` TXT records in Cloudflare. Delete them by hand.
 
 ---
 

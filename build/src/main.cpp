@@ -29,11 +29,15 @@ int main(int argc, char* argv[]) {
             certgen::write_identity();
         } else if (command == "own-output" && argc == 5) {
             certgen::set_output_owner(argv[2], argv[3], argv[4]);
+        } else if (command == "supervise" && argc >= 4) {
+            std::cout.flush();
+            return certgen::supervise(argv[2], argv + 3);
         } else if (command == "output-path" && argc == 5) {
             certgen::write_output_path(argv[2], argv[3], argv[4]);
         } else {
             std::cerr << "Usage: certgen-core domains FILE [GROUP...] | summary | identity"
-                         " | own-output PATH UID GID | output-path ACTION DIRECTORY GROUP\n";
+                         " | own-output PATH UID GID | output-path ACTION DIRECTORY GROUP"
+                         " | supervise SECONDS COMMAND...\n";
             return 2;
         }
         std::cout.flush();

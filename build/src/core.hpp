@@ -11,4 +11,5 @@ void write_summary();
 void write_identity();
 void set_output_owner(const char* path, const char* uid, const char* gid);
 void write_output_path(const char* mode, const char* root, const char* group);
+int supervise(const char* limit, char* command[]);
 }
