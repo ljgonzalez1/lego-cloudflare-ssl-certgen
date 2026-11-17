@@ -9,6 +9,15 @@ mkdir "$work/bin"
 entry="$root/build/entrypoint.sh"
 download="$root/build/download_lego.sh"
 
+# entrypoint.sh executes run_lego.sh directly, so Git must keep its executable bit.
+for script in "$root"/build/*.sh; do
+    if [ ! -x "$script" ]; then
+        printf 'Bail out! %s is not executable. Run: git update-index --chmod=+x build/*.sh\n' \
+            "${script#"$root"/}" >&2
+        exit 1
+    fi
+done
+
 # Allow a precompiled executable when testing with a different Alpine toolchain.
 if [ -n "${CERTGEN_CORE:-}" ]; then
     cp -- "$CERTGEN_CORE" "$work/certgen-core"
