@@ -391,7 +391,7 @@ The first order succeeds. The second hits a TXT propagation timeout. The report 
 | Tag | Use it when |
 |---|---|
 | `v4.1.0` | You want a fixed image. **Recommended.** |
-| `v4.0`, `v4` | You want future patch or minor releases of version 4 |
+| `v4.1`, `v4` | You want future patch or minor releases of version 4 |
 | `latest` | You always want the newest release |
 | `alpine3.24.4-lego4.34.0-v4.1.0` | You want the base and lego versions in the tag name |
 
