@@ -43,7 +43,7 @@ exec "$@"
 SH
 cat > "$work/bin/lego" <<'SH'
 #!/bin/sh
-set -eu
+set -euf
 PATH=/usr/local/bin:/usr/bin:/bin
 {
     printf 'order\ntoken=%s\ntoken_file=%s\nlegacy_key=%s\ncname=%s\npropagation=%s\n' \
@@ -51,8 +51,13 @@ PATH=/usr/local/bin:/usr/bin:/bin
         "$LEGO_DISABLE_CNAME_SUPPORT" "$CLOUDFLARE_PROPAGATION_TIMEOUT"
     printf '%s\n' "$@"
 } >> "$TEST_LEGO_LOG"
+if [ -n "${TEST_LEGO_REPLAY:-}" ]; then
+    cat -- "$TEST_LEGO_REPLAY" >&2
+    exit "${TEST_LEGO_REPLAY_STATUS:-1}"
+fi
 path=
 first=
+names=
 previous=
 for argument do
     case "$argument" in
@@ -71,10 +76,33 @@ for argument do
     esac
     case "$previous" in
         --path) path=$argument ;;
-        --domains) [ -n "$first" ] || first=$argument ;;
+        --domains)
+            [ -n "$first" ] || first=$argument
+            names="$names$argument
+"
+            ;;
     esac
     previous=$argument
 done
+# Log lines in lego v4.34.0's own format, on stderr; its advice text goes to stdout.
+info() {
+    printf '%s [INFO] %s\n' "$(date '+%Y/%m/%d %H:%M:%S')" "$1" >&2
+}
+joined=$(printf '%s' "$names" | paste -sd, - | sed 's/,/, /g')
+printf '!!!! HEADS UP !!!!\n\nYour account credentials have been saved.\n'
+info 'acme: Registering account for test@example.com'
+info "[$joined] acme: Obtaining bundled SAN certificate"
+printf '%s' "$names" | while IFS= read -r name; do
+    info "[$name] acme: Preparing to solve DNS-01"
+    info "cloudflare: new record for ${name#\*.}, ID 0123456789abcdef"
+done
+printf '%s' "$names" | while IFS= read -r name; do
+    info "[$name] acme: Trying to solve DNS-01"
+    info 'Wait for propagation [timeout: 1m0s, interval: 2s]'
+    info "[$name] The server validated our request"
+done
+info "[$joined] acme: Validations succeeded; requesting certificates"
+info "[$first] Server responded with a certificate."
 case "$first" in
     '*.'*) first="_${first#\*}" ;;
 esac
@@ -106,7 +134,7 @@ for command in dig host nslookup getent; do
     ln -s forbidden-dns "$work/bin/$command"
 done
 export PATH="$work/bin:$PATH"
-unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAME_SUPPORT \
+unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAME_SUPPORT LEGO_OUTPUT \
     CERT_UID CERT_GID PROPAGATION_SECONDS DNS_RESOLVERS TEST_CALLER_UID TEST_CALLER_GID \
     LEGO_TARBALL LEGO_URL LEGO_SHA256 TARGETARCH TARGETVARIANT
 export UID=1000 GID=1000 EMAIL=test@example.com CLOUDFLARE_API_TOKEN=fixture-token \
@@ -475,7 +503,8 @@ core_time_limit() {
 
 core_supervise() {
     expect_status 3 certgen-core supervise 5 /bin/sh -c 'echo out; echo err >&2; exit 3'
-    assert_line out "$stdout"
+    # lego's stdout and stderr are both relayed on stderr.
+    assert_line out "$stderr"
     assert_line err "$stderr"
     expect_status 127 certgen-core supervise 5 "$work/missing-command"
     expect_status 2 certgen-core supervise 0 true
@@ -538,6 +567,153 @@ cli_requires_saved_certificate() {
     summary_rows > "$work/rows"
     printf 'missing:2:0:2:0:FAILED:\nwild:2:2:0:0:ISSUED:\nTOTAL:4:2:2:0::\n' > "$work/expected"
     diff -u "$work/expected" "$work/rows"
+}
+
+# Strip ANSI sequences and turn carriage returns into new lines.
+plain_view() {
+    sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1" | tr '\r' '\n'
+}
+
+cli_raw_output_and_log() {
+    LEGO_OUTPUT=raw expect_status 0 cli --only second
+    assert_contains '[INFO] [*.example.org] The server validated our request' "$stderr"
+    assert_contains '🔹 *.example.org' "$stdout"
+    log=$(find "$output/second" -name lego.log)
+    assert_contains 'Server responded with a certificate' "$log"
+    assert_contains 'HEADS UP' "$log"
+    [ "$(stat -c %a -- "$log")" = 600 ]
+}
+
+cli_live_view() {
+    LEGO_OUTPUT=pretty expect_status 0 cli --only first
+    plain_view "$stdout" > "$work/view"
+    for name in a.example.com v6.example.com alias.example.com '*.nested.example.com' planned.example.com; do
+        grep -E "^✅ $(printf '%s' "$name" | sed 's/[.*]/\\&/g') +verified in [0-9]+s$" "$work/view"
+    done
+    assert_contains '✅ Certificate received · 5/5 names verified' "$work/view"
+    assert_absent '🔹 a.example.com' "$work/view"
+    # lego's log and advice text stay out of the terminal but are kept in the log.
+    assert_absent '[INFO]' "$stderr"
+    assert_absent 'HEADS UP' "$stdout"
+    assert_contains 'HEADS UP' "$(find "$output/first" -name lego.log)"
+    assert_contains 'Certificates: 1 attempted, 1 issued, 0 failed, 0 skipped.' "$stdout"
+}
+
+cli_live_view_replays_failure() {
+    cat > "$work/familita.log" <<'LOG'
+2026/11/17 06:53:54 No key found for account user@example.com. Generating a P256 key.
+2026/11/17 06:53:54 Saved key to /ssl-certs/familita/x/accounts/acme-v02.api.letsencrypt.org/user@example.com/keys/user@example.com.key
+2026/11/17 06:53:55 [INFO] acme: Registering account for user@example.com
+!!!! HEADS UP !!!!
+
+Your account credentials have been saved in your
+configuration directory at "/ssl-certs/familita/x/accounts".
+2026/11/17 06:53:55 [INFO] [familita.cl, *.familita.cl, *.drive.familita.cl, *.cloud.familita.cl, *.mail.familita.com] acme: Obtaining bundled SAN certificate
+2026/11/17 06:53:56 [INFO] [*.cloud.familita.cl] AuthURL: https://acme-v02.api.letsencrypt.org/acme/authz/1/902
+2026/11/17 06:53:56 [INFO] [*.drive.familita.cl] AuthURL: https://acme-v02.api.letsencrypt.org/acme/authz/1/912
+2026/11/17 06:53:56 [INFO] [*.familita.cl] AuthURL: https://acme-v02.api.letsencrypt.org/acme/authz/1/932
+2026/11/17 06:53:56 [INFO] [*.mail.familita.com] AuthURL: https://acme-v02.api.letsencrypt.org/acme/authz/1/962
+2026/11/17 06:53:56 [INFO] [familita.cl] AuthURL: https://acme-v02.api.letsencrypt.org/acme/authz/1/012
+2026/11/17 06:53:56 [INFO] [*.cloud.familita.cl] acme: use dns-01 solver
+2026/11/17 06:53:56 [INFO] [familita.cl] acme: Could not find solver for: tls-alpn-01
+2026/11/17 06:53:56 [INFO] [familita.cl] acme: use dns-01 solver
+2026/11/17 06:53:56 [INFO] [*.cloud.familita.cl] acme: Preparing to solve DNS-01
+2026/11/17 06:53:59 [INFO] cloudflare: new record for cloud.familita.cl, ID 8b94562244dabc3c8b247f52306645b0
+2026/11/17 06:54:00 [INFO] [familita.cl] acme: Preparing to solve DNS-01
+2026/11/17 06:54:01 [INFO] cloudflare: new record for familita.cl, ID aec28ebbc2666dafd23e76586e2ff533
+2026/11/17 06:54:01 [INFO] [*.drive.familita.cl] acme: Preparing to solve DNS-01
+2026/11/17 06:54:01 [INFO] cloudflare: new record for drive.familita.cl, ID 9150d8c348ec4abf33b8ca3dcbbf76be
+2026/11/17 06:54:01 [INFO] [*.familita.cl] acme: Preparing to solve DNS-01
+2026/11/17 06:54:02 [INFO] cloudflare: new record for familita.cl, ID aa896a73f11a6d6ba82e03400d079657
+2026/11/17 06:54:02 [INFO] [*.mail.familita.com] acme: Preparing to solve DNS-01
+2026/11/17 06:54:15 [INFO] [*.cloud.familita.cl] acme: Trying to solve DNS-01
+2026/11/17 06:54:15 [INFO] [*.cloud.familita.cl] acme: Checking DNS record propagation. [nameservers=1.1.1.1:53,8.8.8.8:53,1.0.0.1:53]
+2026/11/17 06:54:17 [INFO] Wait for propagation [timeout: 1m0s, interval: 2s]
+2026/11/17 06:54:22 [INFO] [*.cloud.familita.cl] The server validated our request
+2026/11/17 06:54:37 [INFO] [familita.cl] acme: Trying to solve DNS-01
+2026/11/17 06:54:37 [INFO] [familita.cl] acme: Checking DNS record propagation. [nameservers=1.1.1.1:53,8.8.8.8:53,1.0.0.1:53]
+2026/11/17 06:54:39 [INFO] Wait for propagation [timeout: 1m0s, interval: 2s]
+2026/11/17 06:54:43 [INFO] [familita.cl] The server validated our request
+2026/11/17 06:54:43 [INFO] [*.drive.familita.cl] acme: Trying to solve DNS-01
+2026/11/17 06:54:43 [INFO] [*.drive.familita.cl] acme: Checking DNS record propagation. [nameservers=1.1.1.1:53,8.8.8.8:53,1.0.0.1:53]
+2026/11/17 06:54:45 [INFO] Wait for propagation [timeout: 1m0s, interval: 2s]
+2026/11/17 06:54:51 [INFO] [*.drive.familita.cl] The server validated our request
+2026/11/17 06:54:51 [INFO] [*.familita.cl] acme: Trying to solve DNS-01
+2026/11/17 06:54:51 [INFO] [*.familita.cl] acme: Checking DNS record propagation. [nameservers=1.1.1.1:53,8.8.8.8:53,1.0.0.1:53]
+2026/11/17 06:54:53 [INFO] Wait for propagation [timeout: 1m0s, interval: 2s]
+2026/11/17 06:54:58 [INFO] [*.familita.cl] The server validated our request
+2026/11/17 06:55:29 [INFO] [*.cloud.familita.cl] acme: Cleaning DNS-01 challenge
+2026/11/17 06:55:31 [INFO] [familita.cl] acme: Cleaning DNS-01 challenge
+2026/11/17 06:55:33 [INFO] [*.mail.familita.com] acme: Cleaning DNS-01 challenge
+2026/11/17 06:55:33 [WARN] [*.mail.familita.com] acme: cleaning up failed: cloudflare: failed to find zone com.: zone could not be found 
+2026/11/17 06:55:35 [INFO] Skipping deactivating of valid auth: https://acme-v02.api.letsencrypt.org/acme/authz/1/902
+2026/11/17 06:55:36 [INFO] Deactivating auth: https://acme-v02.api.letsencrypt.org/acme/authz/1/962
+2026/11/17 06:55:37 Could not obtain certificates:
+	error: one or more domains had a problem:
+[*.mail.familita.com] [*.mail.familita.com] acme: error presenting token: cloudflare: failed to find zone com.: zone could not be found
+LOG
+    printf "familita: [familita.cl, '*.familita.cl', '*.drive.familita.cl', '*.cloud.familita.cl', '*.mail.familita.com']\n" >> "$file"
+    COLUMNS=120 TEST_LEGO_REPLAY="$work/familita.log" LEGO_OUTPUT=pretty expect_status 1 cli --only familita
+    plain_view "$stdout" > "$work/view"
+    # Durations come from lego's timestamps.
+    assert_line '✅ familita.cl          verified in 6s' "$work/view"
+    assert_line '✅ *.cloud.familita.cl  verified in 7s' "$work/view"
+    assert_line '✅ *.drive.familita.cl  verified in 8s' "$work/view"
+    grep -q '^❌ \*\.mail\.familita\.com  error presenting token: cloudflare: failed to find zone com\.' "$work/view"
+    grep -q '^❌ No certificate · 4/5 names verified · 1 failed · ' "$work/view"
+    assert_contains '   *.mail.familita.com: acme: error presenting token' "$work/view"
+    # The cleanup warning repeats that error, so it is not shown again.
+    assert_absent 'cleaning up failed' "$work/view"
+    assert_contains 'familita: lego exited with code 1.' "$stderr"
+    assert_contains 'Full lego output:' "$stdout"
+    summary_rows > "$work/rows"
+    printf 'familita:5:0:5:0:FAILED:\nTOTAL:5:0:5:0::\n' > "$work/expected"
+    diff -u "$work/expected" "$work/rows"
+}
+
+cli_live_view_clock() {
+    # Durations cross midnight, and a small step back in lego's clock is not a new day.
+    cat > "$work/clock.log" <<'LOG'
+2026/11/17 23:59:58 [INFO] [a.example.com] acme: Trying to solve DNS-01
+2026/11/18 00:00:05 [INFO] [a.example.com] The server validated our request
+2026/11/18 00:00:09 [INFO] [b.example.com] acme: Trying to solve DNS-01
+2026/11/18 00:00:07 [INFO] [b.example.com] The server validated our request
+2026/11/18 00:00:12 [INFO] [a.example.com, b.example.com] acme: Validations succeeded; requesting certificates
+2026/11/18 00:00:13 [INFO] [a.example.com] Server responded with a certificate.
+LOG
+    printf 'clock: [a.example.com, b.example.com]\n' >> "$file"
+    TEST_LEGO_REPLAY="$work/clock.log" TEST_LEGO_REPLAY_STATUS=0 LEGO_OUTPUT=pretty \
+        expect_status 1 cli --only clock
+    plain_view "$stdout" > "$work/view"
+    assert_line '✅ a.example.com  verified in 7s' "$work/view"
+    assert_line '✅ b.example.com  verified in 0s' "$work/view"
+    assert_line '✅ Certificate received · 2/2 names verified · 15s' "$work/view"
+    # lego claimed success without saving files, so the group still fails.
+    assert_contains 'clock: lego finished, but no certificate was saved' "$stderr"
+}
+
+cli_live_view_terminal() {
+    # In a terminal tall enough for the list, lines are rewritten in place.
+    export CERTGEN_TEST_ENTRY="$entry" CERTGEN_TEST_FILE="$file" CERTGEN_TEST_OUTPUT="$output"
+    LINES=30 COLUMNS=100 script -q -e -c \
+        '/bin/sh "$CERTGEN_TEST_ENTRY" --config "$CERTGEN_TEST_FILE" --output "$CERTGEN_TEST_OUTPUT" --only first' \
+        /dev/null > "$stdout"
+    assert_contains "$(printf '\033[5A')" "$stdout"
+    assert_contains "$(printf '\033[1A')" "$stdout"
+    plain_view "$stdout" > "$work/view"
+    assert_contains '✅ Certificate received · 5/5 names verified' "$work/view"
+    # No line of the view may wrap. Paths printed by the shell are not part of it.
+    grep 'verified' "$work/view" > "$work/view-lines"
+    [ -s "$work/view-lines" ]
+    while IFS= read -r view_line; do
+        [ "$(printf '%s' "$view_line" | LC_ALL=C.UTF-8 wc -m)" -le 99 ]
+    done < "$work/view-lines"
+}
+
+cli_rejects_lego_output() {
+    LEGO_OUTPUT=fancy expect_status 2 cli
+    assert_contains 'LEGO_OUTPUT: expected auto, pretty or raw.' "$stderr"
+    [ ! -s "$TEST_LEGO_LOG" ]
 }
 
 cli_lowercases_names() {
@@ -624,7 +800,7 @@ archive_fixtures() {
     mkdir -- "$TEST_FIXTURES" "$work/archive"
     printf '#!/bin/sh\nprintf "lego fixture\\n"\n' > "$work/archive/lego"
     printf 'Test license\n' > "$work/archive/LICENSE"
-    for architecture in amd64 386 armv7 arm64; do
+    for architecture in amd64 386 armv6 armv7 arm64; do
         archive="lego_v4.34.0_linux_$architecture.tar.gz"
         tar -czf "$TEST_FIXTURES/$archive" -C "$work/archive" lego LICENSE
     done
@@ -646,7 +822,7 @@ test_download() {
 }
 
 unsupported_targets() {
-    for target in arm/v5 arm/v6 arm/ riscv64/ amd64/v3; do
+    for target in arm/v5 arm/ riscv64/ amd64/v3; do
         TARGETARCH="${target%/*}" TARGETVARIANT="${target#*/}" \
             expect_status 2 /bin/sh "$download" "$work/downloaded"
         assert_contains 'Unsupported target platform' "$stderr"
@@ -727,6 +903,11 @@ check 'Rate limit kills lego and fails every name of that certificate' cli_stops
 check 'Time limit kills a stalled lego and the next group still runs' cli_stops_at_time_limit
 check 'Exit status 0 without certificate files counts as failed' cli_requires_saved_certificate
 check 'DNS names are passed to lego in lowercase' cli_lowercases_names
+check 'Raw lego output is shown and always saved to lego.log' cli_raw_output_and_log
+check 'Live view marks every verified name and hides lego noise' cli_live_view
+check 'Live view replays a real lego failure with exact durations' cli_live_view_replays_failure
+check 'Live view durations use lego clock across midnight' cli_live_view_clock
+check 'Invalid LEGO_OUTPUT skips issuance' cli_rejects_lego_output
 check 'Concurrent runs reserve distinct timestamp paths' cli_retries_and_timestamps
 check 'Actual Linux UID/GID and output directory preview' core_runtime
 check 'Issuance with only the shell, C++ binary and lego on PATH' cli_minimal_runtime
@@ -736,12 +917,14 @@ if command -v script >/dev/null; then
     check 'ANSI and aligned full-width grid' summary_tty_width 80 Certificate
     check 'ANSI and aligned compact grid' summary_tty_width 48 Tried
     check 'ANSI and aligned narrow vertical grid' summary_tty_width 28 'Attempted 100'
+    check 'Live view rewrites lines in place in a terminal' cli_live_view_terminal
 else
-    skipped=3
-    printf '# Skipped three PTY cases. Install util-linux script to run them.\n'
+    skipped=4
+    printf '# Skipped four PTY cases. Install util-linux script to run them.\n'
 fi
 check 'Official amd64 release asset' test_download amd64 '' amd64
 check 'Official i386 release asset' test_download 386 '' 386
+check 'Official ARMv6 release asset' test_download arm v6 armv6
 check 'Official ARMv7 release asset' test_download arm v7 armv7
 check 'Official ARM64 release asset' test_download arm64 v8 arm64
 check 'Unsupported architectures fail before network requests' unsupported_targets

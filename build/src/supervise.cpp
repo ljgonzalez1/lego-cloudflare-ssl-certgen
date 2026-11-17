@@ -1,4 +1,5 @@
 #include "core.hpp"
+#include "lego_view.hpp"
 
 #include <fcntl.h>
 #include <poll.h>
@@ -12,6 +13,7 @@
 #include <cstring>
 #include <ctime>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -88,10 +90,39 @@ void write_time_limit(const char* names, const char* propagation) {
     std::cout << time_limit(read_number(names), read_number(propagation)) << '\n';
 }
 
-int supervise(const char* limit_text, char* command[]) {
-    const auto limit = read_number(limit_text);
+// certgen-core supervise [--log FILE] [--view NAME,...] SECONDS COMMAND...
+// --log appends everything lego prints to FILE.
+// --view shows the live view on stdout instead of lego's own output.
+int supervise(int argc, char* argv[]) {
+    const char* log_path = nullptr;
+    const char* view_names = nullptr;
+    int argument = 0;
+    while (argument + 1 < argc && (std::string_view(argv[argument]) == "--log" ||
+                                   std::string_view(argv[argument]) == "--view")) {
+        (std::string_view(argv[argument]) == "--log" ? log_path : view_names) = argv[argument + 1];
+        argument += 2;
+    }
+    if (argc - argument < 2) {
+        throw std::runtime_error("expected SECONDS COMMAND...");
+    }
+    const auto limit = read_number(argv[argument]);
+    char** command = argv + argument + 1;
     if (limit < 1) {
         throw std::runtime_error("time limit must be at least one second");
+    }
+    int log_fd = -1;
+    if (log_path) {
+        log_fd = open(log_path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+        if (log_fd < 0) {
+            os_error("cannot open the lego log");
+        }
+    }
+    std::unique_ptr<LegoView> view;
+    if (view_names && *view_names == '\0') {
+        view_names = nullptr;
+    }
+    if (view_names) {
+        view = std::make_unique<LegoView>(view_names, limit, STDOUT_FILENO);
     }
     const int forwarded[] = {SIGINT, SIGTERM, SIGHUP};
     sigset_t blocked;
@@ -129,6 +160,8 @@ int supervise(const char* limit_text, char* command[]) {
             signal(signal_number, SIG_DFL);
         }
         sigprocmask(SIG_SETMASK, &previous, nullptr);
+        // lego logs to stderr and prints advice to stdout; both go to the log file.
+        dup2(stderr_pipe[1], STDOUT_FILENO);
         dup2(stderr_pipe[1], STDERR_FILENO);
         close(stderr_pipe[0]);
         close(stderr_pipe[1]);
@@ -149,6 +182,9 @@ int supervise(const char* limit_text, char* command[]) {
     }
 
     const double deadline = now() + static_cast<double>(limit);
+    if (view) {
+        view->start(now());
+    }
     bool timed_out = false;
     bool rate_limited = false;
     bool killed = false;
@@ -168,7 +204,14 @@ int supervise(const char* limit_text, char* command[]) {
             close(stderr_pipe[0]);
             return false;
         }
-        write_all(STDERR_FILENO, buffer, static_cast<std::size_t>(count));
+        if (log_fd >= 0) {
+            write_all(log_fd, buffer, static_cast<std::size_t>(count));
+        }
+        if (view) {
+            view->feed(std::string_view(buffer, static_cast<std::size_t>(count)), now());
+        } else {
+            write_all(STDERR_FILENO, buffer, static_cast<std::size_t>(count));
+        }
         line.append(buffer, static_cast<std::size_t>(count));
         if (line.find(rate_limit_marker) != std::string::npos) {
             rate_limited = true;
@@ -192,17 +235,18 @@ int supervise(const char* limit_text, char* command[]) {
             if (pipe_open) {
                 close(stderr_pipe[0]);
             }
+            if (log_fd >= 0) {
+                close(log_fd);
+            }
             // 124 matches timeout(1). 75 is EX_TEMPFAIL: retry after the limit resets.
-            if (timed_out) {
-                return 124;
+            const int result = timed_out      ? 124
+                               : rate_limited ? 75
+                               : WIFEXITED(status) ? WEXITSTATUS(status)
+                                                   : 128 + WTERMSIG(status);
+            if (view) {
+                view->finish(result, timed_out ? 124 : rate_limited ? 75 : 0, now());
             }
-            if (rate_limited) {
-                return 75;
-            }
-            if (WIFEXITED(status)) {
-                return WEXITSTATUS(status);
-            }
-            return 128 + WTERMSIG(status);
+            return result;
         }
 
         if (forwarded_signal != 0) {
@@ -218,7 +262,11 @@ int supervise(const char* limit_text, char* command[]) {
             killed = true;
         }
 
-        double wait_for = killed ? 0.1 : (remaining < 1.0 ? remaining : 1.0);
+        if (view) {
+            view->tick(now());
+        }
+        const double step = view ? 0.1 : 1.0;
+        double wait_for = killed ? 0.1 : (remaining < step ? remaining : step);
         if (wait_for < 0.01) {
             wait_for = 0.01;
         }
