@@ -6,4 +6,4 @@ certgen.env
 .env
 domains.yaml
 *.zip
-.emv
+.env
