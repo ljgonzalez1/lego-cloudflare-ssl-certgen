@@ -120,7 +120,7 @@ configure_cloudflare() {
         use_file=true
     fi
     if ! [[ "${token}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        log_err "Provide a valid Cloudflare DNS API token through the Compose secret or CLOUDFLARE_API_KEY."
+        log_err "Provide a valid Cloudflare DNS API token through the Compose secret or CLOUDFLARE_API_TOKEN."
         return 2
     fi
 

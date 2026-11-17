@@ -15,9 +15,9 @@ script_dir="$(dirname -- "${BASH_SOURCE[0]}")"
 # Preserve the original YYYY-MM-DD_HH.MM.SS_GMT[+-]H folder names.
 make_timestamp() {
     local epoch="$1" offset hours
-    offset="$(date --date="@${epoch}" +%z)" || return
+    offset="$(date -d "@${epoch}" +%z)" || return
     hours="$((10#${offset:1:2}))"
-    date --date="@${epoch}" +"%Y-%m-%d_%H.%M.%S_GMT${offset:0:1}${hours}"
+    date -d "@${epoch}" +"%Y-%m-%d_%H.%M.%S_GMT${offset:0:1}${hours}"
 }
 
 # Return 1 for a failed lego invocation and 2 if it could not be started.
@@ -85,65 +85,16 @@ prepare_issuance() {
     fi
 }
 
-summary_row() {
-    local width="$1" name="$2" attempted="$3" issued="$4" failed="$5" skipped="$6" status="$7" color="$8"
-    printf '│ %-*s │ %9s │ %6s │ %6s │ %7s │ %s%-7s%s │\n' \
-        "${width}" "${name}" "${attempted}" "${issued}" "${failed}" "${skipped}" "${color}" "${status}" "${_C_RST}"
-}
-
 print_summary() {
-    local width=11 rule group domains index=0 count status color
-    local attempted issued failed skipped total_attempted=0 total_issued=0 total_failed=0 total_skipped=0
-    local issued_certificates=0 failed_certificates=0 skipped_certificates=0
+    local group domains index=0
     local -a domain_list
 
-    while IFS=$'\t' read -r group domains; do
-        if (( ${#group} > width )); then
-            width="${#group}"
-        fi
-    done <<< "${groups}"
-
-    printf -v rule '%*s' "$((width + 2))" ''
-    rule="${rule// /─}"
     log_section "📋 Certificate request summary (DNS names per certificate)"
-    printf '%s┌%s┬───────────┬────────┬────────┬─────────┬─────────┐%s\n' "${_C_CYN}" "${rule}" "${_C_RST}"
-    printf '%s' "${_C_BOLD}"
-    summary_row "${width}" Certificate Attempted Issued Failed Skipped Status ''
-    printf '%s├%s┼───────────┼────────┼────────┼─────────┼─────────┤%s\n' "${_C_CYN}" "${rule}" "${_C_RST}"
-
     while IFS=$'\t' read -r group domains; do
         IFS=',' read -ra domain_list <<< "${domains}"
-        count="${#domain_list[@]}"
-        attempted=0 issued=0 failed=0 skipped=0
-        # lego issues all requested names on a single certificate or the order fails.
-        case "${group_results[index]:-2}" in
-            0)
-                attempted="${count}" issued="${count}" status=ISSUED color="${_C_GRN}"
-                issued_certificates="$((issued_certificates + 1))"
-                ;;
-            1)
-                attempted="${count}" failed="${count}" status=FAILED color="${_C_RED}"
-                failed_certificates="$((failed_certificates + 1))"
-                ;;
-            *)
-                skipped="${count}" status=SKIPPED color="${_C_YLW}"
-                skipped_certificates="$((skipped_certificates + 1))"
-                ;;
-        esac
-
-        summary_row "${width}" "${group}" "${attempted}" "${issued}" "${failed}" "${skipped}" "${status}" "${color}"
-        total_attempted="$((total_attempted + attempted))"
-        total_issued="$((total_issued + issued))"
-        total_failed="$((total_failed + failed))"
-        total_skipped="$((total_skipped + skipped))"
+        printf '%s\t%s\t%s\n' "${group}" "${#domain_list[@]}" "${group_results[index]:-2}"
         index="$((index + 1))"
-    done <<< "${groups}"
-
-    printf '%s├%s┼───────────┼────────┼────────┼─────────┼─────────┤%s\n' "${_C_CYN}" "${rule}" "${_C_RST}"
-    printf '%s' "${_C_BOLD}"
-    summary_row "${width}" TOTAL "${total_attempted}" "${total_issued}" "${total_failed}" "${total_skipped}" '' ''
-    printf '%s└%s┴───────────┴────────┴────────┴─────────┴─────────┘%s\n' "${_C_CYN}" "${rule}" "${_C_RST}"
-    log_info "Certificates: $((issued_certificates + failed_certificates)) attempted, ${issued_certificates} issued, ${failed_certificates} failed, ${skipped_certificates} skipped."
+    done <<< "${groups}" | python3 "${script_dir}/print_summary.py"
 }
 
 groups="$(python3 "${script_dir}/read_domains.py" "${CERTGEN_CONFIG}" "$@")"
