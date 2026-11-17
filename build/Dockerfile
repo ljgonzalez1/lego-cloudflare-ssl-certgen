@@ -20,7 +20,7 @@ ARG TARGETARCH
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
-      org.opencontainers.image.version="3.4.0" \
+      org.opencontainers.image.version="3.3" \
       org.opencontainers.image.licenses="MIT" \
       com.certgen.lego.version="${LEGO_VERSION}"
 

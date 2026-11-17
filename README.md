@@ -1,131 +1,17 @@
 # :closed_lock_with_key: lego-cloudflare-certgen
 
-> One-shot Docker container for automated SSL/TLS certificate generation via **Let's Encrypt** using [lego](https://github.com/go-acme/lego) v4.34.0 and **Cloudflare DNS-01 challenge**. No HTTP ports or web server required.
-
----
+Issue Let's Encrypt certificates in Docker with [lego](https://github.com/go-acme/lego) **v4.34.0** and Cloudflare DNS-01. Define one certificate per group in `domains.yaml` and get a per-group report at the end of each run.
 
 ![Project banner](assets/readme-banner.png)
 
----
-
-## :sparkles: Why use this instead of running lego directly?
-
-The container wraps lego with YAML configuration, Compose secrets and a certificate report.
-
-1. **Keep your settings in `.env` and your domains in YAML.** Each top-level key in `domains.yaml` represents one certificate and its output folder. Its list contains all the DNS names on that certificate.
-
-2. **Use Docker Compose for a repeatable, secrets-safe workflow.** Docker Compose provides the Cloudflare API token as a [Docker secret](https://docs.docker.com/compose/use-secrets/). lego reads the secret file directly.
-
-3. **See the outcome of each certificate request.** The final table lists attempted, issued, failed and skipped DNS names for every selected group, with totals for names and certificates.
-
----
-
 ## :whale: Requirements
 
-- Docker Engine and the Docker Compose plugin if using Compose
-- A Cloudflare [**DNS API token**](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with `Zone > DNS > Edit` and `Zone > Zone > Read` for the relevant zones
+- Docker Engine. Install the Docker Compose plugin if you use Compose.
+- A Cloudflare API token with **Zone → DNS → Edit** and **Zone → Zone → Read** for the relevant zones. [Create an API token](https://dash.cloudflare.com/profile/api-tokens)
 
----
+## 🚀 Usage
 
-## 🛠️ Build and publish
-
-Version **3.4.0** runs on **Alpine 3.24.4** with **lego v4.34.0**. Build from the directory that contains this README.
-
-| Target | Buildx platform | Official lego archive |
-|---|---|---|
-| AMD64 / x86-64 | `linux/amd64` | `lego_v4.34.0_linux_amd64.tar.gz` |
-| i386 / 32-bit x86 | `linux/386` | `lego_v4.34.0_linux_386.tar.gz` |
-| ARMv7 / Debian armhf | `linux/arm/v7` | `lego_v4.34.0_linux_armv7.tar.gz` |
-| ARMv8 / AArch64 | `linux/arm64` | `lego_v4.34.0_linux_arm64.tar.gz` |
-
-The ARMv7 image uses the Alpine `armv7` userspace. The download stage verifies the SHA-256 of the platform-specific archive, and the final stage checks the binary version and architecture, then runs `--list` and `--dry-run` on each target. [lego v4.34.0](https://github.com/go-acme/lego/releases/tag/v4.34.0)
-
-### Set up Buildx
-
-Use a running Docker Engine, Buildx and QEMU registered on the Docker host for non-native targets. The builder also needs network access to Docker Hub, GitHub Releases and the base images' package mirrors.
-
-```bash
-docker buildx ls
-# Create this builder once. If it exists, use docker buildx use lego-multiarch.
-docker buildx create --name lego-multiarch --driver docker-container --use
-docker buildx inspect lego-multiarch --bootstrap
-```
-
-Check the builder's `Platforms` line for all four targets. On Linux, if any are missing, register the corresponding emulators and inspect again. [Docker multi-platform builds](https://docs.docker.com/build/building/multi-platform/)
-
-```bash
-docker run --privileged --rm tonistiigi/binfmt --install arm64,arm,386
-docker buildx inspect lego-multiarch --bootstrap
-```
-
-### Build and try one platform locally
-
-Use your target platform in place of `linux/amd64`. `--load` loads this single-platform image into the local Engine for testing.
-
-```bash
-docker buildx build --builder lego-multiarch --platform linux/amd64 \
-  --progress=plain --load -t ljgonzalez/lego-cloudflare-certgen:3.4.0 ./build
-
-docker run --rm --entrypoint lego ljgonzalez/lego-cloudflare-certgen:3.4.0 --version
-docker run --rm -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
-  ljgonzalez/lego-cloudflare-certgen:3.4.0 --list
-```
-
-### Measure the Alpine runtime image
-
-The final stage installs Bash, the CA bundle, PyYAML with Python, `su-exec` and timezone data using `apk add --no-cache`. Only the stripped lego executable and its license cross from the download stage. Compare both local builds on the same platform using the reported image size, in MiB.
-
-```bash
-for version in 3.2 3.4.0; do
-  docker image inspect --format '{{.Size}}' "ljgonzalez/lego-cloudflare-certgen:$version" |
-    awk -v version="$version" '{printf "%s: %.1f MiB\n", version, $1 / 1048576}'
-done
-```
-
-
-### Publish all four platforms under each tag
-
-Create or open [ljgonzalez/lego-cloudflare-certgen on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). Use the `ljgonzalez` namespace and a Docker Hub access token with write permission when prompted by `docker login`. Select **Public** in Docker Hub if the images are intended for public pulls. [Docker Hub repository setup](https://docs.docker.com/docker-hub/repos/create/)
-
-```bash
-docker login --username ljgonzalez
-docker buildx build --builder lego-multiarch \
-  --platform linux/amd64,linux/386,linux/arm/v7,linux/arm64 \
-  --progress=plain \
-  -t ljgonzalez/lego-cloudflare-certgen:alpine-3.24.4-lego4.34.0-3.4.0 \
-  -t ljgonzalez/lego-cloudflare-certgen:alpine-3.24-lego4.34-3.4.0 \
-  -t ljgonzalez/lego-cloudflare-certgen:lego4.34.0-3.4.0 \
-  -t ljgonzalez/lego-cloudflare-certgen:lego4.34-3.4.0 \
-  -t ljgonzalez/lego-cloudflare-certgen:latest \
-  -t ljgonzalez/lego-cloudflare-certgen:3.4.0 \
-  --push ./build
-```
-
-One `--push` publishes the same multi-platform index under each tag. Publish the release intended for `latest` last.
-
-```bash
-for tag in alpine-3.24.4-lego4.34.0-3.4.0 alpine-3.24-lego4.34-3.4.0 lego4.34.0-3.4.0 lego4.34-3.4.0 latest 3.4.0; do
-  docker buildx imagetools inspect "ljgonzalez/lego-cloudflare-certgen:$tag" || break
-done
-```
-
-Each tag should list `linux/amd64`, `linux/386`, `linux/arm/v7` and `linux/arm64` (sometimes shown as `linux/arm64/v8`). Build attestations can appear as `unknown/unknown`. [Buildx image build options](https://docs.docker.com/reference/cli/docker/buildx/build/)
-
-### Update the Docker Hub overview
-
-1. After the first successful push, open **My Hub → Repositories → lego-cloudflare-certgen → General**.
-2. Edit the short description if needed.
-3. Under **Repository overview**, choose **Edit** or **Add overview**. Paste [`DOCKERHUB.md`](DOCKERHUB.md) into **Write**, verify it in **Preview**, then select **Update**.
-4. Open the public repository page and check the tags and the GitHub link. The image also sets the OCI source label to the GitHub repository.
-
-[Docker Hub repository information](https://docs.docker.com/docker-hub/repos/manage/information/)
-
-
----
-
-## 🚀 Quick start
-
-Copy the template to `.env` or update an existing file. Fill in `EMAIL`, `CLOUDFLARE_API_TOKEN` and `ACCEPT_LEGO_TOS=true`. Use `domains.yaml` for your names and create the output directory.
+From the project directory, copy `template.env` to `.env`. Set `EMAIL`, `CLOUDFLARE_API_TOKEN` and `ACCEPT_LEGO_TOS=true` after reviewing the [Let's Encrypt Terms of Service](https://letsencrypt.org/repository/).
 
 ```bash
 test -e .env || (umask 077; cp template.env .env)
@@ -133,248 +19,148 @@ chmod 600 .env
 mkdir -p ssl-certs
 ```
 
-### Docker Compose
+Create `domains.yaml` from [`template.domains.yaml`](template.domains.yaml) or use your existing file. Each key names a certificate group and its output directory. Quote wildcard names.
 
-```bash
-docker compose run --rm certgen
+```yaml
+web:
+  - example.com
+  - www.example.com
+  - '*.apps.example.com'
+
+api:
+  - api.example.org
+  - '*.staging.example.org'
 ```
-
-Compose forwards the token as a secret file and reads the other settings from `.env`. If you previously kept settings in `certgen.env`, keep the token in `.env` and run `CERTGEN_ENV_FILE=./certgen.env docker compose run --rm certgen`. Set `CERTGEN_IMAGE` to use another locally built tag.
 
 ### Docker run
 
 ```bash
 docker run --rm -t --env-file .env \
-  -v ./domains.yaml:/app/domains.yaml:ro -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:3.4.0
+  -v "$PWD/domains.yaml:/app/domains.yaml:ro" \
+  -v "$PWD/ssl-certs:/ssl-certs" \
+  ljgonzalez/lego-cloudflare-certgen:3.3
 ```
 
-Docker Engine 23 and later accept relative bind paths. On older versions, use `"$PWD/domains.yaml:/app/domains.yaml:ro"` and `"$PWD/ssl-certs:/ssl-certs"`. The default Docker capabilities include CHOWN, SETUID and SETGID. `-t` enables ANSI output. [Docker run](https://docs.docker.com/reference/cli/docker/container/run/#volume) · [Default capabilities](https://docs.docker.com/engine/containers/run/#runtime-privilege-and-linux-capabilities)
+The default endpoint is Let's Encrypt staging. Append `--production` after the image name to request production certificates. The `-t` option enables ANSI colors.
 
-### Preview and issue
+### Docker Compose
+
+Run from the directory containing `compose.yml`. Compose passes the Cloudflare token as a secret file.
 
 ```bash
-DOMAINS_FILE=./template.domains.yaml docker compose run --rm certgen --list
-DOMAINS_FILE=./template.domains.yaml docker compose run --rm certgen --dry-run --only certificateA
+docker compose run --rm certgen
+```
+
+```bash
 docker compose run --rm certgen --production
 ```
 
-Use the first two commands to preview a configuration. The last command requests production certificates. A run without `--production` uses staging by default.
-
-Certificates appear in `./ssl-certs/<group>/<timestamp>/requested_<timestamp>_expires_<timestamp>/`. For example:
-
-```text
-ssl-certs/
-└── certificateA/
-    └── 2026-11-11_17.18.00_GMT-3/
-        └── requested_2026-11-11_17.18.55_GMT-3_expires_2027-02-09_05.18.00_GMT-3/
-            ├── accounts/
-            │   └── acme-v02.api.letsencrypt.org/
-            │       └── you@example.com/
-            └── certificates/
-                ├── example.com.crt
-                ├── example.com.issuer.crt
-                ├── example.com.json
-                └── example.com.key
-```
-
-The directory timestamps use the original script’s naming convention and offsets. Read the exact expiry from the issued certificate with `openssl x509 -in example.com.crt -noout -enddate`.
-
----
-
-## :gear: Configuration reference
-
-All variables are optional unless marked **required**.
-
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `TZ` | `Etc/UTC` | :x: | IANA timezone for directory names. Use `America/Santiago` to match the original script. |
-| `EMAIL` | - | :heavy_check_mark: | Let's Encrypt account contact e-mail for issuance |
-| `PRODUCTION` | `false` | :x: | Set `true` to issue browser-trusted certificates |
-| `CLOUDFLARE_API_TOKEN` | - | :heavy_check_mark: | Cloudflare DNS API token for Docker run and the Compose secret. Docker run also accepts the legacy `CLOUDFLARE_API_KEY` variable. |
-| `PROPAGATION_SECONDS` | `360` | :x: | Maximum wait for TXT propagation per challenge, in seconds |
-| `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | :x: | Comma-separated resolvers used to verify TXT record visibility |
-| `ACCEPT_LEGO_TOS` | `false` | :heavy_check_mark: | Set `true` after reading the [Let's Encrypt Terms of Service](https://letsencrypt.org/repository/) |
-| `UID` | `1000` | :x: | UID used to write certificates and ACME account data |
-| `GID` | `1000` | :x: | GID used to write certificates and ACME account data |
-| `DOMAINS_FILE` | `./domains.yaml` | :x: | Host YAML path for Compose |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.0` | :x: | Image used by Compose |
-| `CERTGEN_ENV_FILE` | `./.env` | :x: | Settings file read by the Compose service |
-
-### Certificate groups and wildcard domains
-
-If you need a new `domains.yaml`, copy [`template.domains.yaml`](template.domains.yaml) and replace the sample DNS names. Keep the populated file local when uploading the project to GitHub.
-
-```yaml
-certificateA:
-  - example.com
-  - www.example.com
-  - "*.example.com"
-
-certificateB:
-  - example.net
-  - "*.example.net"
-```
-
-- Quote wildcard names so YAML reads them as strings.
-- Use letters, numbers, hyphens or underscores for the folder name, starting with a letter or number.
-- List up to 100 distinct DNS names per certificate. A domain can appear in multiple groups.
-- The first DNS name determines lego’s certificate filename.
-
-### Hostnames and DNS-01
-
-List the DNS names you want in each certificate group, including any quoted wildcards. The same request path works for names with A, AAAA or CNAME service records and for planned names awaiting a service record. lego uses the Cloudflare token to find the managed zone, write a temporary `_acme-challenge` TXT record and clean it up. Let's Encrypt validates the TXT record before issuing. [Let's Encrypt DNS-01 documentation](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
-
-An exact TXT owner takes precedence over a CNAME inherited from a wildcard service record. The default TXT propagation timeout is 360 seconds. A deliberate CNAME at the challenge owner itself is a separate DNS-01 delegation. Legacy deployments that already use lego's explicit delegation mode can keep their existing override and authorize the destination zone. [Cloudflare wildcard DNS records](https://developers.cloudflare.com/dns/manage-dns-records/reference/wildcard-dns-records/) · [lego CNAME delegation](https://go-acme.github.io/lego/references/ref-options/#lego_disable_cname_support)
-
-### Verify A, AAAA and CNAME issuance in staging
-
-For an optional compatibility check, choose an active zone that your Cloudflare token can edit and replace `example.net` below. You can use dedicated DNS-only test records and one planned hostname.
-
-| DNS record to verify | Type | Example value |
-|---|---|---|
-| `a-check.example.net` | A | `192.0.2.10` |
-| `v6-check.example.net` | AAAA | `2001:db8::10` |
-| `alias-check.example.net` | CNAME | `a-check.example.net` |
-| `*.wild-check.example.net` | CNAME | `a-check.example.net` |
+For an existing setup that keeps separate container settings in `certgen.env`, keep the token in `.env` and select the settings file:
 
 ```bash
-dig +short a-check.example.net A
-dig +short v6-check.example.net AAAA
-dig +short alias-check.example.net CNAME
-dig +short probe.wild-check.example.net CNAME
+CERTGEN_ENV_FILE=./certgen.env docker compose run --rm certgen
 ```
 
-Put this group in a separate file named `dns-smoke.yaml` so the test submits one certificate order.
+### Preview your configuration
 
-```yaml
-dns-smoke:
-  - a-check.example.net
-  - v6-check.example.net
-  - alias-check.example.net
-  - '*.wild-check.example.net'
-  - planned-check.example.net
+```bash
+docker compose run --rm certgen --list
+docker compose run --rm certgen --dry-run --only web
 ```
+
+Certificates and ACME account data are written under `ssl-certs/<group>/`. The first DNS name in a group determines the certificate filename. Keep `.env`, `certgen.env` and the certificate output private.
+
+## 🛠️ Build
+
+The runtime uses **Alpine 3.24.4**. The build selects and verifies the official lego archive for the target architecture. The final image contains the lego executable and the packages needed at runtime.
+
+| Target | Buildx platform |
+|---|---|
+| AMD64 / x86-64 | `linux/amd64` |
+| i386 / 32-bit x86 | `linux/386` |
+| ARMv7 / 32-bit ARM | `linux/arm/v7` |
+| ARMv8 / AArch64 | `linux/arm64` |
+
+### Build locally
+
+Run from the project directory. Substitute a platform from the table as needed. Non-native targets require a builder with the appropriate emulation or a native build node. [Docker multi-platform builds](https://docs.docker.com/build/building/multi-platform/)
+
+```bash
+docker buildx build --platform linux/amd64 --load \
+  --progress=plain \
+  -t ljgonzalez/lego-cloudflare-certgen:3.3 ./build
+```
+
+```bash
+docker run --rm --entrypoint lego \
+  ljgonzalez/lego-cloudflare-certgen:3.3 --version
+
+docker run --rm \
+  -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
+  ljgonzalez/lego-cloudflare-certgen:3.3 --list
+```
+
+Inspect the size of the local image in MiB:
+
+```bash
+docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.3 |
+  awk '{printf "%.1f MiB\n", $1 / 1048576}'
+```
+
+## :gear: Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `EMAIL` | — | Required Let's Encrypt account email |
+| `CLOUDFLARE_API_TOKEN` | — | Required Cloudflare credentials for DNS-01 |
+| `ACCEPT_LEGO_TOS` | `false` | Set to `true` after reviewing the terms |
+| `PRODUCTION` | `false` | Set to `true` to request production certificates |
+| `TZ` | `Etc/UTC` | Timezone for output directory timestamps |
+| `UID` / `GID` | `1000` / `1000` | Runtime identity and ownership of generated files |
+| `PROPAGATION_SECONDS` | `360` | Maximum wait for TXT propagation per challenge |
+| `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | Comma-separated resolvers |
+| `LEGO_DISABLE_CNAME_SUPPORT` | `true` | Set to `false` to follow an explicit DNS-01 CNAME delegation |
+| `DOMAINS_FILE` | `./domains.yaml` | Host YAML path for Compose |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.3` | Image used by Compose |
+| `CERTGEN_ENV_FILE` | `./.env` | Settings file used by Compose |
+
+### DNS-01 and wildcard names
+
+A, AAAA and CNAME service records can coexist in a certificate group. DNS-01 validates control through a temporary TXT record under `_acme-challenge`. The default exact TXT owner handles CNAMEs inherited from wildcard service records. For an explicit CNAME delegation at `_acme-challenge`, authorize the destination Cloudflare zone and set `LEGO_DISABLE_CNAME_SUPPORT=false`. [Let's Encrypt DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge) · [Cloudflare wildcard records](https://developers.cloudflare.com/dns/manage-dns-records/reference/wildcard-dns-records/)
+
+Use up to 100 distinct names per group. Group names can contain letters, digits, hyphens and underscores and must start with a letter or digit.
+
+### Command options
+
+| Option | Purpose |
+|---|---|
+| `--list` | Validate YAML and list certificate groups |
+| `--dry-run` | Preview domains, the ACME endpoint and output paths |
+| `--only GROUP` | Select a group. Repeat to select several groups. |
+| `--staging` / `--production` | Choose the ACME endpoint for this run |
+| `--config FILE` | Set the YAML path inside the container |
+| `--output DIRECTORY` | Set the output path inside the container |
+
+## 🧪 Checks
+
+Run the offline regression suite with Bash, Python 3 and PyYAML:
+
+```bash
+python3 -B -m unittest discover -s tests -v
+```
+
+For an issuance check, use an active Cloudflare zone with an A record, an AAAA record, a CNAME and a wildcard CNAME. Put the four names in one group called `dns-smoke` in `dns-smoke.yaml` and run:
 
 ```bash
 DOMAINS_FILE=./dns-smoke.yaml docker compose run --rm certgen --staging --only dns-smoke
 ```
 
-Expect `5 Attempted`, `5 Issued` and `0 Failed` when the certificate is issued. Locate `certificates/a-check.example.net.crt` in the reported output path, replacing the container prefix `/ssl-certs` with `./ssl-certs` on the host. Use `openssl` on the host to compare the SANs.
+A successful order reports **4 Attempted**, **4 Issued** and **0 Failed**. Use `openssl x509 -in /path/to/certificate.crt -noout -ext subjectAltName` to inspect the SANs.
 
-```bash
-openssl x509 -in /path/from/run/certificates/a-check.example.net.crt -noout -issuer -ext subjectAltName
-```
+## 📋 Issuance report
 
-### Command options
+The ANSI table counts attempted, issued, failed and skipped DNS names per certificate group. Each certificate covers the full group. A failed order counts every attempted name in that group as failed, and the command exits with a nonzero status after printing the summary.
 
-| Option | Description |
-|---|---|
-| `--list` | Validate the YAML and list the selected groups and domain counts |
-| `--dry-run` | Print the selected domains, ACME endpoint and planned output paths |
-| `--only FOLDER` | Select a group. Repeat to select multiple groups in YAML order. |
-| `--staging` / `--production` | Override `PRODUCTION` for one invocation |
-| `--config FILE` | Select a YAML file inside the container. The default mount target is `/app/domains.yaml`. |
-| `--output DIRECTORY` | Select a directory inside the container. Mount it and grant write access to the configured UID/GID. The default is `/ssl-certs`. |
+## :page_facing_up: License
 
-### Issuance report
-
-Each row counts the DNS names of one selected certificate. The footer totals those counts, followed by counts of certificate requests. Terminal output uses ANSI colors and wraps long group names to the terminal width. The table uses ASCII borders and keeps emojis outside the grid.
-
-| Column | Meaning |
-|---|---|
-| Attempted | Names passed to lego in the certificate request |
-| Issued | Names covered by the successfully issued certificate |
-| Failed | Names passed to lego in a request that failed |
-| Skipped | Names in a group that could not reach lego, for example due to an unwritable output directory |
-
-The request issues one certificate for all its names. A failed order counts all requested names as failed even when some individual DNS challenges passed. Failed or skipped groups produce a nonzero exit status after the report. Check the preceding lego or setup error for the cause.
-
-Run the local regression tests with `python3 -B -m unittest discover -s tests -v` from the repository root. They require Bash, Python 3 and PyYAML. The tests use local fixtures for lego and the release archives.
-
----
-
-## 🖥️ Terminal examples
-
-Two certificate groups with ordinary names, subdomains and nested wildcards.
-
-```yaml
-example-com:
-  - example.com
-  - www.example.com
-  - api.example.com
-  - '*.apps.example.com'
-
-example-org:
-  - example.org
-  - docs.example.org
-  - api.staging.example.org
-  - '*.staging.example.org'
-```
-
-The terminal below shows a simulated staging run using the bundled example. The first order succeeds and the second hits a TXT propagation timeout. The ANSI table reports eight names attempted, four issued and four failed.
-
-![Actual ANSI terminal capture of a simulated certificate run for example.com and example.org](assets/certgen-terminal-example.png)
-
-[Example YAML](examples/terminal.domains.yaml)
-
----
-
-## :key: Cloudflare API token
-
-Create a token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) with the following permissions:
-
-| Resource | Permission |
-|---|---|
-| Zone - DNS | Edit |
-| Zone - Zone | Read |
-
-Scope the token to the zones for the groups you plan to issue.
-
----
-
-## 🔐 Runtime permissions
-
-The entrypoint starts as root to prepare the standard output directory, then the YAML reader and lego run as the configured UID/GID. Set them to an identity that can read the mounted YAML and write the certificate output.
-
-| Capability | Why it is needed |
-|---|---|
-| `CHOWN` | Set ownership of the standard output directory |
-| `SETUID` | Switch to the configured UID |
-| `SETGID` | Switch to the configured GID |
-
-Compose uses these three capabilities with `no-new-privileges:true`. Plain Docker uses the default capabilities. With `--env-file`, the Docker daemon exposes the environment to users who can inspect the running container. Compose passes the token through `/run/secrets/cloudflare_api_token`. Keep `.env`, `certgen.env` and `ssl-certs/` local.
-
----
-
-## 📁 Project files
-
-| File | Purpose |
-|---|---|
-| `build/Dockerfile` | Multi-platform download and runtime stages |
-| `build/download_lego.sh` | Platform-specific lego download and checksum |
-| `build/entrypoint.sh` | CLI, output directory and privilege drop |
-| `build/read_domains.py` | YAML validation |
-| `build/run_lego.sh` | One lego request per selected certificate |
-| `build/print_summary.py` | Terminal-aware ANSI table |
-| `build/validate_env.sh` | Configuration validation |
-| `compose.yml` | One-shot Compose service with a Docker secret |
-| `template.env` and `example.env` | Local settings templates |
-| `template.domains.yaml` | Sample certificate groups |
-| `tests/` | Offline regression tests |
-| `examples/terminal.domains.yaml` | Names used in the terminal demonstration |
-| `DOCKERHUB.md` | Copy-ready Docker Hub overview |
----
-
-## :information_source: Notes
-
-- **Staging by default.** `PRODUCTION=false` uses Let's Encrypt staging. Test there first. Browsers do not trust certificates from staging.
-- **One certificate per group.** Each invocation processes the groups in YAML order. If a group fails, the run continues and reports a nonzero exit status after the summary. Retry individual groups with `--only`.
-- **Fresh output on every issuance.** Rerunning creates a new timestamp directory per group.
-- **Rate limits.** Production limits apply to both registered domains and identical sets of DNS names. See the [Let's Encrypt rate limits](https://letsencrypt.org/docs/rate-limits/).
-
----
-
-## :page_facing_up: Licence
-
-This project is a thin wrapper around [lego](https://github.com/go-acme/lego), which is licenced under the [MIT Licence](https://github.com/go-acme/lego/blob/master/LICENSE). Refer to the lego repository for its terms.
+[MIT](LICENSE) · [lego license](https://github.com/go-acme/lego/blob/master/LICENSE)
