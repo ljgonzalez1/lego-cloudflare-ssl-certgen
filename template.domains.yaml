@@ -1,8 +1,6 @@
-# Each key is a folder name and represents one independent certificate.
-# Wildcards MUST be quoted in YAML.
-# Example only: example.com, example.net and example.org are reserved for documentation.
 # Each top-level key is a folder name and represents one independent certificate.
 # Wildcards MUST be quoted in YAML.
+# Example only: example.com, example.net and example.org are reserved for documentation.
 # Each certificate has 30 names (8 certificates, 240 names total).
 # Wildcards cover exactly one additional DNS label, not the parent name.
 
