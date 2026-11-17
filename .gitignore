@@ -4,6 +4,5 @@
 ssl-certs
 certgen.env
 .env
-domains.yaml
+/domains.yaml
 *.zip
-.env

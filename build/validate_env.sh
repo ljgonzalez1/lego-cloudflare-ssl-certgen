@@ -1,140 +1,189 @@
-#!/usr/bin/env bash
-# ==============================================================================
-# validate_env.sh  --  Environment variable validation module
-# ==============================================================================
-# Sourced by entrypoint.sh for UID/GID and run_lego.sh for issuance settings.
-# ==============================================================================
+#!/bin/sh
+# Shared logging and environment validation.
 
-if [[ -t 1 ]]; then
-    _C_RST=$'\033[0m' _C_BOLD=$'\033[1m'
-    _C_RED=$'\033[31m' _C_GRN=$'\033[32m' _C_YLW=$'\033[33m'
-    _C_BLU=$'\033[34m' _C_MAG=$'\033[35m' _C_CYN=$'\033[36m'
+if [ -t 1 ]; then
+    escape=$(printf '\033')
+    C_RESET="${escape}[0m" C_BOLD="${escape}[1m" C_RED="${escape}[31m"
+    C_GREEN="${escape}[32m" C_YELLOW="${escape}[33m" C_BLUE="${escape}[34m"
+    C_MAGENTA="${escape}[35m" C_CYAN="${escape}[36m"
 else
-    _C_RST='' _C_BOLD=''
-    _C_RED='' _C_GRN='' _C_YLW='' _C_BLU='' _C_MAG='' _C_CYN=''
+    C_RESET='' C_BOLD='' C_RED='' C_GREEN='' C_YELLOW='' C_BLUE='' C_MAGENTA='' C_CYAN=''
 fi
 
-log_info()    { printf '%sℹ️  %s%s\n' "${_C_CYN}" "$*" "${_C_RST}"; }
-log_step()    { printf '%s🔹 %s%s\n' "${_C_BLU}" "$*" "${_C_RST}"; }
-log_ok()      { printf '%s✅ %s%s\n' "${_C_GRN}" "$*" "${_C_RST}"; }
-log_warn()    { printf '%s⚠️  %s%s\n' "${_C_YLW}" "$*" "${_C_RST}"; }
-log_err()     { printf '%s❌ %s%s\n' "${_C_RED}" "$*" "${_C_RST}" >&2; }
-log_section() { printf '\n%s%s%s\n' "${_C_BOLD}${_C_MAG}" "$*" "${_C_RST}"; }
+log_info()    { printf '%sℹ️  %s%s\n' "$C_CYAN" "$*" "$C_RESET"; }
+log_step()    { printf '%s🔹 %s%s\n' "$C_BLUE" "$*" "$C_RESET"; }
+log_ok()      { printf '%s✅ %s%s\n' "$C_GREEN" "$*" "$C_RESET"; }
+log_warn()    { printf '%s⚠️  %s%s\n' "$C_YELLOW" "$*" "$C_RESET"; }
+log_err()     { printf '%s❌ %s%s\n' "$C_RED" "$*" "$C_RESET" >&2; }
+log_section() { printf '\n%s%s%s\n' "${C_BOLD}${C_MAGENTA}" "$*" "$C_RESET"; }
+
+parse_uint() (
+    case "$1" in
+        ''|*[!0123456789]*) return 1 ;;
+    esac
+    [ "${#1}" -le "$2" ] || return 1
+    number=$1
+    while [ "${number#0}" != "$number" ]; do
+        number=${number#0}
+    done
+    number=${number:-0}
+    [ "$number" -le "$3" ] || return 1
+    printf '%s' "$number"
+)
 
 validate_identity() {
-    # Bash reserves UID as a read-only variable. Read the supplied env value.
-    local raw_uid raw_gid
-    raw_uid="${CERT_UID:-$(printenv UID 2>/dev/null || true)}"
-    raw_gid="${CERT_GID:-${GID:-}}"
-    raw_uid="${raw_uid:-1000}"
-    raw_gid="${raw_gid:-1000}"
-
-    if ! [[ "${raw_uid}" =~ ^[0-9]{1,10}$ ]] || (( 10#${raw_uid} < 1 || 10#${raw_uid} > 4294967294 )); then
+    if ! CERT_UID=$(parse_uint "${CERT_UID:-${UID:-1000}}" 10 4294967294) || [ "$CERT_UID" -eq 0 ]; then
         log_err "UID must be an integer from 1 to 4294967294."
         return 2
     fi
-    if ! [[ "${raw_gid}" =~ ^[0-9]{1,10}$ ]] || (( 10#${raw_gid} < 1 || 10#${raw_gid} > 4294967294 )); then
+    if ! CERT_GID=$(parse_uint "${CERT_GID:-${GID:-1000}}" 10 4294967294) || [ "$CERT_GID" -eq 0 ]; then
         log_err "GID must be an integer from 1 to 4294967294."
         return 2
     fi
-    CERT_UID="$((10#${raw_uid}))"
-    CERT_GID="$((10#${raw_gid}))"
     export CERT_UID CERT_GID
 }
 
-validate_env() {
-    local production="${PRODUCTION:-false}"
-    local accepted="${ACCEPT_LEGO_TOS:-false}"
-    local resolvers="${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}"
-    local resolver port
-    local resolver_pattern='^([a-zA-Z0-9_.-]+|\[[0-9a-fA-F:.]+\]):[0-9]{1,5}$'
-    local -a errors=()
+valid_email() {
+    case "$1" in
+        *[[:space:]]*|@*|*@*@*) return 1 ;;
+        *@?*.?*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
-    VALIDATED_TZ="${TZ:-Etc/UTC}"
-    if [[ "${VALIDATED_TZ}" == /* || "${VALIDATED_TZ}" == *..* ||
-          ! -f "/usr/share/zoneinfo/${VALIDATED_TZ}" ]]; then
-        errors+=("TZ: expected an IANA timezone such as Etc/UTC or America/Santiago.")
+valid_resolver() (
+    case "$1" in
+        *:*) host=${1%:*}; port=${1##*:} ;;
+        *) return 1 ;;
+    esac
+    case "$host" in
+        \[*\])
+            address=${host#\[}
+            address=${address%\]}
+            case "$address" in
+                ''|*[!0123456789abcdefABCDEF:.]*) return 1 ;;
+            esac
+            ;;
+        ''|*[!a-zA-Z0-9_.-]*) return 1 ;;
+    esac
+    port=$(parse_uint "$port" 5 65535) && [ "$port" -gt 0 ]
+)
+
+invalid_setting() {
+    if [ "$settings_status" -eq 0 ]; then
+        log_err "Environment validation failed."
+        settings_status=2
     fi
+    printf '  %s\n' "$1" >&2
+}
 
-    VALIDATED_EMAIL="${EMAIL:-}"
-    if [[ -n "${VALIDATED_EMAIL}" || "${CERTGEN_ACTION}" == issue ]]; then
-        if ! [[ "${VALIDATED_EMAIL}" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
-            errors+=("EMAIL: enter a valid Let's Encrypt contact address.")
+validate_env() {
+    settings_status=0
+    VALIDATED_TZ=${TZ:-Etc/UTC}
+    case "$VALIDATED_TZ" in
+        /*|*..*) invalid_setting "TZ: expected an IANA timezone such as Etc/UTC or America/Santiago." ;;
+        *)
+            if [ ! -f "/usr/share/zoneinfo/$VALIDATED_TZ" ]; then
+                invalid_setting "TZ: expected an IANA timezone such as Etc/UTC or America/Santiago."
+            fi
+            ;;
+    esac
+
+    VALIDATED_EMAIL=${EMAIL:-}
+    if [ -n "$VALIDATED_EMAIL" ] || [ "$CERTGEN_ACTION" = issue ]; then
+        if ! valid_email "$VALIDATED_EMAIL"; then
+            invalid_setting "EMAIL: enter a valid Let's Encrypt contact address."
         fi
     fi
 
-    VALIDATED_PRODUCTION="${production,,}"
-    case "${VALIDATED_PRODUCTION}" in
-        true) ACME_SERVER=https://acme-v02.api.letsencrypt.org/directory ;;
-        false) ACME_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory ;;
-        *) errors+=("PRODUCTION: expected true or false.") ;;
+    case "${PRODUCTION:-false}" in
+        [Tt][Rr][Uu][Ee])
+            VALIDATED_PRODUCTION=true
+            ACME_SERVER=https://acme-v02.api.letsencrypt.org/directory
+            ;;
+        [Ff][Aa][Ll][Ss][Ee])
+            VALIDATED_PRODUCTION=false
+            ACME_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
+            ;;
+        *) invalid_setting "PRODUCTION: expected true or false." ;;
     esac
 
-    if [[ "${CERTGEN_ACTION}" == issue && "${accepted,,}" != true ]]; then
-        errors+=("ACCEPT_LEGO_TOS: set to true after reviewing https://letsencrypt.org/repository/")
+    if [ "$CERTGEN_ACTION" = issue ]; then
+        case "${ACCEPT_LEGO_TOS:-false}" in
+            [Tt][Rr][Uu][Ee]) ;;
+            *) invalid_setting "ACCEPT_LEGO_TOS: set to true after reviewing https://letsencrypt.org/repository/" ;;
+        esac
     fi
 
-    VALIDATED_PROPAGATION="${PROPAGATION_SECONDS:-360}"
-    if ! [[ "${VALIDATED_PROPAGATION}" =~ ^[0-9]{1,10}$ ]] ||
-        (( 10#${VALIDATED_PROPAGATION} > 2147483647 )); then
-        errors+=("PROPAGATION_SECONDS: expected a non-negative integer in seconds.")
-    else
-        VALIDATED_PROPAGATION="$((10#${VALIDATED_PROPAGATION}))"
+    if ! VALIDATED_PROPAGATION=$(parse_uint "${PROPAGATION_SECONDS:-360}" 10 2147483647); then
+        invalid_setting "PROPAGATION_SECONDS: expected a non-negative integer in seconds."
     fi
 
-    resolvers="${resolvers// /}"
-    IFS=',' read -ra VALIDATED_DNS_RESOLVERS <<< "${resolvers}"
-    if [[ "${resolvers}" == *, || "${resolvers}" =~ [[:space:]] ]]; then
-        errors+=("DNS_RESOLVERS: expected comma-separated host:port entries.")
-    else
-        for resolver in "${VALIDATED_DNS_RESOLVERS[@]}"; do
-            port="${resolver##*:}"
-            if ! [[ "${resolver}" =~ ${resolver_pattern} ]] ||
-                (( 10#${port} < 1 || 10#${port} > 65535 )); then
-                errors+=("DNS_RESOLVERS: invalid resolver '${resolver}'.")
-            fi
-        done
-    fi
-
-    if (( ${#errors[@]} )); then
-        log_err "Environment validation failed."
-        printf '  %s\n' "${errors[@]}" >&2
-        return 2
-    fi
+    resolvers=${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}
+    VALIDATED_DNS_RESOLVERS=
+    while [ "${resolvers#* }" != "$resolvers" ]; do
+        VALIDATED_DNS_RESOLVERS=$VALIDATED_DNS_RESOLVERS${resolvers%% *}
+        resolvers=${resolvers#* }
+    done
+    VALIDATED_DNS_RESOLVERS=$VALIDATED_DNS_RESOLVERS$resolvers
+    case "$VALIDATED_DNS_RESOLVERS" in
+        ''|,*|*,|*,,*|*[[:space:]]*)
+            invalid_setting "DNS_RESOLVERS: expected comma-separated host:port entries."
+            ;;
+        *)
+            saved_ifs=$IFS
+            IFS=,
+            for resolver in $VALIDATED_DNS_RESOLVERS; do
+                if ! valid_resolver "$resolver"; then
+                    invalid_setting "DNS_RESOLVERS: invalid resolver '$resolver'."
+                fi
+            done
+            IFS=$saved_ifs
+            ;;
+    esac
+    return "$settings_status"
 }
 
-configure_cloudflare() {
-    local secret=/run/secrets/cloudflare_api_token
-    local token="${CLOUDFLARE_API_KEY:-${CF_DNS_API_TOKEN:-${CLOUDFLARE_API_TOKEN:-}}}"
-    local disable_cname_following="${LEGO_DISABLE_CNAME_SUPPORT:-true}"
-    local use_file=false
+read_secret() (
+    line=
+    while IFS= read -r line || [ -n "$line" ]; do
+        printf '%s\n' "$line"
+    done < "$1"
+)
 
-    # Use the exact TXT owner for service names, including inherited wildcard aliases.
-    # Honor a legacy lego override for an explicitly delegated DNS-01 challenge.
-    case "${disable_cname_following,,}" in
-        true|1|t) disable_cname_following=true ;;
-        false|0|f) disable_cname_following=false ;;
+configure_cloudflare() {
+    secret=$1
+    token=${CLOUDFLARE_API_KEY:-${CF_DNS_API_TOKEN:-${CLOUDFLARE_API_TOKEN:-}}}
+    use_file=false
+
+    # Use the exact TXT owner for inherited wildcard aliases.
+    # A legacy override can enable explicit DNS-01 CNAME delegation.
+    case "${LEGO_DISABLE_CNAME_SUPPORT:-true}" in
+        [Tt][Rr][Uu][Ee]|1|[Tt]) disable_cname_following=true ;;
+        [Ff][Aa][Ll][Ss][Ee]|0|[Ff]) disable_cname_following=false ;;
         *) log_err "LEGO_DISABLE_CNAME_SUPPORT must be true or false."; return 2 ;;
     esac
 
-    if [[ -z "${token}" && -r "${secret}" ]]; then
-        token="$(< "${secret}")"
+    if [ -z "$token" ] && [ -r "$secret" ]; then
+        token=$(read_secret "$secret") || return 2
         use_file=true
     fi
-    if ! [[ "${token}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        log_err "Provide a valid Cloudflare DNS API token through the Compose secret or CLOUDFLARE_API_TOKEN."
-        return 2
-    fi
+    case "$token" in
+        ''|*[!a-zA-Z0-9_-]*)
+            log_err "Provide a valid Cloudflare DNS API token through the Compose secret or CLOUDFLARE_API_TOKEN."
+            return 2
+            ;;
+    esac
 
-    # The wrapper's legacy CLOUDFLARE_API_KEY setting is an API token.
-    # Clear lego's legacy Global API Key settings before passing that token.
+    # Pass the token through lego's DNS API token settings.
     unset CLOUDFLARE_API_KEY CLOUDFLARE_API_KEY_FILE CF_API_KEY CF_API_KEY_FILE CLOUDFLARE_API_TOKEN
     unset CF_DNS_API_TOKEN CF_DNS_API_TOKEN_FILE CLOUDFLARE_DNS_API_TOKEN CLOUDFLARE_DNS_API_TOKEN_FILE
-    if [[ "${use_file}" == true ]]; then
-        export CF_DNS_API_TOKEN_FILE="${secret}"
+    if [ "$use_file" = true ]; then
+        export CF_DNS_API_TOKEN_FILE="$secret"
     else
-        export CF_DNS_API_TOKEN="${token}"
+        export CF_DNS_API_TOKEN="$token"
     fi
-    export CLOUDFLARE_PROPAGATION_TIMEOUT="${VALIDATED_PROPAGATION}"
-    export LEGO_DISABLE_CNAME_SUPPORT="${disable_cname_following}"
+    unset token
+    export CLOUDFLARE_PROPAGATION_TIMEOUT="$VALIDATED_PROPAGATION"
+    export LEGO_DISABLE_CNAME_SUPPORT="$disable_cname_following"
 }
