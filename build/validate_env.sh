@@ -45,6 +45,7 @@ validate_identity() {
 validate_env() {
     local production="${PRODUCTION:-false}"
     local accepted="${ACCEPT_LEGO_TOS:-false}"
+    local disable_challenge_cname="${LEGO_DISABLE_CNAME_SUPPORT:-true}"
     local resolvers="${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}"
     local resolver port
     local resolver_pattern='^([a-zA-Z0-9_.-]+|\[[0-9a-fA-F:.]+\]):[0-9]{1,5}$'
@@ -74,7 +75,13 @@ validate_env() {
         errors+=("ACCEPT_LEGO_TOS: set to true after reviewing https://letsencrypt.org/repository/")
     fi
 
-    VALIDATED_PROPAGATION="${PROPAGATION_SECONDS:-60}"
+    case "${disable_challenge_cname,,}" in
+        true|1|t) VALIDATED_DISABLE_CNAME_SUPPORT=true ;;
+        false|0|f) VALIDATED_DISABLE_CNAME_SUPPORT=false ;;
+        *) errors+=("LEGO_DISABLE_CNAME_SUPPORT must be true or false.") ;;
+    esac
+
+    VALIDATED_PROPAGATION="${PROPAGATION_SECONDS:-360}"
     if ! [[ "${VALIDATED_PROPAGATION}" =~ ^[0-9]{1,10}$ ]] ||
         (( 10#${VALIDATED_PROPAGATION} > 2147483647 )); then
         errors+=("PROPAGATION_SECONDS: expected a non-negative integer in seconds.")
@@ -127,4 +134,5 @@ configure_cloudflare() {
         export CF_DNS_API_TOKEN="${token}"
     fi
     export CLOUDFLARE_PROPAGATION_TIMEOUT="${VALIDATED_PROPAGATION}"
+    export LEGO_DISABLE_CNAME_SUPPORT="${VALIDATED_DISABLE_CNAME_SUPPORT}"
 }

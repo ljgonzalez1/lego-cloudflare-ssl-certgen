@@ -10,11 +10,13 @@
 
 ## :sparkles: Why use this instead of running lego directly?
 
-Running lego directly works perfectly well. This image exists for two quality-of-life improvements:
+The container wraps lego with YAML configuration, Compose secrets and a certificate report.
 
 1. **Keep your settings in `certgen.env` and your domains in YAML.** Each top-level key in `domains.yaml` represents one certificate and its output folder. Its list contains all the DNS names on that certificate.
 
 2. **Use Docker Compose for a repeatable, secrets-safe workflow.** Docker Compose provides the Cloudflare API token as a [Docker secret](https://docs.docker.com/compose/use-secrets/). lego reads the secret file directly.
+
+3. **See the outcome of each certificate request.** The final table lists attempted, issued, failed and skipped DNS names for every selected group, with totals for names and certificates.
 
 ---
 
@@ -49,7 +51,6 @@ cp template.env certgen.env
 mkdir -p ./ssl-certs
 
 # 4. Export CLOUDFLARE_API_KEY with your Cloudflare DNS API token, then run.
-# Replace ljgonzalez/lego-cloudflare-certgen:lego4.34.0-2.0 by lego-cloudflare-certgen:lego4.34.0-2.0 if you want to use the local image
 docker run --rm \
   --env-file ./certgen.env \
   --env CLOUDFLARE_API_KEY \
@@ -60,7 +61,7 @@ docker run --rm \
   --cap-add CHOWN \
   --cap-add SETUID \
   --cap-add SETGID \
-  ljgonzalez/lego-cloudflare-certgen:lego4.34.0-2.0
+  lego-cloudflare-certgen:lego4.34.0-2.0
 ```
 
 > :warning: **`--rm` is important.** Docker can show container environment variables in `docker inspect`. `--rm` removes the container when it exits.
@@ -134,8 +135,9 @@ All variables are optional unless marked **required**.
 | `EMAIL` | - | :heavy_check_mark: | Let's Encrypt account contact e-mail for issuance |
 | `PRODUCTION` | `false` | :x: | Set `true` to issue browser-trusted certificates |
 | `CLOUDFLARE_API_KEY` | - | :heavy_check_mark: | Cloudflare DNS API token for `docker run`. Compose reads `CLOUDFLARE_API_TOKEN` from the host as a secret. |
-| `PROPAGATION_SECONDS` | `60` | :x: | DNS TXT propagation timeout in seconds |
+| `PROPAGATION_SECONDS` | `360` | :x: | Maximum wait for TXT propagation per challenge, in seconds |
 | `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | :x: | Comma-separated resolvers used to verify TXT record visibility |
+| `LEGO_DISABLE_CNAME_SUPPORT` | `true` | :x: | `true` publishes TXT at the exact challenge name. Use `false` to follow explicit challenge CNAME delegations. |
 | `ACCEPT_LEGO_TOS` | `false` | :heavy_check_mark: | Set `true` after reading the [Let's Encrypt Terms of Service](https://letsencrypt.org/repository/) |
 | `UID` | `1000` | :x: | UID used to write certificates and ACME account data |
 | `GID` | `1000` | :x: | GID used to write certificates and ACME account data |
@@ -161,6 +163,14 @@ certificateB:
 - List up to 100 distinct DNS names per certificate. A domain can appear in multiple groups.
 - The first DNS name determines lego’s certificate filename.
 
+### A, AAAA and CNAME records
+
+A, AAAA and CNAME service records can coexist in the same certificate group, with ordinary names and quoted wildcards. DNS-01 validates each identifier through a temporary TXT record. For both `example.com` and `*.example.com`, the TXT owner is `_acme-challenge.example.com`. Add the names you want on the certificate to `domains.yaml` using the existing list format. [Let's Encrypt DNS-01 documentation](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
+
+By default, lego publishes TXT at the exact `_acme-challenge` name. The exact TXT takes precedence over a CNAME inherited from a wildcard DNS record. The 360-second propagation timeout allows caches to expire with Cloudflare's 300-second automatic TTL. Increase `PROPAGATION_SECONDS` if your records use a longer TTL. [Cloudflare wildcard DNS records](https://developers.cloudflare.com/dns/manage-dns-records/reference/wildcard-dns-records/) · [Cloudflare TTL](https://developers.cloudflare.com/dns/manage-dns-records/reference/ttl/)
+
+If your DNS explicitly delegates `_acme-challenge` via a CNAME, set `LEGO_DISABLE_CNAME_SUPPORT=false` in `certgen.env` and grant the token access to the destination Cloudflare zone. This setting applies to all selected groups in that invocation. Select specific groups with `--only` when they use different challenge modes. [lego CNAME option](https://go-acme.github.io/lego/usage/cli/options/#lego_disable_cname_support)
+
 ### Command options
 
 | Option | Description |
@@ -171,6 +181,21 @@ certificateB:
 | `--staging` / `--production` | Override `PRODUCTION` for one invocation |
 | `--config FILE` | Select a YAML file inside the container. The default mount target is `/app/domains.yaml`. |
 | `--output DIRECTORY` | Select a directory inside the container. Mount it and grant write access to the configured UID/GID. The default is `/ssl-certs`. |
+
+### Issuance report
+
+Each row counts the DNS names of one selected certificate. The footer totals those counts, followed by counts of certificate requests. Terminal output uses ANSI colors.
+
+| Column | Meaning |
+|---|---|
+| Attempted | Names passed to lego in the certificate request |
+| Issued | Names covered by the successfully issued certificate |
+| Failed | Names passed to lego in a request that failed |
+| Skipped | Names in a group that could not reach lego, for example due to an unwritable output directory |
+
+The request issues one certificate for all its names. A failed order counts all requested names as failed even when some individual DNS challenges passed. Failed or skipped groups produce a nonzero exit status after the report. Check the preceding lego or setup error for the cause.
+
+Run the local regression tests with `python3 -B -m unittest discover -s tests -v` from the repository root. They require Bash, Python 3 and PyYAML and use a local lego stub.
 
 ---
 
