@@ -42,7 +42,7 @@ mkdir -p ssl-certs
 ```bash
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:3.4.3
+  ljgonzalez/lego-cloudflare-certgen:3.4.5
 ```
 
 Docker Engine 23 and later accept relative bind paths. On older versions, use `"$PWD/domains.yaml:/app/domains.yaml:ro"` and `"$PWD/ssl-certs:/ssl-certs"`. The default Docker capabilities include CHOWN, SETUID and SETGID. `-t` enables ANSI output. [Docker run](https://docs.docker.com/reference/cli/docker/container/run/#volume) · [Default capabilities](https://docs.docker.com/engine/containers/run/#runtime-privilege-and-linux-capabilities)
@@ -88,7 +88,7 @@ The directory timestamps use the original script’s naming convention and offse
 
 ## 🛠️ Build
 
-Version **3.4.3** runs on **Alpine 3.24.4** with **lego v4.34.0**. Build from the directory that contains this README.
+Version **3.4.5** runs on **Alpine 3.24.4** with **lego v4.34.0**. Build from the directory that contains this README.
 
 | Target | Buildx platform | Official lego archive |
 |---|---|---|
@@ -123,11 +123,11 @@ Use your target platform in place of `linux/amd64`. `--load` loads this single-p
 
 ```bash
 docker buildx build --builder lego-multiarch --platform linux/amd64 \
-  --progress=plain --load -t ljgonzalez/lego-cloudflare-certgen:3.4.3 ./build
+  --progress=plain --load -t ljgonzalez/lego-cloudflare-certgen:3.4.5 ./build
 
-docker run --rm --entrypoint lego ljgonzalez/lego-cloudflare-certgen:3.4.3 --version
+docker run --rm --entrypoint lego ljgonzalez/lego-cloudflare-certgen:3.4.5 --version
 docker run --rm -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
-  ljgonzalez/lego-cloudflare-certgen:3.4.3 --list
+  ljgonzalez/lego-cloudflare-certgen:3.4.5 --list
 ```
 
 ### Measure the Alpine runtime image
@@ -135,7 +135,7 @@ docker run --rm -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
 The final stage installs Bash, the CA bundle, PyYAML with Python, `su-exec` and timezone data using `apk add --no-cache`. Only the stripped lego executable and its license cross from the download stage. Inspect the local image size in MiB.
 
 ```bash
-docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.4.3 |
+docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.4.5 |
   awk '{printf "%.1f MiB\n", $1 / 1048576}'
 ```
 
@@ -157,7 +157,7 @@ All variables are optional unless marked **required**.
 | `UID` | `1000` | :x: | UID used to write certificates and ACME account data |
 | `GID` | `1000` | :x: | GID used to write certificates and ACME account data |
 | `DOMAINS_FILE` | `./domains.yaml` | :x: | Host YAML path for Compose |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.3` | :x: | Image used by Compose |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.5` | :x: | Image used by Compose |
 | `CERTGEN_ENV_FILE` | `./.env` | :x: | Settings file read by the Compose service |
 
 ### Certificate groups and wildcard domains
