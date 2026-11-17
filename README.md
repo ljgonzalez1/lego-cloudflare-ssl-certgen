@@ -8,7 +8,7 @@
 
 ---
 
-## :sparkles: Why use this instead of running lego directly?
+## :sparkles: Features
 
 The container wraps lego with YAML configuration, Compose secrets and a certificate report.
 
@@ -42,7 +42,7 @@ mkdir -p ssl-certs
 ```bash
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:3.4.5
+  ljgonzalez/lego-cloudflare-certgen:4.0.0
 ```
 
 Docker Engine 23 and later accept relative bind paths. On older versions, use `"$PWD/domains.yaml:/app/domains.yaml:ro"` and `"$PWD/ssl-certs:/ssl-certs"`. The default Docker capabilities include CHOWN, SETUID and SETGID. `-t` enables ANSI output. [Docker run](https://docs.docker.com/reference/cli/docker/container/run/#volume) · [Default capabilities](https://docs.docker.com/engine/containers/run/#runtime-privilege-and-linux-capabilities)
@@ -88,7 +88,7 @@ The directory timestamps use the original script’s naming convention and offse
 
 ## 🛠️ Build
 
-Version **3.4.5** runs on **Alpine 3.24.4** with **lego v4.34.0**. Build from the directory that contains this README.
+Version **4.0.0** uses **Alpine 3.24.4** and the official **lego v4.34.0** binaries. Run the build commands from the directory that contains this README.
 
 | Target | Buildx platform | Official lego archive |
 |---|---|---|
@@ -97,7 +97,7 @@ Version **3.4.5** runs on **Alpine 3.24.4** with **lego v4.34.0**. Build from th
 | ARMv7 / Debian armhf | `linux/arm/v7` | `lego_v4.34.0_linux_armv7.tar.gz` |
 | ARMv8 / AArch64 | `linux/arm64` | `lego_v4.34.0_linux_arm64.tar.gz` |
 
-The ARMv7 image uses the Alpine `armv7` userspace. The download stage verifies the SHA-256 of the platform-specific archive, and the final stage checks the binary version and architecture, then runs `--list` and `--dry-run` on each target. [lego v4.34.0](https://github.com/go-acme/lego/releases/tag/v4.34.0)
+The ARMv7 image uses the Alpine `armv7` userspace. Debian calls that architecture `armhf`. [Alpine image platforms](https://hub.docker.com/_/alpine) · [lego v4.34.0](https://github.com/go-acme/lego/releases/tag/v4.34.0)
 
 ### Set up Buildx
 
@@ -123,19 +123,33 @@ Use your target platform in place of `linux/amd64`. `--load` loads this single-p
 
 ```bash
 docker buildx build --builder lego-multiarch --platform linux/amd64 \
-  --progress=plain --load -t ljgonzalez/lego-cloudflare-certgen:3.4.5 ./build
+  --progress=plain --load -t ljgonzalez/lego-cloudflare-certgen:4.0.0 ./build
 
-docker run --rm --entrypoint lego ljgonzalez/lego-cloudflare-certgen:3.4.5 --version
+docker run --rm --entrypoint lego ljgonzalez/lego-cloudflare-certgen:4.0.0 --version
 docker run --rm -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
-  ljgonzalez/lego-cloudflare-certgen:3.4.5 --list
+  ljgonzalez/lego-cloudflare-certgen:4.0.0 --list
 ```
 
-### Measure the Alpine runtime image
+To build and load each architecture locally with a distinct tag, use this loop.
 
-The final stage installs Bash, the CA bundle, PyYAML with Python, `su-exec` and timezone data using `apk add --no-cache`. Only the stripped lego executable and its license cross from the download stage. Inspect the local image size in MiB.
+```sh
+for arch in amd64 386 arm/v7 arm64; do
+  suffix=$(printf '%s' "$arch" | tr / -)
+  docker buildx build --builder lego-multiarch --platform "linux/$arch" \
+    --progress=plain --load -t "ljgonzalez/lego-cloudflare-certgen:4.0.0-$suffix" ./build || break
+done
+```
 
-```bash
-docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.4.5 |
+### 🪶 Runtime image
+
+The Alpine downloader selects the official lego archive for the target CPU and verifies its SHA-256 checksum. The Alpine builder compiles `certgen-core` with C++17 and statically links libyaml. The final stage starts from `scratch` and receives a minimal Alpine 3.24 filesystem with musl, the CA bundle, timezone data and `su-exec`. Dash provides `/bin/sh`. The container runs the POSIX scripts, `certgen-core` and lego. BusyBox, Ash, Bash, Python, the compiler and the downloader stay out of the runtime.
+
+Each platform build runs the installed lego binary as the non-root user, checks its version and architecture, then exercises `--list`, `--dry-run` and the report. These checks run locally inside the build without requesting a certificate.
+
+Inspect the loaded image size in MiB.
+
+```sh
+docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:4.0.0 |
   awk '{printf "%.1f MiB\n", $1 / 1048576}'
 ```
 
@@ -157,7 +171,7 @@ All variables are optional unless marked **required**.
 | `UID` | `1000` | :x: | UID used to write certificates and ACME account data |
 | `GID` | `1000` | :x: | GID used to write certificates and ACME account data |
 | `DOMAINS_FILE` | `./domains.yaml` | :x: | Host YAML path for Compose |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.5` | :x: | Image used by Compose |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:4.0.0` | :x: | Image used by Compose |
 | `CERTGEN_ENV_FILE` | `./.env` | :x: | Settings file read by the Compose service |
 
 ### Certificate groups and wildcard domains
@@ -249,7 +263,15 @@ Each row counts the DNS names of one selected certificate. The footer totals tho
 
 The request issues one certificate for all its names. A failed order counts all requested names as failed even when some individual DNS challenges passed. Failed or skipped groups produce a nonzero exit status after the report. Check the preceding lego or setup error for the cause.
 
-Run the local regression tests with `python3 -B -m unittest discover -s tests -v` from the repository root. They require Bash, Python 3 and PyYAML. The 34 tests use local fixtures for lego and the release archives. Coverage includes YAML and CLI validation, token routing, failed and skipped groups, timestamp collisions, ANSI layout and checksums.
+### 🧪 Run the tests
+
+From the repository root on Linux, use a C++17 compiler, libyaml development headers and standard command-line utilities. The ANSI tests use the util-linux `script` command to create a pseudo-terminal.
+
+```sh
+sh tests/run.sh
+```
+
+The 38 offline cases cover YAML and CLI validation, credential handling, the DNS-01 arguments for A, AAAA, CNAME, wildcards and planned names, concurrent output paths, mixed certificate results, ANSI alignment and release archive checksums. They use local fixtures for lego and curl. Use the staging example above to verify actual issuance against a Cloudflare zone you control.
 
 ---
 
@@ -310,17 +332,16 @@ Compose uses these three capabilities with `no-new-privileges:true`. Plain Docke
 
 | File | Purpose |
 |---|---|
-| `build/Dockerfile` | Multi-platform download and runtime stages |
+| `build/Dockerfile` | Alpine downloader, C++ builder and minimal runtime target |
 | `build/download_lego.sh` | Platform-specific lego download and checksum |
 | `build/entrypoint.sh` | CLI, output directory and privilege drop |
-| `build/read_domains.py` | YAML validation |
+| `build/src/` | C++ YAML validator, runtime helpers and ANSI report |
 | `build/run_lego.sh` | One lego request per selected certificate |
-| `build/print_summary.py` | Terminal-aware ANSI table |
 | `build/validate_env.sh` | Configuration validation |
 | `compose.yml` | One-shot Compose service with a Docker secret |
 | `example.env` | Example environment settings |
 | `template.domains.yaml` | Sample certificate groups |
-| `tests/` | Offline regression tests |
+| `tests/run.sh` | Offline regression tests |
 | `examples/terminal.domains.yaml` | Names used in the terminal demonstration |
 ---
 
@@ -335,7 +356,7 @@ Compose uses these three capabilities with `no-new-privileges:true`. Plain Docke
 
 ## 🔐 Alpine image findings and lego version
 
-The Docker Scout report for the scanned Alpine 3.24.4 image showed the seven entries below in layer 0. The scores and target revisions reproduce that report. The findings concern upstream user-space libraries packaged by Alpine.
+Docker Scout reported the seven findings below for the previous Alpine 3.24.4 image. The scores and target revisions describe that scan. The report covers upstream user-space libraries packaged by Alpine. Version 4.0.0 assembles a fresh filesystem from the Alpine 3.24 repositories. Scan the rebuilt image digest to see its findings.
 
 | CVE | Package seen in the scan | Docker Scout score | Fix revision shown by Scout |
 |---|---|---|---|
@@ -357,10 +378,10 @@ Integer overflows in `regcomp()` can cause undersized allocations and heap write
 
 OpenSSL's 10 November 2026 advisory assigns Low severity to the five OpenSSL entries. The table's OpenSSL APK revision is the fix target reported by Docker Scout. [OpenSSL advisory](https://openssl-library.org/news/secadv/20261110.txt)
 
-A future release will rebuild on a newer Alpine image with the applicable fixes and scan its image digest again. This release pins the older lego `v4.34.0` for simplicity. A future release plans to move to the `5.Y.X` series after testing the CLI and Cloudflare DNS-01 workflow on the supported architectures. [lego releases](https://github.com/go-acme/lego/releases)
+A future release will use a newer Alpine image and verify the applicable fixes against its digest. This release keeps the older lego `v4.34.0` for simplicity. The plan is to move to lego `5.X.Y` after testing its CLI and Cloudflare DNS-01 workflow on the supported architectures. [lego releases](https://github.com/go-acme/lego/releases)
 
 ---
 
 ## :page_facing_up: Licence
 
-This project is a thin wrapper around [lego](https://github.com/go-acme/lego), which is licenced under the [MIT Licence](https://github.com/go-acme/lego/blob/master/LICENSE). Refer to the lego repository for its terms.
+This project is a thin wrapper around [lego](https://github.com/go-acme/lego), which is licenced under the [MIT Licence](https://github.com/go-acme/lego/blob/master/LICENSE). The C++ validator uses [libyaml](build/licenses/libyaml.txt) under its MIT license.
