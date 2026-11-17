@@ -5,10 +5,11 @@ set -eu
 case "${TARGETARCH:-}/${TARGETVARIANT:-}" in
     amd64/|amd64/v1) release_arch=linux_amd64 ;;
     386/) release_arch=linux_386 ;;
+    arm/v6) release_arch=linux_armv6 ;;
     arm/v7) release_arch=linux_armv7 ;;
     arm64/|arm64/v8) release_arch=linux_arm64 ;;
     *)
-        printf 'Unsupported target platform. Use linux/amd64, linux/386, linux/arm/v7 or linux/arm64.\n' >&2
+        printf 'Unsupported target platform. Use linux/amd64, linux/386, linux/arm/v6, linux/arm/v7 or linux/arm64.\n' >&2
         exit 2
         ;;
 esac
