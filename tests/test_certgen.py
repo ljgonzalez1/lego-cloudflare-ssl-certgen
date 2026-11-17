@@ -108,6 +108,22 @@ class CertgenTests(unittest.TestCase):
         self.assertEqual(request["disable_cname"], "false")
         self.assertEqual(request["propagation_seconds"], "90")
 
+    def test_dns01_submits_names_without_service_record_discovery(self):
+        new_names = ["unpublished.example.test", "*.new.unpublished.example.test"]
+        self.config.write_text(
+            "planned:\n" + "".join(f'  - "{domain}"\n' for domain in new_names), encoding="utf-8",
+        )
+        for name in ("dig", "host", "nslookup", "getent", "curl", "wget"):
+            resolver = self.output.parent / name
+            resolver.write_text("#!/bin/sh\nprintf 'Unexpected preflight lookup\\n' >&2\nexit 1\n")
+            resolver.chmod(0o755)
+        result = self.run_certgen("planned")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Unexpected preflight lookup", result.stderr)
+        request, = self.requests()
+        self.assertEqual(request["domains"], new_names)
+        self.assertEqual(request["disable_cname"], "true")
+
     def test_summary_keeps_yaml_order_and_counts_failed_and_skipped_groups(self):
         (self.output / SKIPPED_GROUP).symlink_to(self.config)
         result = self.run_certgen()

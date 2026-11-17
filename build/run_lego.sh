@@ -126,11 +126,7 @@ else
     log_section "🧪 STAGING MODE"
 fi
 log_info "ACME server: ${ACME_SERVER}"
-if [[ "${VALIDATED_DISABLE_CNAME_SUPPORT}" == true ]]; then
-    log_info "DNS-01 uses TXT at the exact _acme-challenge name."
-else
-    log_info "DNS-01 follows CNAME delegations at _acme-challenge."
-fi
+log_info "Cloudflare DNS-01 validates each name with a temporary TXT record."
 log_info "Timezone: ${TZ}"
 log_info "Target UID: ${CERT_UID}  GID: ${CERT_GID}"
 

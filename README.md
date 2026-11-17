@@ -163,4 +163,4 @@ The ANSI table counts attempted, issued, failed and skipped DNS names per certif
 
 ## :page_facing_up: License
 
-This project is a thin wrapper around [lego licence](https://github.com/go-acme/lego/blob/master/LICENSE) and is licenced under the [MIT Licence](LICENSE). Refer to the lego repository for its terms.
+[MIT](LICENSE) · [lego license](https://github.com/go-acme/lego/blob/master/LICENSE)
