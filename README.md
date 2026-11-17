@@ -22,87 +22,112 @@ The container wraps lego with YAML configuration, Compose secrets and a certific
 
 ## :whale: Requirements
 
-- Docker Engine and the Docker Compose plugin if using Option B
+- Docker Engine and the Docker Compose plugin if using Compose
 - A Cloudflare [**DNS API token**](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with `Zone > DNS > Edit` and `Zone > Zone > Read` for the relevant zones
 
 ---
 
-### How to build?
+## 🛠️ Build and publish
 
-Both options use the same local image. If you need to build it, run this once from the repository root.
+Version **3.2** runs on **Debian Bookworm Slim** with **lego v4.34.0**. Build from the directory that contains this README.
+
+| Target | Buildx platform | Official lego archive |
+|---|---|---|
+| AMD64 / x86-64 | `linux/amd64` | `lego_v4.34.0_linux_amd64.tar.gz` |
+| i386 / 32-bit x86 | `linux/386` | `lego_v4.34.0_linux_386.tar.gz` |
+| ARMv7 / Debian armhf | `linux/arm/v7` | `lego_v4.34.0_linux_armv7.tar.gz` |
+| ARMv8 / AArch64 | `linux/arm64` | `lego_v4.34.0_linux_arm64.tar.gz` |
+
+The ARMv7 image uses the Debian `armhf` userspace. The download stage verifies the SHA-256 of the platform-specific archive, and the final stage checks the binary version and architecture, then runs `--list` and `--dry-run` on each target. [lego v4.34.0](https://github.com/go-acme/lego/releases/tag/v4.34.0)
+
+### Set up Buildx
+
+Use a running Docker Engine, Buildx and QEMU registered on the Docker host for non-native targets. The builder also needs network access to Docker Hub, GitHub Releases and the base images' package mirrors.
 
 ```bash
-docker build -t lego-cloudflare-certgen:lego4.34.0-2.0 ./build
+docker buildx ls
+# Create this builder once. If it exists, use docker buildx use lego-multiarch.
+docker buildx create --name lego-multiarch --driver docker-container --use
+docker buildx inspect lego-multiarch --bootstrap
 ```
+
+Check the builder's `Platforms` line for all four targets. On Linux, if any are missing, register the corresponding emulators and inspect again. [Docker multi-platform builds](https://docs.docker.com/build/building/multi-platform/)
+
+```bash
+docker run --privileged --rm tonistiigi/binfmt --install arm64,arm,386
+docker buildx inspect lego-multiarch --bootstrap
+```
+
+### Build and try one platform locally
+
+Use your target platform in place of `linux/amd64`. `--load` loads this single-platform image into the local Engine for testing.
+
+```bash
+docker buildx build --builder lego-multiarch --platform linux/amd64 \
+  --progress=plain --load -t ljgonzalez/lego-cloudflare-certgen:3.2 ./build
+
+docker run --rm --entrypoint lego ljgonzalez/lego-cloudflare-certgen:3.2 --version
+docker run --rm -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
+  ljgonzalez/lego-cloudflare-certgen:3.2 --list
+```
+
+
+### Publish all four platforms under each tag
+
+Create or open [ljgonzalez/lego-cloudflare-certgen on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). Use the `ljgonzalez` namespace and a Docker Hub access token with write permission when prompted by `docker login`. Select **Public** in Docker Hub if the images are intended for public pulls. [Docker Hub repository setup](https://docs.docker.com/docker-hub/repos/create/)
+
+```bash
+docker login --username ljgonzalez
+docker buildx build --builder lego-multiarch \
+  --platform linux/amd64,linux/386,linux/arm/v7,linux/arm64 \
+  --progress=plain \
+  -t ljgonzalez/lego-cloudflare-certgen:lego4.34.0-3.2 \
+  -t ljgonzalez/lego-cloudflare-certgen:latest \
+  -t ljgonzalez/lego-cloudflare-certgen:3.2 \
+  --push ./build
+```
+
+One `--push` publishes the same multi-platform index under each tag. Publish 3.2 first and 3.3 second to place `latest` on 3.3. If re-publishing 3.2 later, omit its `latest` tag to keep it on 3.3.
+
+```bash
+for tag in lego4.34.0-3.2 latest 3.2; do
+  docker buildx imagetools inspect "ljgonzalez/lego-cloudflare-certgen:$tag" || break
+done
+```
+
+Each tag should list `linux/amd64`, `linux/386`, `linux/arm/v7` and `linux/arm64` (sometimes shown as `linux/arm64/v8`). Build attestations can appear as `unknown/unknown`. [Buildx image build options](https://docs.docker.com/reference/cli/docker/buildx/build/)
+
 
 ---
 
-## :rocket: Quick start
+## 🚀 Quick start
 
-### Option A - `docker run` (simple, token in shell environment)
-
-```bash
-# 1. Copy the environment template.
-cp template.env certgen.env
-
-# 2. Edit certgen.env. Set EMAIL and ACCEPT_LEGO_TOS=true.
-
-# 3. Set your domains in domains.yaml and create the output directory.
-mkdir -p ./ssl-certs
-
-# 4. Export CLOUDFLARE_API_KEY with your Cloudflare DNS API token, then run.
-docker run --rm \
-  --env-file ./certgen.env \
-  --env CLOUDFLARE_API_KEY \
-  --volume "$(pwd)/domains.yaml:/app/domains.yaml:ro" \
-  --volume "$(pwd)/ssl-certs:/ssl-certs" \
-  --security-opt no-new-privileges:true \
-  --cap-drop ALL \
-  --cap-add CHOWN \
-  --cap-add SETUID \
-  --cap-add SETGID \
-  lego-cloudflare-certgen:lego4.34.0-2.0
-```
-
-> :warning: **`--rm` is important.** Docker can show container environment variables in `docker inspect`. `--rm` removes the container when it exits.
-
----
-
-### Option B - Docker Compose (recommended; token passed as secret)
+Use the published 3.2 tag or load a locally built image under the same tag. Copy `template.env` to `certgen.env` and set `EMAIL` and `ACCEPT_LEGO_TOS=true`. Put your Cloudflare DNS API token in the project `.env` file as `CLOUDFLARE_API_TOKEN=your_token`.
 
 ```bash
-# 1. Export CLOUDFLARE_API_TOKEN, then create .env for the Compose secret.
-#    If .env already exists, edit the token entry in place and unset the shell variable.
-(
-  umask 077
-  set -C
-  printf 'CLOUDFLARE_API_TOKEN=%s\n' "${CLOUDFLARE_API_TOKEN:?Export your Cloudflare token first}" > .env
-) && unset CLOUDFLARE_API_TOKEN
+test -e certgen.env || cp template.env certgen.env
+mkdir -p ssl-certs
 chmod 600 .env
-
-# 2. Copy and edit the container settings. Set EMAIL and ACCEPT_LEGO_TOS=true.
-cp template.env certgen.env
-
-# 3. Set your domains in domains.yaml and create the output directory.
-mkdir -p ./ssl-certs
-
-# 4. Issue certificates (staging by default). Compose removes the container on exit.
 docker compose run --rm certgen
-
-# 5. After use, remove the token entry from .env. If .env only held the token:
-# rm .env
 ```
 
-Compose loads `.env` from the project directory and makes the token available to lego as a secret file. Use `certgen.env` for container settings.
-
-To validate the example YAML and preview a single group without issuing a certificate:
+Compose loads the token as a secret file and settings from `certgen.env`. Set `CERTGEN_IMAGE` to use another locally built tag. For plain Docker, pass both files in this order so `.env` supplies the token.
 
 ```bash
-CLOUDFLARE_API_TOKEN= DOMAINS_FILE=./template.domains.yaml docker compose run --rm certgen --list
-CLOUDFLARE_API_TOKEN= DOMAINS_FILE=./template.domains.yaml docker compose run --rm certgen --dry-run --only certificateA
+docker run --rm -t --env-file certgen.env --env-file .env \
+  -v "$PWD/domains.yaml:/app/domains.yaml:ro" -v "$PWD/ssl-certs:/ssl-certs" \
+  ljgonzalez/lego-cloudflare-certgen:3.2
 ```
 
-To issue production certificates for the configured groups, use `docker compose run --rm certgen --production`.
+### Preview and issue
+
+```bash
+DOMAINS_FILE=./template.domains.yaml docker compose run --rm certgen --list
+DOMAINS_FILE=./template.domains.yaml docker compose run --rm certgen --dry-run --only certificateA
+docker compose run --rm certgen --production
+```
+
+Use the first two commands to preview a configuration. The last command requests production certificates. A run without `--production` uses staging by default.
 
 Certificates appear in `./ssl-certs/<group>/<timestamp>/requested_<timestamp>_expires_<timestamp>/`. For example:
 
@@ -134,14 +159,15 @@ All variables are optional unless marked **required**.
 | `TZ` | `Etc/UTC` | :x: | IANA timezone for directory names. Use `America/Santiago` to match the original script. |
 | `EMAIL` | - | :heavy_check_mark: | Let's Encrypt account contact e-mail for issuance |
 | `PRODUCTION` | `false` | :x: | Set `true` to issue browser-trusted certificates |
-| `CLOUDFLARE_API_KEY` | - | :heavy_check_mark: | Cloudflare DNS API token for `docker run`. Compose reads `CLOUDFLARE_API_TOKEN` from the host as a secret. |
+| `CLOUDFLARE_API_TOKEN` | - | :heavy_check_mark: | Cloudflare DNS API token for Docker run and the Compose secret. Docker run also accepts the legacy `CLOUDFLARE_API_KEY` variable. |
 | `PROPAGATION_SECONDS` | `360` | :x: | Maximum wait for TXT propagation per challenge, in seconds |
 | `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | :x: | Comma-separated resolvers used to verify TXT record visibility |
 | `LEGO_DISABLE_CNAME_SUPPORT` | `true` | :x: | `true` publishes TXT at the exact challenge name. Use `false` to follow explicit challenge CNAME delegations. |
 | `ACCEPT_LEGO_TOS` | `false` | :heavy_check_mark: | Set `true` after reading the [Let's Encrypt Terms of Service](https://letsencrypt.org/repository/) |
 | `UID` | `1000` | :x: | UID used to write certificates and ACME account data |
 | `GID` | `1000` | :x: | GID used to write certificates and ACME account data |
-| `DOMAINS_FILE` | `./domains.yaml` | :x: | Host YAML path, set in the shell or the project’s `.env` for Compose |
+| `DOMAINS_FILE` | `./domains.yaml` | :x: | Host YAML path for Compose |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.2` | :x: | Image used by Compose |
 
 ### Certificate groups and wildcard domains
 
@@ -171,6 +197,44 @@ By default, lego publishes TXT at the exact `_acme-challenge` name. The exact TX
 
 If your DNS explicitly delegates `_acme-challenge` via a CNAME, set `LEGO_DISABLE_CNAME_SUPPORT=false` in `certgen.env` and grant the token access to the destination Cloudflare zone. This setting applies to all selected groups in that invocation. Select specific groups with `--only` when they use different challenge modes. [lego CNAME option](https://go-acme.github.io/lego/usage/cli/options/#lego_disable_cname_support)
 
+### Verify A, AAAA and CNAME issuance in staging
+
+Choose an active zone that your Cloudflare token can edit and replace `example.net` below. The names can be dedicated DNS-only test records.
+
+| DNS record to verify | Type | Example value |
+|---|---|---|
+| `a-check.example.net` | A | `192.0.2.10` |
+| `v6-check.example.net` | AAAA | `2001:db8::10` |
+| `alias-check.example.net` | CNAME | `a-check.example.net` |
+| `*.wild-check.example.net` | CNAME | `a-check.example.net` |
+
+```bash
+dig +short a-check.example.net A
+dig +short v6-check.example.net AAAA
+dig +short alias-check.example.net CNAME
+dig +short probe.wild-check.example.net CNAME
+```
+
+Put this group in a separate file named `dns-smoke.yaml` so the test submits one certificate order.
+
+```yaml
+dns-smoke:
+  - a-check.example.net
+  - v6-check.example.net
+  - alias-check.example.net
+  - '*.wild-check.example.net'
+```
+
+```bash
+DOMAINS_FILE=./dns-smoke.yaml docker compose run --rm certgen --staging --only dns-smoke
+```
+
+Expect `4 Attempted`, `4 Issued` and `0 Failed` when the certificate is issued. Locate `certificates/a-check.example.net.crt` in the reported output path, replacing the container prefix `/ssl-certs` with `./ssl-certs` on the host. Use `openssl` on the host to compare the SANs.
+
+```bash
+openssl x509 -in /path/from/run/certificates/a-check.example.net.crt -noout -issuer -ext subjectAltName
+```
+
 ### Command options
 
 | Option | Description |
@@ -184,7 +248,7 @@ If your DNS explicitly delegates `_acme-challenge` via a CNAME, set `LEGO_DISABL
 
 ### Issuance report
 
-Each row counts the DNS names of one selected certificate. The footer totals those counts, followed by counts of certificate requests. Terminal output uses ANSI colors.
+Each row counts the DNS names of one selected certificate. The footer totals those counts, followed by counts of certificate requests. Terminal output uses ANSI colors and wraps long group names to the terminal width. The table uses ASCII borders and keeps emojis outside the grid.
 
 | Column | Meaning |
 |---|---|
@@ -195,7 +259,7 @@ Each row counts the DNS names of one selected certificate. The footer totals tho
 
 The request issues one certificate for all its names. A failed order counts all requested names as failed even when some individual DNS challenges passed. Failed or skipped groups produce a nonzero exit status after the report. Check the preceding lego or setup error for the cause.
 
-Run the local regression tests with `python3 -B -m unittest discover -s tests -v` from the repository root. They require Bash, Python 3 and PyYAML and use a local lego stub.
+Run the local regression tests with `python3 -B -m unittest discover -s tests -v` from the repository root. They require Bash, Python 3 and PyYAML. The tests use local fixtures for lego and the release archives.
 
 ---
 
@@ -212,66 +276,35 @@ Scope the token to the zones for the groups you plan to issue.
 
 ---
 
-## :shield: Security
+## 🔐 Runtime permissions
 
-The container starts with these Linux capabilities:
+The entrypoint starts as root to prepare the standard output directory, then the YAML reader and lego run as the configured UID/GID. Set them to an identity that can read the mounted YAML and write the certificate output.
 
 | Capability | Why it is needed |
 |---|---|
-| `CHOWN` | Entrypoint sets ownership of the mounted output directory to the target UID/GID |
-| `SETUID` | `gosu` switches to the configured UID |
-| `SETGID` | `gosu` switches to the configured GID |
+| `CHOWN` | Set ownership of the standard output directory |
+| `SETUID` | Switch to the configured UID |
+| `SETGID` | Switch to the configured GID |
 
-`--cap-drop ALL` clears the default capability set before adding the three capabilities above. `no-new-privileges:true` prevents programs from gaining elevated privileges during execution. The YAML reader and lego run as the configured non-root identity.
-
-### Docker Compose secrets vs environment variables
-
-| Method | Token visible in `docker inspect`? | Token visible in `env` inside container? |
-|---|---|---|
-| `--env CLOUDFLARE_API_KEY` | :white_check_mark: Yes | :white_check_mark: Yes |
-| Docker secret (`/run/secrets/`) | :x: No | :x: No |
-
-### Recommended `.gitignore`
-
-```gitignore
-.env
-certgen.env
-/domains.yaml
-ssl-certs/
-```
+Compose uses these three capabilities with `no-new-privileges:true`. Plain Docker uses the default capabilities. With `--env-file`, the Docker daemon exposes the environment to users who can inspect the running container. Compose passes the token through `/run/secrets/cloudflare_api_token`. Keep `.env`, `certgen.env` and `ssl-certs/` local.
 
 ---
 
-## :file_folder: File structure
+## 📁 Project files
 
-```text
-.
-├── assets
-│   └── readme-banner.png    # Project banner
-├── build
-│   ├── Dockerfile           # Image definition
-│   ├── entrypoint.sh        # CLI, output mount and privilege drop
-│   ├── read_domains.py      # YAML validation
-│   ├── run_lego.sh          # Non-root phase: invokes lego per group
-│   └── validate_env.sh      # Sourced module: environment validation
-├── compose.yml              # Compose workflow with Docker secrets
-├── example.env              # Annotated sample configuration
-├── LICENSE
-├── README.md
-├── template.domains.yaml    # Example groups and domains
-└── template.env             # Blank configuration template
-```
-
-Local runtime files:
-
-```text
-.
-├── .env                    # Compose settings and secret source
-├── certgen.env             # Container settings (copy of template.env)
-├── domains.yaml            # Local certificate groups and DNS names
-└── ssl-certs/              # Certificates, private keys and account data
-```
-
+| File | Purpose |
+|---|---|
+| `build/Dockerfile` | Multi-platform download and runtime stages |
+| `build/download_lego.sh` | Platform-specific lego download and checksum |
+| `build/entrypoint.sh` | CLI, output directory and privilege drop |
+| `build/read_domains.py` | YAML validation |
+| `build/run_lego.sh` | One lego request per selected certificate |
+| `build/print_summary.py` | Terminal-aware ANSI table |
+| `build/validate_env.sh` | Configuration validation |
+| `compose.yml` | One-shot Compose service with a Docker secret |
+| `template.env` and `example.env` | Local settings templates |
+| `template.domains.yaml` | Sample certificate groups |
+| `tests/` | Offline regression tests |
 ---
 
 ## :information_source: Notes
