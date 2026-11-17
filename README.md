@@ -4,7 +4,7 @@
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-ljgonzalez%2Flego--cloudflare--certgen-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen)
 [![Docker pulls](https://img.shields.io/docker/pulls/ljgonzalez/lego-cloudflare-certgen?logo=docker&logoColor=white)](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags)
-[![Image](https://img.shields.io/badge/image-v4.0.0-blue)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.0.0)
+[![Image](https://img.shields.io/badge/image-v4.0.1-blue)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.0.1)
 [![lego](https://img.shields.io/badge/lego-v4.34.0-informational)](https://github.com/go-acme/lego/releases/tag/v4.34.0)
 [![Tests](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/actions/workflows/tests.yml/badge.svg)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -68,7 +68,7 @@ Limit the token to the zones you plan to issue certificates for. lego uses it to
 
 ## :rocket: Quick start
 
-The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). You don't need to clone or build anything. Pin the image to **`v4.0.0`** so that every run uses the same image.
+The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). You don't need to clone or build anything. Pin the image to **`v4.0.1`** so that every run uses the same image.
 
 ### :one: Prepare a working directory
 
@@ -134,7 +134,7 @@ See [`domains.yaml` format](#domainsyaml-format) for the rules.
 
 ### :four: Run the container
 
-Use **either** Docker Compose **or** `docker run`. Both use the `v4.0.0` image from Docker Hub.
+Use **either** Docker Compose **or** `docker run`. Both use the `v4.0.1` image from Docker Hub.
 
 #### :whale: Docker Compose (recommended)
 
@@ -145,7 +145,7 @@ name: lego-cloudflare-certgen
 
 services:
   certgen:
-    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:v4.0.0}"
+    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:v4.0.1}"
     env_file:
       - "${CERTGEN_ENV_FILE:-./.env}"
     # The token is passed as a secret file instead of an environment variable.
@@ -201,13 +201,13 @@ Compose reads `CLOUDFLARE_API_TOKEN` from `.env` and mounts it at `/run/secrets/
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.0.0
+  ljgonzalez/lego-cloudflare-certgen:v4.0.1
 
 # Issue production certificates for one group
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.0.0 --production --only certificateA
+  ljgonzalez/lego-cloudflare-certgen:v4.0.1 --production --only certificateA
 ```
 
 The [command options](#command-options) work after the image name, for example `--list` or `--dry-run`. `-t` enables the colored output.
@@ -222,7 +222,7 @@ The [command options](#command-options) work after the image name, for example `
     -v ./domains.yaml:/app/domains.yaml:ro \
     -v ./ssl-certs:/ssl-certs \
     -v ./cloudflare_api_token:/run/secrets/cloudflare_api_token:ro \
-    ljgonzalez/lego-cloudflare-certgen:v4.0.0
+    ljgonzalez/lego-cloudflare-certgen:v4.0.1
   ```
 
   `-e CLOUDFLARE_API_TOKEN=` overrides any token left in `.env`, so the container reads the file. The configured `UID` must be able to read the file.
@@ -282,7 +282,7 @@ These variables are read by Compose on the host, not by the container:
 | Variable | Default | Description |
 |---|---|---|
 | `DOMAINS_FILE` | `./domains.yaml` | Host YAML file mounted at `/app/domains.yaml` |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:v4.0.0` | Image used by the Compose service |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:v4.0.1` | Image used by the Compose service |
 | `CERTGEN_ENV_FILE` | `./.env` | Settings file passed to the container |
 
 ### Command options
@@ -371,12 +371,12 @@ The first order succeeds. The second hits a TXT propagation timeout. The report 
 
 | Tag | Use it when |
 |---|---|
-| `v4.0.0` | You want a fixed image. **Recommended.** |
+| `v4.0.1` | You want a fixed image. **Recommended.** |
 | `v4.0`, `v4` | You want future patch or minor releases of version 4 |
 | `latest` | You always want the newest release |
-| `alpine3.24.4-lego4.34.0-v4.0.0` | You want the base and lego versions in the tag name |
+| `alpine3.24.4-lego4.34.0-v4.0.1` | You want the base and lego versions in the tag name |
 
-Every `v4.0.0` tag points to the same multi-architecture image for `linux/amd64`, `linux/386`, `linux/arm/v7` and `linux/arm64`. Docker pulls the right variant automatically. Older releases (v1 to v3) are still available. See [all tags on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags).
+Every `v4.0.1` tag points to the same multi-architecture image for `linux/amd64`, `linux/386`, `linux/arm/v7` and `linux/arm64`. Docker pulls the right variant automatically. Older releases (v1 to v3) are still available. See [all tags on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags).
 
 ---
 
@@ -574,7 +574,7 @@ Compose keeps only these three capabilities and adds `no-new-privileges:true`. P
 
 ### Alpine image findings
 
-Docker Scout reported the seven findings below for the previous Alpine 3.24.4 image. The scores and fix revisions come from that scan, which covers user-space libraries packaged by Alpine. Version 4.0.0 assembles a fresh filesystem from the Alpine 3.24 repositories. Scan the rebuilt image digest to see its current findings.
+Docker Scout reported the seven findings below for the previous Alpine 3.24.4 image. The scores and fix revisions come from that scan, which covers user-space libraries packaged by Alpine. Version 4.0.1 assembles a fresh filesystem from the Alpine 3.24 repositories. Scan the rebuilt image digest to see its current findings.
 
 | CVE | Package seen in the scan | Docker Scout score | Fix revision shown by Scout |
 |---|---|---|---|
