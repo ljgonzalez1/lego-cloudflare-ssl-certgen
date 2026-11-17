@@ -157,6 +157,48 @@ class CertgenTests(unittest.TestCase):
         self.assertFalse(self.log.exists())
         self.assertEqual(list(self.output.iterdir()), [])
 
+    def test_invalid_token_skips_orders_without_printing_secret(self):
+        invalid = "fake token with whitespace"
+        result = self.run_certgen("mixed", CLOUDFLARE_API_KEY=invalid)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Provide a valid Cloudflare DNS API token", result.stderr)
+        self.assertNotIn(invalid, result.stdout + result.stderr)
+        self.assertIn(["mixed", "0", "0", "0", "6", "SKIPPED"], summary_rows(result.stdout))
+        self.assertFalse(self.log.exists())
+
+    def test_invalid_settings_stop_issuance_before_any_acme_order(self):
+        result = self.run_certgen(
+            "mixed", DNS_RESOLVERS="1.1.1.1:65536", PROPAGATION_SECONDS="-1",
+            PRODUCTION="invalid", EMAIL="invalid", ACCEPT_LEGO_TOS="false", TZ="../invalid",
+        )
+        self.assertEqual(result.returncode, 2)
+        for field in ("DNS_RESOLVERS", "PROPAGATION_SECONDS", "PRODUCTION", "EMAIL", "ACCEPT_LEGO_TOS", "TZ"):
+            self.assertIn(f"{field}:", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_missing_output_directory_reports_skipped_names(self):
+        missing = self.output / "missing"
+        result = self.run_certgen("mixed", CERTGEN_OUTPUT=str(missing))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Output directory must be writable", result.stderr)
+        self.assertIn(["mixed", "0", "0", "0", "6", "SKIPPED"], summary_rows(result.stdout))
+        self.assertFalse(self.log.exists())
+
+    def test_same_second_retries_use_separate_certificate_directories(self):
+        clock = self.output.parent / "date"
+        date = shlex.quote(shutil.which("date"))
+        clock.write_text(
+            '#!/bin/sh\nif [ "$1" = +%s ]; then printf "1700000000\\n"; exit; fi\n'
+            f'exec {date} "$@"\n', encoding="utf-8",
+        )
+        clock.chmod(0o755)
+        for _ in range(2):
+            result = self.run_certgen("mixed", TZ="Etc/UTC")
+            self.assertEqual(result.returncode, 0, result.stderr)
+        stamps = sorted(path.name for path in (self.output / "mixed").iterdir())
+        self.assertEqual(stamps, ["2023-11-14_22.13.20_GMT+0", "2023-11-14_22.13.21_GMT+0"])
+        self.assertEqual(len(self.requests()), 2)
+
     @unittest.skipUnless(shutil.which("script"), "requires util-linux script for a pseudo-terminal")
     def test_summary_colors_terminal_output(self):
         result = self.run_certgen("mixed", tty=True)

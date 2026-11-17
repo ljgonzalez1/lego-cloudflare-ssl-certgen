@@ -38,7 +38,7 @@ api:
 docker run --rm -t --env-file .env \
   -v "$PWD/domains.yaml:/app/domains.yaml:ro" \
   -v "$PWD/ssl-certs:/ssl-certs" \
-  ljgonzalez/lego-cloudflare-certgen:3.3
+  ljgonzalez/lego-cloudflare-certgen:3.4.1
 ```
 
 The default endpoint is Let's Encrypt staging. Append `--production` after the image name to request production certificates. The `-t` option enables ANSI colors.
@@ -88,22 +88,22 @@ Run from the project directory. Substitute a platform from the table as needed. 
 ```bash
 docker buildx build --platform linux/amd64 --load \
   --progress=plain \
-  -t ljgonzalez/lego-cloudflare-certgen:3.3 ./build
+  -t ljgonzalez/lego-cloudflare-certgen:3.4.1 ./build
 ```
 
 ```bash
 docker run --rm --entrypoint lego \
-  ljgonzalez/lego-cloudflare-certgen:3.3 --version
+  ljgonzalez/lego-cloudflare-certgen:3.4.1 --version
 
 docker run --rm \
   -v "$PWD/template.domains.yaml:/app/domains.yaml:ro" \
-  ljgonzalez/lego-cloudflare-certgen:3.3 --list
+  ljgonzalez/lego-cloudflare-certgen:3.4.1 --list
 ```
 
 Inspect the size of the local image in MiB:
 
 ```bash
-docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.3 |
+docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.4.1 |
   awk '{printf "%.1f MiB\n", $1 / 1048576}'
 ```
 
@@ -119,14 +119,13 @@ docker image inspect --format '{{.Size}}' ljgonzalez/lego-cloudflare-certgen:3.3
 | `UID` / `GID` | `1000` / `1000` | Runtime identity and ownership of generated files |
 | `PROPAGATION_SECONDS` | `360` | Maximum wait for TXT propagation per challenge |
 | `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | Comma-separated resolvers |
-| `LEGO_DISABLE_CNAME_SUPPORT` | `true` | Set to `false` to follow an explicit DNS-01 CNAME delegation |
 | `DOMAINS_FILE` | `./domains.yaml` | Host YAML path for Compose |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.3` | Image used by Compose |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:3.4.1` | Image used by Compose |
 | `CERTGEN_ENV_FILE` | `./.env` | Settings file used by Compose |
 
 ### DNS-01 and wildcard names
 
-A, AAAA and CNAME service records can coexist in a certificate group. DNS-01 validates control through a temporary TXT record under `_acme-challenge`. The default exact TXT owner handles CNAMEs inherited from wildcard service records. For an explicit CNAME delegation at `_acme-challenge`, authorize the destination Cloudflare zone and set `LEGO_DISABLE_CNAME_SUPPORT=false`. [Let's Encrypt DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge) · [Cloudflare wildcard records](https://developers.cloudflare.com/dns/manage-dns-records/reference/wildcard-dns-records/)
+List the names you want on each certificate. The same request path works for A, AAAA and CNAME service records and for planned hostnames awaiting a service record. lego uses the Cloudflare token to create and clean up temporary `_acme-challenge` TXT records. An exact TXT owner takes precedence over an inherited wildcard CNAME. Existing explicit delegations at `_acme-challenge` can use lego's CNAME option with a token authorized for the destination zone. [Let's Encrypt DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge) · [lego CNAME option](https://go-acme.github.io/lego/references/ref-options/#lego_disable_cname_support)
 
 Use up to 100 distinct names per group. Group names can contain letters, digits, hyphens and underscores and must start with a letter or digit.
 
@@ -143,23 +142,29 @@ Use up to 100 distinct names per group. Group names can contain letters, digits,
 
 ## 🧪 Checks
 
-Run the offline regression suite with Bash, Python 3 and PyYAML:
+Run the 34-test offline suite with Bash, Python 3 and PyYAML. It covers YAML and CLI validation, Cloudflare token handling, output collisions, ANSI alignment and architecture-specific archive checksums.
 
 ```bash
 python3 -B -m unittest discover -s tests -v
 ```
 
-For an issuance check, use an active Cloudflare zone with an A record, an AAAA record, a CNAME and a wildcard CNAME. Put the four names in one group called `dns-smoke` in `dns-smoke.yaml` and run:
+For an issuance check, choose an active Cloudflare zone. Put names for an A record, an AAAA record, a CNAME, a wildcard CNAME and a planned hostname in one group called `dns-smoke` in `dns-smoke.yaml`. Run:
 
 ```bash
 DOMAINS_FILE=./dns-smoke.yaml docker compose run --rm certgen --staging --only dns-smoke
 ```
 
-A successful order reports **4 Attempted**, **4 Issued** and **0 Failed**. Use `openssl x509 -in /path/to/certificate.crt -noout -ext subjectAltName` to inspect the SANs.
+A successful order reports **5 Attempted**, **5 Issued** and **0 Failed**. Use `openssl x509 -in /path/to/certificate.crt -noout -ext subjectAltName` to inspect the SANs.
 
 ## 📋 Issuance report
 
 The ANSI table counts attempted, issued, failed and skipped DNS names per certificate group. Each certificate covers the full group. A failed order counts every attempted name in that group as failed, and the command exits with a nonzero status after printing the summary.
+
+### 🖥️ Terminal example
+
+The simulated staging run below uses the [sample YAML for `example.com` and `example.org`](examples/terminal.domains.yaml), with ordinary names, subdomains and nested wildcards. It shows eight names attempted, four issued and four failed after a simulated TXT propagation timeout.
+
+![ANSI terminal report for a simulated certificate run](assets/certgen-terminal-example.png)
 
 ## :page_facing_up: License
 

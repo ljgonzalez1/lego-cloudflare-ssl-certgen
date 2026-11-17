@@ -95,6 +95,23 @@ class ReleaseDownloadTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(output.exists())
 
+    def test_missing_manifest_entry_stops_before_archive_download(self):
+        self.checksums.write_text("", encoding="utf-8")
+        output = self.root / "unlisted"
+        result = self.download("arm", "v7", output)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Missing or invalid SHA-256", result.stderr)
+        self.assertEqual(self.log.read_text().splitlines(), [self.checksums.name])
+        self.assertFalse(output.exists())
+
+    def test_explicit_checksum_is_validated_before_any_download(self):
+        for checksum, message in (("feedface", "Invalid SHA-256 length"), ("z" * 64, "Missing or invalid SHA-256")):
+            with self.subTest(checksum=checksum):
+                result = self.download("386", "", self.root / "invalid", LEGO_SHA256=checksum)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(message, result.stderr)
+                self.assertFalse(self.log.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
