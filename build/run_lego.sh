@@ -29,10 +29,22 @@ run_group() (
     log_info "Output path: $target"
     log_info "Time limit: ${time_limit}s ($(((time_limit + 59) / 60)) min)"
     log_info "Domains ($#):"
-    for domain do
-        log_step "$domain"
-    done
+    # The live view draws the list itself and updates it while lego works.
+    if [ "$CERTGEN_ACTION" != issue ] || [ "$VALIDATED_LEGO_OUTPUT" = raw ]; then
+        for domain do
+            log_step "$domain"
+        done
+    fi
     [ "$CERTGEN_ACTION" = issue ] || return 0
+
+    # An empty --view keeps lego's own output.
+    view_names=
+    if [ "$VALIDATED_LEGO_OUTPUT" = pretty ]; then
+        saved_ifs=$IFS
+        IFS=,
+        view_names="$*"
+        IFS=$saved_ifs
+    fi
 
     # Rotate each domain into a pair of argv entries. The parser validates
     # the names and the shell keeps every wildcard literal.
@@ -50,7 +62,7 @@ run_group() (
         remaining=$((remaining - 1))
     done
     lego_status=0
-    certgen-core supervise "$time_limit" \
+    certgen-core supervise --log "$target/lego.log" --view "$view_names" "$time_limit" \
         lego --accept-tos --email "$VALIDATED_EMAIL" --dns cloudflare --server "$ACME_SERVER" \
             --path "$target" "$@" run || lego_status=$?
     case "$lego_status" in
@@ -66,6 +78,7 @@ run_group() (
         124) log_err "$group: lego did not finish within ${time_limit}s and was stopped with SIGKILL." ;;
         *) log_err "$group: lego exited with code $lego_status." ;;
     esac
+    log_info "Full lego output: $target/lego.log"
     return 1
 )
 
