@@ -498,6 +498,12 @@ docker run --rm -v "$PWD:/src:ro" -w /src alpine:3.24.4 \
 
 The last line should read `38 passed, 0 failed, 0 skipped`. Three terminal tests need the util-linux `script` command. Without it they are skipped.
 
+The scripts in `build/` must keep their executable bit in Git, because `entrypoint.sh` runs `run_lego.sh` directly. If the tests stop with `Bail out! … is not executable`, restore the bit and commit:
+
+```sh
+git update-index --chmod=+x build/*.sh tests/run.sh
+```
+
 ### :white_check_mark: End-to-end check in staging
 
 Use this optional check to confirm real issuance for A, AAAA, CNAME, wildcard and planned names. Choose an active zone your token can edit and replace `example.net`. Create these DNS-only test records:
