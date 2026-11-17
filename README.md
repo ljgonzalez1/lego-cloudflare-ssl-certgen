@@ -36,7 +36,7 @@
 
 - **One certificate per group.** Each top-level key in `domains.yaml` is one certificate and one output folder. Its list holds every DNS name on that certificate.
 - **Wildcards and any record type.** DNS-01 works the same for names with A, AAAA or CNAME records, for quoted wildcards such as `"*.example.com"`, and for names that have no record yet.
-- **Secrets-safe Compose workflow.** Compose hands the Cloudflare token to the container as a [Docker secret](https://docs.docker.com/compose/use-secrets/) file. lego reads that file directly.
+- **Token kept out of the environment.** Mount the Cloudflare token as a file, or let Compose pass it as a [Docker secret](https://docs.docker.com/compose/use-secrets/). lego reads that file directly.
 - **Staging first.** Runs use Let's Encrypt staging unless you pass `--production` or set `PRODUCTION=true`.
 - **Clear results.** A final table lists attempted, issued, failed and skipped names for every group, with totals.
 - **Small, non-root runtime.** A `scratch` image with a minimal Alpine 3.24 filesystem. The entrypoint drops to your UID/GID before reading the YAML or calling lego.
@@ -46,7 +46,7 @@
 
 ## :clipboard: Requirements
 
-- Docker Engine. The Docker Compose plugin is optional but recommended.
+- Docker Engine. The Docker Compose plugin is optional.
 - One or more zones managed by Cloudflare.
 - A Cloudflare API token, created in the [next section](#key-cloudflare-api-token).
 - A contact e-mail address for your Let's Encrypt account.
@@ -72,12 +72,11 @@ The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](h
 
 ### :one: Prepare a working directory
 
-Download the three sample files:
+Download the two sample files:
 
 ```bash
 mkdir lego-certgen && cd lego-certgen
 base=https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/master
-curl -fsSLO "$base/compose.yml"
 curl -fsSL -o domains.yaml "$base/template.domains.yaml"
 (umask 077; curl -fsSL -o .env "$base/example.env")
 mkdir -p ssl-certs
@@ -134,11 +133,59 @@ See [`domains.yaml` format](#domainsyaml-format) for the rules.
 
 ### :four: Run the container
 
-Use **either** Docker Compose **or** `docker run`. Both use the `v4.1.0` image from Docker Hub.
+#### :whale: `docker run --rm`
 
-#### :whale: Docker Compose (recommended)
+Preview the configuration, then issue the certificates:
 
-The `compose.yml` you downloaded looks like this:
+```bash
+# Check the YAML and list the groups
+docker run --rm -t -v ./domains.yaml:/app/domains.yaml:ro \
+  ljgonzalez/lego-cloudflare-certgen:v4.1.0 --list
+
+# Show the names, ACME server, output paths and time limits without contacting Let's Encrypt
+docker run --rm -t --env-file .env -v ./domains.yaml:/app/domains.yaml:ro \
+  ljgonzalez/lego-cloudflare-certgen:v4.1.0 --dry-run
+
+# Issue staging (untrusted) certificates
+docker run --rm -t --env-file .env \
+  -v ./domains.yaml:/app/domains.yaml:ro \
+  -v ./ssl-certs:/ssl-certs \
+  ljgonzalez/lego-cloudflare-certgen:v4.1.0
+
+# Issue real, browser-trusted certificates
+docker run --rm -t --env-file .env \
+  -v ./domains.yaml:/app/domains.yaml:ro \
+  -v ./ssl-certs:/ssl-certs \
+  ljgonzalez/lego-cloudflare-certgen:v4.1.0 --production
+```
+
+Add any [command option](#command-options) after the image name, for example `--only certificateA`. `-t` enables the colored output.
+
+- **Relative bind paths** (`./domains.yaml`) need Docker Engine 23 or later. On older versions, use `"$PWD/domains.yaml:/app/domains.yaml:ro"` and `"$PWD/ssl-certs:/ssl-certs"`.
+- **Keep the token out of `docker inspect`.** With `--env-file`, the token is visible to anyone who can inspect the container. To avoid that, mount it as a file instead:
+
+  ```bash
+  (umask 077; printf '%s\n' 'your-cloudflare-token' > cloudflare_api_token)
+
+  docker run --rm -t --env-file .env -e CLOUDFLARE_API_TOKEN= \
+    -v ./domains.yaml:/app/domains.yaml:ro \
+    -v ./ssl-certs:/ssl-certs \
+    -v ./cloudflare_api_token:/run/secrets/cloudflare_api_token:ro \
+    ljgonzalez/lego-cloudflare-certgen:v4.1.0
+  ```
+
+  `-e CLOUDFLARE_API_TOKEN=` overrides any token left in `.env`, so the container reads the file. The configured `UID` must be able to read the file.
+- **Restrict the container** the same way Compose does with the flags in [Runtime permissions](#runtime-permissions).
+
+#### :octopus: Alternative: Docker Compose
+
+Compose saves you the long command lines. It also passes the token as a secret file and applies the same restrictions automatically. Download `compose.yml` into the same directory (the repository already has it):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/master/compose.yml
+```
+
+It looks like this:
 
 ```yaml
 name: lego-cloudflare-certgen
@@ -176,56 +223,16 @@ secrets:
     environment: CLOUDFLARE_API_TOKEN
 ```
 
-Preview the configuration, then issue the certificates:
+The same four steps:
 
 ```bash
-# Check the YAML and list the groups
 docker compose run --rm certgen --list
-
-# Show the names, ACME server and output paths without contacting Let's Encrypt
 docker compose run --rm certgen --dry-run
-
-# Issue staging (untrusted) certificates
 docker compose run --rm certgen
-
-# Issue real, browser-trusted certificates
 docker compose run --rm certgen --production
 ```
 
 Compose reads `CLOUDFLARE_API_TOKEN` from `.env` and mounts it at `/run/secrets/cloudflare_api_token`. The other settings come from `.env` too. To point at different files, set `DOMAINS_FILE=./other.yaml` or `CERTGEN_ENV_FILE=./certgen.env` before the command.
-
-#### :package: `docker run --rm`
-
-```bash
-# Issue staging certificates
-docker run --rm -t --env-file .env \
-  -v ./domains.yaml:/app/domains.yaml:ro \
-  -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.1.0
-
-# Issue production certificates for one group
-docker run --rm -t --env-file .env \
-  -v ./domains.yaml:/app/domains.yaml:ro \
-  -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.1.0 --production --only certificateA
-```
-
-The [command options](#command-options) work after the image name, for example `--list` or `--dry-run`. `-t` enables the colored output.
-
-- **Relative bind paths** (`./domains.yaml`) need Docker Engine 23 or later. On older versions, use `"$PWD/domains.yaml:/app/domains.yaml:ro"` and `"$PWD/ssl-certs:/ssl-certs"`.
-- **Keep the token out of `docker inspect`.** With `--env-file`, the token is visible to anyone who can inspect the container. To avoid that, mount it as a file, the way Compose does:
-
-  ```bash
-  (umask 077; printf '%s\n' 'your-cloudflare-token' > cloudflare_api_token)
-
-  docker run --rm -t --env-file .env -e CLOUDFLARE_API_TOKEN= \
-    -v ./domains.yaml:/app/domains.yaml:ro \
-    -v ./ssl-certs:/ssl-certs \
-    -v ./cloudflare_api_token:/run/secrets/cloudflare_api_token:ro \
-    ljgonzalez/lego-cloudflare-certgen:v4.1.0
-  ```
-
-  `-e CLOUDFLARE_API_TOKEN=` overrides any token left in `.env`, so the container reads the file. The configured `UID` must be able to read the file.
 
 ---
 
@@ -286,7 +293,7 @@ These variables are read by Compose on the host, not by the container:
 
 ### Command options
 
-Add these after `docker compose run --rm certgen` or after the image name in `docker run`.
+Add these after the image name in `docker run`, or after `docker compose run --rm certgen`.
 
 | Option | Description |
 |---|---|
@@ -417,9 +424,12 @@ docker run --rm --entrypoint lego lego-cloudflare-certgen:local --version
 docker run --rm -v ./template.domains.yaml:/app/domains.yaml:ro lego-cloudflare-certgen:local --list
 ```
 
-Use your build with Compose or `docker run`:
+Use your build with `docker run`, or with Compose through `CERTGEN_IMAGE`:
 
 ```bash
+docker run --rm -t --env-file .env -v ./domains.yaml:/app/domains.yaml:ro \
+  lego-cloudflare-certgen:local --dry-run
+
 CERTGEN_IMAGE=lego-cloudflare-certgen:local docker compose run --rm certgen --dry-run
 ```
 
@@ -554,6 +564,12 @@ dns-smoke:
 ```
 
 ```bash
+docker run --rm -t --env-file .env \
+  -v ./dns-smoke.yaml:/app/domains.yaml:ro \
+  -v ./ssl-certs:/ssl-certs \
+  ljgonzalez/lego-cloudflare-certgen:v4.1.0 --staging --only dns-smoke
+
+# Or with Compose
 DOMAINS_FILE=./dns-smoke.yaml docker compose run --rm certgen --staging --only dns-smoke
 ```
 
@@ -587,9 +603,9 @@ Compose keeps only these three capabilities and adds `no-new-privileges:true`. P
 
 ### Secrets
 
-- Compose passes the token as `/run/secrets/cloudflare_api_token`. It never appears in the container's environment.
-- `docker run --env-file` exposes the token to anyone who can run `docker inspect`. Use the [secret-file variant](#package-docker-run---rm) to avoid that.
-- Keep `.env`, `certgen.env`, `cloudflare_api_token` and `ssl-certs/` out of version control. The provided `.gitignore` already excludes `.env`, `certgen.env`, `ssl-certs` and `/domains.yaml`.
+- `docker run --env-file` exposes the token to anyone who can run `docker inspect`. Use the [secret-file variant](#whale-docker-run---rm) to avoid that.
+- Compose always passes the token as `/run/secrets/cloudflare_api_token`, so it never appears in the container's environment.
+- Keep `.env`, `certgen.env`, `cloudflare_api_token` and `ssl-certs/` out of version control. The provided `.gitignore` already excludes them, together with `/domains.yaml`.
 
 ### Alpine image findings
 

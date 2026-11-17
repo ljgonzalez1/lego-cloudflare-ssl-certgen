@@ -6,7 +6,7 @@ name: lego-cloudflare-certgen
 
 services:
   certgen:
-    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:v4.0.1}"
+    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:v4.1.0}"
 
     env_file:
       - "${CERTGEN_ENV_FILE:-./.env}"
