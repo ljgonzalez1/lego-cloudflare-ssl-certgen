@@ -41,8 +41,8 @@ sys.exit(7 if group == 'rejected' else 0)
 def summary_rows(output):
     plain = re.sub(r"\x1b\[[0-9;]*m", "", output)
     return [
-        [cell.strip() for cell in line.split("│")[1:-1]]
-        for line in plain.splitlines() if line.startswith("│")
+        [cell.strip() for cell in line.split("|")[1:-1]]
+        for line in plain.splitlines() if line.startswith("|")
     ]
 
 
@@ -147,6 +147,21 @@ class CertgenTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("\x1b[32mISSUED", result.stdout)
         self.assertIn(["mixed", "6", "6", "0", "0", "ISSUED"], summary_rows(result.stdout))
+
+    @unittest.skipUnless(shutil.which("script"), "requires util-linux script for a pseudo-terminal")
+    def test_summary_aligns_in_narrow_terminals(self):
+        long_name = "x" * 100
+        self.config.write_text(f"{long_name}:\n  - alias.example.test\n", encoding="utf-8")
+        for columns in (80, 48, 28):
+            with self.subTest(columns=columns):
+                result = self.run_certgen(tty=True, COLUMNS=str(columns))
+                self.assertEqual(result.returncode, 0, result.stdout)
+                plain = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+                grid = [line for line in plain.splitlines() if line.startswith(("|", "+"))]
+                self.assertTrue(grid)
+                self.assertEqual(len({len(line) for line in grid}), 1)
+                self.assertLessEqual(len(grid[0]), columns)
+                self.assertEqual(sum(line.count("x") for line in grid), len(long_name))
 
 
 if __name__ == "__main__":

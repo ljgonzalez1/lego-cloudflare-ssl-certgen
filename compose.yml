@@ -1,26 +1,12 @@
-# ==============================================================================
-# compose.yml  --  lego-cloudflare-certgen
-# ==============================================================================
-# Generates one certificate per selected group in domains.yaml and exits.
-#
-# Setup
-# -----
-# 1. Make the tagged image available locally. See the README build command.
-# 2. Set CLOUDFLARE_API_TOKEN in the project's .env file.
-# 3. Copy template.env to certgen.env and fill in the issuance settings.
-# 4. Review domains.yaml and create ./ssl-certs.
-# 5. Run docker compose run --rm certgen.
-#
-# The Cloudflare token is provided as a secret file at
-# /run/secrets/cloudflare_api_token and read by lego.
-# ==============================================================================
+# Issue one certificate per selected group and exit.
+# Set CLOUDFLARE_API_TOKEN in .env and container settings in certgen.env.
+# Run docker compose run --rm certgen from this directory.
 
 name: lego-cloudflare-certgen
 
 services:
   certgen:
-    image: lego-cloudflare-certgen:lego4.34.0-2.0
-    pull_policy: never
+    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:3.2}"
 
     # Container settings (e-mail, timezone, UID/GID, etc.).
     env_file:
