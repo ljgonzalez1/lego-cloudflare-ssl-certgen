@@ -51,9 +51,14 @@ set -eu
     printf '%s\n' "$@"
 } >> "$TEST_LEGO_LOG"
 for argument do
-    if [ "$argument" = fail.example.org ]; then
-        exit 17
-    fi
+    case "$argument" in
+        fail.example.org) exit 17 ;;
+        ratelimited.example.org)
+            printf '[WARN] retry: acme: error: 429 :: urn:ietf:params:acme:error:rateLimited :: too many certificates\n' >&2
+            exec sleep 30
+            ;;
+        hang.example.org) exec sleep 30 ;;
+    esac
 done
 SH
 cat > "$work/bin/curl" <<'SH'
@@ -80,7 +85,7 @@ for command in dig host nslookup getent; do
     ln -s forbidden-dns "$work/bin/$command"
 done
 export PATH="$work/bin:$PATH"
-unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAME_SUPPORT \
+unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAME_SUPPORT ORDER_TIMEOUT_SECONDS \
     CERT_UID CERT_GID PROPAGATION_SECONDS DNS_RESOLVERS TEST_CALLER_UID TEST_CALLER_GID \
     LEGO_TARBALL LEGO_URL LEGO_SHA256 TARGETARCH TARGETVARIANT
 export UID=1000 GID=1000 EMAIL=test@example.com CLOUDFLARE_API_TOKEN=fixture-token \
@@ -417,6 +422,43 @@ YAML
     diff -u "$work/expected" "$work/rows"
 }
 
+cli_stops_on_rate_limit() {
+    printf 'limited: [ratelimited.example.org]\n' >> "$file"
+    started=$(date +%s)
+    expect_status 1 cli --only limited --only first
+    [ $(($(date +%s) - started)) -lt 10 ]
+    assert_contains 'urn:ietf:params:acme:error:rateLimited' "$stderr"
+    assert_contains "limited: Let's Encrypt rate limit reached" "$stderr"
+    assert_contains 'Certificates: 2 attempted, 1 issued, 1 failed, 0 skipped.' "$stdout"
+}
+
+cli_stops_at_time_limit() {
+    printf 'stuck: [hang.example.org]\n' >> "$file"
+    started=$(date +%s)
+    ORDER_TIMEOUT_SECONDS=1 expect_status 1 cli --only stuck
+    [ $(($(date +%s) - started)) -lt 10 ]
+    assert_contains 'stuck: lego stopped after the 1s time limit' "$stderr"
+    assert_contains 'Certificates: 1 attempted, 0 issued, 1 failed, 0 skipped.' "$stdout"
+}
+
+cli_time_limit_settings() {
+    expect_status 0 cli --dry-run --only first
+    assert_contains 'Time limit: 3600s' "$stdout"
+    PROPAGATION_SECONDS=1000 expect_status 0 cli --dry-run --only first
+    assert_contains 'Time limit: 5600s' "$stdout"
+    ORDER_TIMEOUT_SECONDS=AUTO PROPAGATION_SECONDS=1000 expect_status 0 cli --dry-run --only second
+    assert_contains 'Time limit: 3600s' "$stdout"
+    ORDER_TIMEOUT_SECONDS=0 expect_status 0 cli --dry-run --only first
+    assert_contains 'Time limit: none' "$stdout"
+    ORDER_TIMEOUT_SECONDS=0090 expect_status 0 cli --dry-run --only first
+    assert_contains 'Time limit: 90s' "$stdout"
+    for value in -1 1h 2147483648; do
+        ORDER_TIMEOUT_SECONDS=$value expect_status 2 cli
+        assert_contains 'ORDER_TIMEOUT_SECONDS:' "$stderr"
+    done
+    [ ! -s "$TEST_LEGO_LOG" ]
+}
+
 cli_retries_and_timestamps() {
     cli --only first > "$work/concurrent-first" 2>&1 &
     first_pid=$!
@@ -588,6 +630,9 @@ check 'Compose secret is passed through lego’s token-file option' cli_routes_s
 check 'Invalid CNAME delegation setting skips issuance' cli_rejects_invalid_delegation
 check 'Missing output path skips issuance' cli_missing_output
 check 'Mixed group outcomes, continuation, order and precise totals' cli_group_results
+check 'Rate limit stops lego without waiting for Retry-After' cli_stops_on_rate_limit
+check 'Per-certificate time limit stops a stalled lego' cli_stops_at_time_limit
+check 'Automatic, disabled and invalid time limits' cli_time_limit_settings
 check 'Concurrent runs reserve distinct timestamp paths' cli_retries_and_timestamps
 check 'Actual Linux UID/GID and output directory preview' core_runtime
 check 'Issuance with only the shell, C++ binary and lego on PATH' cli_minimal_runtime

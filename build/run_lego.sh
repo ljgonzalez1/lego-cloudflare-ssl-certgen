@@ -13,8 +13,22 @@ esac
 run_group() (
     target=$(certgen-core output-path "$CERTGEN_ACTION" "$CERTGEN_OUTPUT" "$group") || return 2
 
+    # Allow the full propagation wait for every name, plus ten minutes, and at
+    # least one hour. This bounds runs where lego would sleep for many hours.
+    if [ "$VALIDATED_ORDER_TIMEOUT" = auto ]; then
+        time_limit=$((600 + $# * VALIDATED_PROPAGATION))
+        [ "$time_limit" -ge 3600 ] || time_limit=3600
+    else
+        time_limit=$VALIDATED_ORDER_TIMEOUT
+    fi
+
     log_section "🚀 $group"
     log_info "Output path: $target"
+    if [ "$time_limit" -eq 0 ]; then
+        log_info "Time limit: none"
+    else
+        log_info "Time limit: ${time_limit}s"
+    fi
     log_info "Domains ($#):"
     for domain do
         log_step "$domain"
@@ -36,14 +50,21 @@ run_group() (
         set -- "$@" --domains "$domain"
         remaining=$((remaining - 1))
     done
-    if lego --accept-tos --email "$VALIDATED_EMAIL" --dns cloudflare --server "$ACME_SERVER" \
-            --path "$target" "$@" run; then
-        log_ok "Certificates: $target/certificates/"
-        log_ok "Account data: $target/accounts/"
-    else
-        log_err "$group: lego exited with code $?."
-        return 1
-    fi
+    lego_status=0
+    certgen-core supervise "$time_limit" \
+        lego --accept-tos --email "$VALIDATED_EMAIL" --dns cloudflare --server "$ACME_SERVER" \
+            --path "$target" "$@" run || lego_status=$?
+    case "$lego_status" in
+        0)
+            log_ok "Certificates: $target/certificates/"
+            log_ok "Account data: $target/accounts/"
+            return 0
+            ;;
+        75) log_err "$group: Let's Encrypt rate limit reached. Retry after the time shown above." ;;
+        124) log_err "$group: lego stopped after the ${time_limit}s time limit (ORDER_TIMEOUT_SECONDS)." ;;
+        *) log_err "$group: lego exited with code $lego_status." ;;
+    esac
+    return 1
 )
 
 prepare_issuance() {
