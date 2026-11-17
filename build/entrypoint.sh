@@ -85,13 +85,13 @@ export CERTGEN_ACTION CERTGEN_CONFIG CERTGEN_OUTPUT
 # must already be writable by the requested UID/GID.
 if (( EUID == 0 )); then
     if [[ "${CERTGEN_ACTION}" == issue && "${CERTGEN_OUTPUT}" == /ssl-certs ]]; then
-        if ! findmnt -M /ssl-certs >/dev/null 2>&1; then
+        if ! awk '$5 == "/ssl-certs" { mounted = 1; exit } END { exit !mounted }' /proc/self/mountinfo; then
             log_warn "Mount a host directory at /ssl-certs to keep the output."
         fi
         chown -- "${CERT_UID}:${CERT_GID}" /ssl-certs
     fi
 
-    exec gosu "${CERT_UID}:${CERT_GID}" "${script_dir}/run_lego.sh" "${selected[@]}"
+    exec su-exec "${CERT_UID}:${CERT_GID}" "${script_dir}/run_lego.sh" "${selected[@]}"
 fi
 
 if [[ "${EUID}" != "${CERT_UID}" || "$(id -g)" != "${CERT_GID}" ]]; then
