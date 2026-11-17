@@ -1,20 +1,15 @@
-#!/usr/bin/env bash
-# ==============================================================================
-# entrypoint.sh  --  Container entry point  (runs as root)
-# ==============================================================================
-# Prepares the output volume and drops privileges before reading domains.yaml
-# or running lego. The target identity defaults to UID/GID 1000:1000.
-# ==============================================================================
-set -euo pipefail
+#!/bin/sh
+# Prepare the output volume and switch to the configured UID/GID.
+set -efu
 
-script_dir="$(dirname -- "${BASH_SOURCE[0]}")"
-
-# shellcheck source=validate_env.sh
+case "$0" in
+    */*) script_dir=${0%/*} ;;
+    *) script_dir=. ;;
+esac
 . "${script_dir}/validate_env.sh"
 
 usage() {
-    cat <<'EOF'
-Usage: certgen [--list | --dry-run] [--staging | --production]
+    printf '%s\n' "Usage: certgen [--list | --dry-run] [--staging | --production]
                [--only FOLDER]... [--config FILE] [--output DIRECTORY]
 
   --list          Validate the YAML and list certificate groups
@@ -23,80 +18,96 @@ Usage: certgen [--list | --dry-run] [--staging | --production]
   --config FILE   Read this YAML file (default: /app/domains.yaml)
   --output DIR    Write to this directory (default: /ssl-certs)
   --staging       Use Let's Encrypt staging
-  --production    Use Let's Encrypt production
-EOF
+  --production    Use Let's Encrypt production"
+}
+
+is_output_mounted() {
+    [ -r /proc/self/mountinfo ] || return 1
+    while IFS=' ' read -r mount_id parent_id device root mount_point rest; do
+        if [ "$mount_point" = /ssl-certs ]; then
+            return 0
+        fi
+    done < /proc/self/mountinfo
+    return 1
 }
 
 CERTGEN_ACTION=issue
 CERTGEN_CONFIG=/app/domains.yaml
 CERTGEN_OUTPUT=/ssl-certs
 mode_override=
-selected=()
 
-while (( $# )); do
-    case "$1" in
+# Queue selected groups behind the CLI arguments that remain to be parsed.
+remaining=$#
+while [ "$remaining" -gt 0 ]; do
+    option=$1
+    shift
+    remaining=$((remaining - 1))
+    case "$option" in
         -h|--help) usage; exit 0 ;;
         --list|--dry-run)
-            action="${1#--}"
-            if [[ "${CERTGEN_ACTION}" != issue && "${CERTGEN_ACTION}" != "${action}" ]]; then
+            action=${option#--}
+            if [ "$CERTGEN_ACTION" != issue ] && [ "$CERTGEN_ACTION" != "$action" ]; then
                 log_err "--list and --dry-run are mutually exclusive."
                 exit 2
             fi
-            CERTGEN_ACTION="${action}"
+            CERTGEN_ACTION=$action
             ;;
         --staging|--production)
-            mode="${1#--}"
-            if [[ -n "${mode_override}" && "${mode_override}" != "${mode}" ]]; then
+            mode=${option#--}
+            if [ -n "$mode_override" ] && [ "$mode_override" != "$mode" ]; then
                 log_err "--staging and --production are mutually exclusive."
                 exit 2
             fi
-            mode_override="${mode}"
+            mode_override=$mode
             ;;
         --only|--config|--output)
-            if [[ -z "${2:-}" || "$2" == --* ]]; then
-                log_err "$1 requires a value."
+            if [ "$remaining" -eq 0 ]; then
+                log_err "$option requires a value."
                 exit 2
             fi
-            case "$1" in
-                --only) selected+=("$2") ;;
-                --config) CERTGEN_CONFIG="$2" ;;
-                --output) CERTGEN_OUTPUT="$2" ;;
+            value=$1
+            case "$value" in
+                ''|--*) log_err "$option requires a value."; exit 2 ;;
             esac
             shift
+            remaining=$((remaining - 1))
+            case "$option" in
+                --only) set -- "$@" "$value" ;;
+                --config) CERTGEN_CONFIG=$value ;;
+                --output) CERTGEN_OUTPUT=$value ;;
+            esac
             ;;
         *)
-            log_err "Unknown argument: $1"
+            log_err "Unknown argument: $option"
             usage >&2
             exit 2
             ;;
     esac
-    shift
 done
 
-case "${mode_override}" in
+case "$mode_override" in
     staging) export PRODUCTION=false ;;
     production) export PRODUCTION=true ;;
 esac
 
 validate_identity
 export CERTGEN_ACTION CERTGEN_CONFIG CERTGEN_OUTPUT
+identity=$(certgen-core identity)
+current_uid=${identity%:*}
 
-# Root only prepares the standard output mount. A custom --output directory
-# must already be writable by the requested UID/GID.
-if (( EUID == 0 )); then
-    if [[ "${CERTGEN_ACTION}" == issue && "${CERTGEN_OUTPUT}" == /ssl-certs ]]; then
-        if ! awk '$5 == "/ssl-certs" { mounted = 1; exit } END { exit !mounted }' /proc/self/mountinfo; then
+# A custom output directory must already be writable by the target identity.
+if [ "$current_uid" -eq 0 ]; then
+    if [ "$CERTGEN_ACTION" = issue ] && [ "$CERTGEN_OUTPUT" = /ssl-certs ]; then
+        if ! is_output_mounted; then
             log_warn "Mount a host directory at /ssl-certs to keep the output."
         fi
-        chown -- "${CERT_UID}:${CERT_GID}" /ssl-certs
+        certgen-core own-output /ssl-certs "$CERT_UID" "$CERT_GID"
     fi
-
-    exec su-exec "${CERT_UID}:${CERT_GID}" "${script_dir}/run_lego.sh" "${selected[@]}"
+    exec su-exec "$CERT_UID:$CERT_GID" "${script_dir}/run_lego.sh" "$@"
 fi
 
-if [[ "${EUID}" != "${CERT_UID}" || "$(id -g)" != "${CERT_GID}" ]]; then
-    log_err "The container user must match the configured UID/GID (${CERT_UID}:${CERT_GID})."
+if [ "$identity" != "$CERT_UID:$CERT_GID" ]; then
+    log_err "The container user must match the configured UID/GID ($CERT_UID:$CERT_GID)."
     exit 1
 fi
-
-exec "${script_dir}/run_lego.sh" "${selected[@]}"
+exec "${script_dir}/run_lego.sh" "$@"

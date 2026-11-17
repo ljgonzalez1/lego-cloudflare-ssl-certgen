@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
+ARG ALPINE_VERSION=3.24.4
 ARG LEGO_VERSION=v4.34.0
 
-# Fetch on the builder's native platform. Select assets for the target platform.
-FROM --platform=$BUILDPLATFORM alpine:3.24.4 AS download
+# Download and verify the official binary on the builder's native architecture.
+FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS downloader
 ARG LEGO_VERSION
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -11,20 +12,53 @@ ARG LEGO_URL
 ARG LEGO_SHA256
 RUN apk add --no-cache curl
 COPY download_lego.sh /tmp/download_lego.sh
-RUN sh /tmp/download_lego.sh /out
+RUN /bin/sh /tmp/download_lego.sh /out
 
-FROM alpine:3.24.4
+# Compile the C++ program and assemble an Alpine filesystem for the target CPU.
+FROM alpine:${ALPINE_VERSION} AS builder
+RUN apk add --no-cache build-base yaml-dev yaml-static dash
+COPY src/ /src/
+RUN mkdir -p /runtime/usr/local/bin \
+ && c++ -std=c++17 -Os -Wall -Wextra -Wpedantic \
+       -ffunction-sections -fdata-sections -Wl,--gc-sections -static -s \
+       /src/*.cpp -lyaml -o /runtime/usr/local/bin/certgen-core
+
+# Installing Dash itself through APK pulls in BusyBox for package scripts. Copy
+# the shell and install the other runtime packages into an independent APK root.
+RUN mkdir -p /runtime/bin /runtime/usr/bin /runtime/etc /runtime/app \
+             /runtime/tmp /runtime/ssl-certs /runtime/etc/apk \
+ && cp -R /etc/apk/keys /runtime/etc/apk/ \
+ && cp /etc/apk/repositories /runtime/etc/apk/ \
+ && apk --root /runtime --initdb --no-cache --no-scripts add \
+        musl ca-certificates-bundle tzdata su-exec \
+ && cp /usr/bin/dash /runtime/usr/bin/dash \
+ && ln -s /usr/bin/dash /runtime/bin/sh \
+ && cp /etc/alpine-release /runtime/etc/alpine-release \
+ && cp -L /etc/os-release /runtime/etc/os-release \
+ && printf 'root:x:0:0:root:/root:/bin/sh\ncertgen:x:1000:1000:certgen:/nonexistent:/sbin/nologin\n' > /runtime/etc/passwd \
+ && printf 'root:x:0:\ncertgen:x:1000:\n' > /runtime/etc/group \
+ && mkdir -p /runtime/root \
+ && chmod 1777 /runtime/tmp \
+ && chown 1000:1000 /runtime/ssl-certs
+
+# The filesystem above is Alpine. Starting with scratch keeps the builder's
+# layers and their BusyBox, curl, headers and compiler out of the resulting image.
+FROM scratch AS target
+ARG ALPINE_VERSION
 ARG LEGO_VERSION
 ARG TARGETARCH
+ARG TARGETVARIANT
 
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
-      org.opencontainers.image.version="3.4.3" \
+      org.opencontainers.image.version="4.0.0" \
       org.opencontainers.image.licenses="MIT" \
+      com.certgen.alpine.version="${ALPINE_VERSION}" \
       com.certgen.lego.version="${LEGO_VERSION}"
 
-ENV TZ=Etc/UTC \
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    TZ=Etc/UTC \
     PRODUCTION=false \
     PROPAGATION_SECONDS=360 \
     DNS_RESOLVERS="1.1.1.1:53,8.8.8.8:53,1.0.0.1:53" \
@@ -32,28 +66,31 @@ ENV TZ=Etc/UTC \
     UID=1000 \
     GID=1000
 
-# Install only runtime dependencies. The downloader and archives stay in the download stage.
-RUN apk add --no-cache bash ca-certificates-bundle py3-yaml su-exec tzdata \
- && addgroup -g 1000 certgen \
- && adduser -D -H -u 1000 -G certgen -h /nonexistent -s /sbin/nologin certgen \
- && mkdir -p /app /ssl-certs \
- && chown certgen:certgen /ssl-certs
+COPY --from=builder /runtime/ /
+COPY --from=downloader /out/lego /usr/local/bin/lego
+COPY --from=downloader /out/LICENSE /usr/share/licenses/lego/LICENSE
+COPY licenses/libyaml.txt /usr/share/licenses/libyaml/LICENSE
+COPY --chmod=755 entrypoint.sh validate_env.sh run_lego.sh /usr/local/bin/
 
-COPY --from=download /out/lego /usr/local/bin/lego
-COPY --from=download /out/LICENSE /usr/share/licenses/lego/LICENSE
-COPY --chmod=755 entrypoint.sh validate_env.sh run_lego.sh read_domains.py print_summary.py /usr/local/bin/
+WORKDIR /app
 
-# Run the binary and wrapper dependencies on every target platform during the build.
-RUN lego_version="$(su-exec 1000:1000 lego --version)" \
- && printf '%s\n' "$lego_version" \
+# Fail the build if the shell or either executable cannot run on this platform.
+RUN --mount=type=tmpfs,target=/tmp set -eu \
+ && test -L /bin/sh && test /bin/sh -ef /usr/bin/dash \
+ && for tool in busybox ash bash python python3 cpp c++ curl apk; do \
+        if command -v "$tool" >/dev/null; then printf 'Unexpected runtime program: %s\n' "$tool" >&2; exit 1; fi; \
+    done \
+ && test ! -e /bin/busybox && test ! -e /bin/ash \
+ && lego_version="$(su-exec 1000:1000 lego --version)" \
+ && printf '%s (%s/%s)\n' "$lego_version" "$TARGETARCH" "$TARGETVARIANT" \
  && test "$lego_version" = "lego version ${LEGO_VERSION#v} linux/${TARGETARCH}" \
- && smoke_config="$(mktemp)" \
- && trap 'rm -f "$smoke_config"' EXIT \
- && printf 'smoke:\n  - ipv4.example.test\n  - ipv6.example.test\n  - alias.example.test\n  - "*.alias.example.test"\n' > "$smoke_config" \
- && chmod 644 "$smoke_config" \
- && groups="$(/usr/local/bin/entrypoint.sh --config "$smoke_config" --list)" \
- && test "$groups" = "smoke: 4 domains" \
- && TZ=America/Santiago /usr/local/bin/entrypoint.sh --config "$smoke_config" --dry-run >/dev/null
+ && smoke_config=/tmp/smoke-domains.yaml \
+ && umask 022 \
+ && printf 'smoke:\n  - ipv4.example.test\n  - ipv6.example.test\n  - alias.example.test\n  - "*.alias.example.test"\n  - planned.example.test\n' > "$smoke_config" \
+ && groups="$(entrypoint.sh --config "$smoke_config" --list)" \
+ && test "$groups" = "smoke: 5 domains" \
+ && TZ=America/Santiago entrypoint.sh --config "$smoke_config" --dry-run >/dev/null \
+ && printf 'smoke\t5\t0\n' | certgen-core summary >/dev/null
 
 VOLUME ["/ssl-certs"]
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

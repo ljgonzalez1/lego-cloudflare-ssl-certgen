@@ -18,7 +18,7 @@ release="https://github.com/go-acme/lego/releases/download/${version}"
 archive="${LEGO_TARBALL:-lego_${version}_${release_arch}.tar.gz}"
 output="$1"
 work_dir="$(mktemp -d)"
-trap 'rm -rf -- "${work_dir}"' EXIT
+trap 'rm -rf -- "${work_dir}"' 0
 
 checksum="${LEGO_SHA256:-}"
 if [ -z "${checksum}" ]; then
