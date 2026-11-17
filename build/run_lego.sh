@@ -9,26 +9,25 @@ case "$0" in
 esac
 . "${script_dir}/validate_env.sh"
 
-# Return 1 for a failed lego invocation and 2 for a group that never reached lego.
+# lego saves <first name>.crt and .key, with a leading "*" replaced by "_".
+certificate_saved() {
+    case "$2" in
+        '*.'*) base="_${2#\*}" ;;
+        *) base=$2 ;;
+    esac
+    [ -s "$1/certificates/$base.crt" ] && [ -s "$1/certificates/$base.key" ]
+}
+
+# Return 1 when no certificate was saved and 2 for a group that never reached lego.
 run_group() (
     target=$(certgen-core output-path "$CERTGEN_ACTION" "$CERTGEN_OUTPUT" "$group") || return 2
-
-    # Allow the full propagation wait for every name, plus ten minutes, and at
-    # least one hour. This bounds runs where lego would sleep for many hours.
-    if [ "$VALIDATED_ORDER_TIMEOUT" = auto ]; then
-        time_limit=$((600 + $# * VALIDATED_PROPAGATION))
-        [ "$time_limit" -ge 3600 ] || time_limit=3600
-    else
-        time_limit=$VALIDATED_ORDER_TIMEOUT
-    fi
+    # certgen-core estimates the longest normal run, adds 50% and caps it at two hours.
+    time_limit=$(certgen-core time-limit "$#" "$VALIDATED_PROPAGATION") || return 2
+    first_name=$1
 
     log_section "🚀 $group"
     log_info "Output path: $target"
-    if [ "$time_limit" -eq 0 ]; then
-        log_info "Time limit: none"
-    else
-        log_info "Time limit: ${time_limit}s"
-    fi
+    log_info "Time limit: ${time_limit}s ($(((time_limit + 59) / 60)) min)"
     log_info "Domains ($#):"
     for domain do
         log_step "$domain"
@@ -56,12 +55,15 @@ run_group() (
             --path "$target" "$@" run || lego_status=$?
     case "$lego_status" in
         0)
-            log_ok "Certificates: $target/certificates/"
-            log_ok "Account data: $target/accounts/"
-            return 0
+            if certificate_saved "$target" "$first_name"; then
+                log_ok "Certificates: $target/certificates/"
+                log_ok "Account data: $target/accounts/"
+                return 0
+            fi
+            log_err "$group: lego finished, but no certificate was saved in $target/certificates/."
             ;;
-        75) log_err "$group: Let's Encrypt rate limit reached. Retry after the time shown above." ;;
-        124) log_err "$group: lego stopped after the ${time_limit}s time limit (ORDER_TIMEOUT_SECONDS)." ;;
+        75) log_err "$group: Let's Encrypt rate limit reached. lego was stopped. Retry after the time shown above." ;;
+        124) log_err "$group: lego did not finish within ${time_limit}s and was stopped with SIGKILL." ;;
         *) log_err "$group: lego exited with code $lego_status." ;;
     esac
     return 1

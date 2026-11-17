@@ -4,7 +4,7 @@
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-ljgonzalez%2Flego--cloudflare--certgen-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen)
 [![Docker pulls](https://img.shields.io/docker/pulls/ljgonzalez/lego-cloudflare-certgen?logo=docker&logoColor=white)](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags)
-[![Image](https://img.shields.io/badge/image-v4.0.1-blue)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.0.1)
+[![Image](https://img.shields.io/badge/image-v4.1.0-blue)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.1.0)
 [![lego](https://img.shields.io/badge/lego-v4.34.0-informational)](https://github.com/go-acme/lego/releases/tag/v4.34.0)
 [![Tests](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/actions/workflows/tests.yml/badge.svg)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -68,7 +68,7 @@ Limit the token to the zones you plan to issue certificates for. lego uses it to
 
 ## :rocket: Quick start
 
-The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). You don't need to clone or build anything. Pin the image to **`v4.0.1`** so that every run uses the same image.
+The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). You don't need to clone or build anything. Pin the image to **`v4.1.0`** so that every run uses the same image.
 
 ### :one: Prepare a working directory
 
@@ -134,7 +134,7 @@ See [`domains.yaml` format](#domainsyaml-format) for the rules.
 
 ### :four: Run the container
 
-Use **either** Docker Compose **or** `docker run`. Both use the `v4.0.1` image from Docker Hub.
+Use **either** Docker Compose **or** `docker run`. Both use the `v4.1.0` image from Docker Hub.
 
 #### :whale: Docker Compose (recommended)
 
@@ -145,7 +145,7 @@ name: lego-cloudflare-certgen
 
 services:
   certgen:
-    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:v4.0.1}"
+    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:v4.1.0}"
     env_file:
       - "${CERTGEN_ENV_FILE:-./.env}"
     # The token is passed as a secret file instead of an environment variable.
@@ -201,13 +201,13 @@ Compose reads `CLOUDFLARE_API_TOKEN` from `.env` and mounts it at `/run/secrets/
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.0.1
+  ljgonzalez/lego-cloudflare-certgen:v4.1.0
 
 # Issue production certificates for one group
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.0.1 --production --only certificateA
+  ljgonzalez/lego-cloudflare-certgen:v4.1.0 --production --only certificateA
 ```
 
 The [command options](#command-options) work after the image name, for example `--list` or `--dry-run`. `-t` enables the colored output.
@@ -222,7 +222,7 @@ The [command options](#command-options) work after the image name, for example `
     -v ./domains.yaml:/app/domains.yaml:ro \
     -v ./ssl-certs:/ssl-certs \
     -v ./cloudflare_api_token:/run/secrets/cloudflare_api_token:ro \
-    ljgonzalez/lego-cloudflare-certgen:v4.0.1
+    ljgonzalez/lego-cloudflare-certgen:v4.1.0
   ```
 
   `-e CLOUDFLARE_API_TOKEN=` overrides any token left in `.env`, so the container reads the file. The configured `UID` must be able to read the file.
@@ -271,8 +271,7 @@ Settings are optional unless marked **required**.
 | `ACCEPT_LEGO_TOS` | `false` | :heavy_check_mark: | Set `true` after reading the [Let's Encrypt Terms of Service](https://letsencrypt.org/repository/) |
 | `PRODUCTION` | `false` | :x: | `true` issues browser-trusted certificates. `false` uses staging. |
 | `TZ` | `Etc/UTC` | :x: | IANA timezone used in folder names and log timestamps |
-| `PROPAGATION_SECONDS` | `360` | :x: | Maximum wait for TXT propagation per challenge, in seconds |
-| `ORDER_TIMEOUT_SECONDS` | `auto` | :x: | Time limit for each certificate request. `auto` allows `PROPAGATION_SECONDS` per name plus 10 minutes, and at least 1 hour. `0` disables the limit. |
+| `PROPAGATION_SECONDS` | `360` | :x: | Maximum wait for TXT propagation per challenge, in seconds. It also sets the [time limit](#stopwatch-time-limit-per-certificate) of each certificate. |
 | `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | :x: | Comma-separated `host:port` resolvers used to check TXT visibility |
 | `UID` | `1000` | :x: | Non-zero UID that owns the certificates and ACME account data |
 | `GID` | `1000` | :x: | Non-zero GID that owns the certificates and ACME account data |
@@ -282,7 +281,7 @@ These variables are read by Compose on the host, not by the container:
 | Variable | Default | Description |
 |---|---|---|
 | `DOMAINS_FILE` | `./domains.yaml` | Host YAML file mounted at `/app/domains.yaml` |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:v4.0.1` | Image used by the Compose service |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:v4.1.0` | Image used by the Compose service |
 | `CERTGEN_ENV_FILE` | `./.env` | Settings file passed to the container |
 
 ### Command options
@@ -339,7 +338,27 @@ When the run ends, a table shows the DNS names of each selected certificate, fol
 | Failed | Names in a request that failed |
 | Skipped | Names in a group that never reached lego, for example because the output directory was not writable |
 
-Each request issues one certificate for all its names. A failed order counts every name as failed, even if some DNS challenges passed. If any group fails or is skipped, the run still finishes the other groups, then exits with a nonzero status. The lego or setup error above the table gives the cause.
+Each request issues one certificate for all its names. A group counts as issued only when lego exits successfully **and** the certificate and key files exist. Otherwise every name in it counts as failed, even if some DNS challenges passed. That includes a lego process stopped by the time limit or a rate limit. If any group fails or is skipped, the run still finishes the other groups, then exits with a nonzero status. The lego or setup error above the table gives the cause.
+
+### :stopwatch: Time limit per certificate
+
+lego can wait for many hours, for example when Let's Encrypt answers with a rate limit and a long `Retry-After`. To keep a run from hanging, `certgen-core` computes a time limit for each certificate from its name count and `PROPAGATION_SECONDS`:
+
+```text
+estimate = 120 s + names × (PROPAGATION_SECONDS + 60 s)
+limit    = min(estimate × 1.5, 2 hours)
+```
+
+The 120 s cover the ACME account, the order, finalization and the download. The 60 s per name cover creating and deleting the TXT record and the check by Let's Encrypt. `--dry-run` shows the limit of each group.
+
+| Names | `PROPAGATION_SECONDS=60` | `PROPAGATION_SECONDS=360` |
+|---|---|---|
+| 1 | 360 s | 810 s |
+| 10 | 1980 s (33 min) | 6480 s (108 min) |
+| 30 | 5580 s (93 min) | 7200 s (2 h) |
+| 100 | 7200 s (2 h) | 7200 s (2 h) |
+
+When the limit passes, lego and every process it started get `SIGKILL`. The group is marked as failed and the next group starts. A rate-limit error from Let's Encrypt (`rateLimited`) stops lego the same way at once, without waiting for the limit. lego cannot clean up after `SIGKILL`, so a stopped request can leave `_acme-challenge` TXT records in Cloudflare. They do not affect later runs. You can delete them by hand.
 
 In a terminal the table is colored and adapts to the terminal width. It uses ASCII borders and keeps emojis outside the grid.
 
@@ -371,12 +390,12 @@ The first order succeeds. The second hits a TXT propagation timeout. The report 
 
 | Tag | Use it when |
 |---|---|
-| `v4.0.1` | You want a fixed image. **Recommended.** |
+| `v4.1.0` | You want a fixed image. **Recommended.** |
 | `v4.0`, `v4` | You want future patch or minor releases of version 4 |
 | `latest` | You always want the newest release |
-| `alpine3.24.4-lego4.34.0-v4.0.1` | You want the base and lego versions in the tag name |
+| `alpine3.24.4-lego4.34.0-v4.1.0` | You want the base and lego versions in the tag name |
 
-Every `v4.0.1` tag points to the same multi-architecture image for `linux/amd64`, `linux/386`, `linux/arm/v7` and `linux/arm64`. Docker pulls the right variant automatically. Older releases (v1 to v3) are still available. See [all tags on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags).
+Every `v4.1.0` tag points to the same multi-architecture image for `linux/amd64`, `linux/386`, `linux/arm/v7` and `linux/arm64`. Docker pulls the right variant automatically. Older releases (v1 to v3) are still available. See [all tags on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags).
 
 ---
 
@@ -481,7 +500,7 @@ docker buildx build --builder lego-multiarch \
 
 ## :test_tube: Tests
 
-`tests/run.sh` holds 41 offline tests. They cover YAML and CLI validation, credential handling, the DNS-01 arguments for A, AAAA, CNAME, wildcard and planned names, rate limits and time limits, concurrent output paths, mixed certificate results, ANSI alignment and the release checksums. Local stand-ins replace lego and curl, so nothing touches the network. GitHub Actions runs them on every push and pull request.
+`tests/run.sh` holds 44 offline tests. They cover YAML and CLI validation, credential handling, the DNS-01 arguments for A, AAAA, CNAME, wildcard and planned names, the computed time limit, `SIGKILL` on time and rate limits, missing certificate files, concurrent output paths, mixed certificate results, ANSI alignment and the release checksums. Local stand-ins replace lego and curl, so nothing touches the network. GitHub Actions runs them on every push and pull request.
 
 On Debian or Ubuntu:
 
@@ -497,7 +516,7 @@ docker run --rm -v "$PWD:/src:ro" -w /src alpine:3.24.4 \
   sh -c 'apk add --no-cache build-base yaml-dev util-linux-misc >/dev/null && sh tests/run.sh'
 ```
 
-The last line should read `41 passed, 0 failed, 0 skipped`. Three terminal tests need the util-linux `script` command. Without it they are skipped.
+The last line should read `44 passed, 0 failed, 0 skipped`. Three terminal tests need the util-linux `script` command. Without it they are skipped.
 
 The scripts in `build/` must keep their executable bit in Git, because `entrypoint.sh` runs `run_lego.sh` directly. If the tests stop with `Bail out! … is not executable`, restore the bit and commit:
 
@@ -574,7 +593,7 @@ Compose keeps only these three capabilities and adds `no-new-privileges:true`. P
 
 ### Alpine image findings
 
-Docker Scout reported the seven findings below for the previous Alpine 3.24.4 image. The scores and fix revisions come from that scan, which covers user-space libraries packaged by Alpine. Version 4.0.1 assembles a fresh filesystem from the Alpine 3.24 repositories. Scan the rebuilt image digest to see its current findings.
+Docker Scout reported the seven findings below for the previous Alpine 3.24.4 image. The scores and fix revisions come from that scan, which covers user-space libraries packaged by Alpine. Version 4.1.0 assembles a fresh filesystem from the Alpine 3.24 repositories. Scan the rebuilt image digest to see its current findings.
 
 | CVE | Package seen in the scan | Docker Scout score | Fix revision shown by Scout |
 |---|---|---|---|
@@ -629,8 +648,8 @@ A future release will use a newer Alpine image and check the fixes against its d
 - **Fresh output every time.** Each run creates a new timestamped folder per group. Nothing is overwritten.
 - **Renewal.** The container issues new certificates and exits. Schedule it, for example with cron or a systemd timer, to renew before expiry.
 - **Rate limits.** Production limits apply per registered domain and per identical set of names. Every run requests new certificates, so repeated production runs for the same group use up the limit of 5 per week quickly. Test with staging first. See [Let's Encrypt rate limits](https://letsencrypt.org/docs/rate-limits/).
-- **No waiting on rate limits.** When Let's Encrypt answers with a rate limit, lego would sleep until the `Retry-After` time, often many hours. The container stops that request at once, marks the group as failed and continues with the next one. The lego output above the summary shows when to retry.
-- **Time limit per certificate.** If a request takes longer than `ORDER_TIMEOUT_SECONDS`, lego is stopped and the group is marked as failed. A request stopped while waiting for propagation can leave `_acme-challenge` TXT records in Cloudflare. Delete them by hand.
+- **Never stuck.** Each certificate has a [time limit](#stopwatch-time-limit-per-certificate) of at most two hours, and a rate-limit error stops lego at once. The lego output above the summary shows when to retry.
+- **Lowercase names.** Names are passed to lego in lowercase, so the certificate files always match the names in the summary.
 
 ---
 
