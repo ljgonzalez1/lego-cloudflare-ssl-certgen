@@ -45,7 +45,6 @@ validate_identity() {
 validate_env() {
     local production="${PRODUCTION:-false}"
     local accepted="${ACCEPT_LEGO_TOS:-false}"
-    local disable_challenge_cname="${LEGO_DISABLE_CNAME_SUPPORT:-true}"
     local resolvers="${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}"
     local resolver port
     local resolver_pattern='^([a-zA-Z0-9_.-]+|\[[0-9a-fA-F:.]+\]):[0-9]{1,5}$'
@@ -74,12 +73,6 @@ validate_env() {
     if [[ "${CERTGEN_ACTION}" == issue && "${accepted,,}" != true ]]; then
         errors+=("ACCEPT_LEGO_TOS: set to true after reviewing https://letsencrypt.org/repository/")
     fi
-
-    case "${disable_challenge_cname,,}" in
-        true|1|t) VALIDATED_DISABLE_CNAME_SUPPORT=true ;;
-        false|0|f) VALIDATED_DISABLE_CNAME_SUPPORT=false ;;
-        *) errors+=("LEGO_DISABLE_CNAME_SUPPORT must be true or false.") ;;
-    esac
 
     VALIDATED_PROPAGATION="${PROPAGATION_SECONDS:-360}"
     if ! [[ "${VALIDATED_PROPAGATION}" =~ ^[0-9]{1,10}$ ]] ||
@@ -113,14 +106,23 @@ validate_env() {
 configure_cloudflare() {
     local secret=/run/secrets/cloudflare_api_token
     local token="${CLOUDFLARE_API_KEY:-${CF_DNS_API_TOKEN:-${CLOUDFLARE_API_TOKEN:-}}}"
+    local disable_cname_following="${LEGO_DISABLE_CNAME_SUPPORT:-true}"
     local use_file=false
+
+    # Use the exact TXT owner for service names, including inherited wildcard aliases.
+    # Honor a legacy lego override for an explicitly delegated DNS-01 challenge.
+    case "${disable_cname_following,,}" in
+        true|1|t) disable_cname_following=true ;;
+        false|0|f) disable_cname_following=false ;;
+        *) log_err "LEGO_DISABLE_CNAME_SUPPORT must be true or false."; return 2 ;;
+    esac
 
     if [[ -z "${token}" && -r "${secret}" ]]; then
         token="$(< "${secret}")"
         use_file=true
     fi
     if ! [[ "${token}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        log_err "Provide a valid Cloudflare DNS API token through the Compose secret or CLOUDFLARE_API_KEY."
+        log_err "Provide a valid Cloudflare DNS API token through the Compose secret or CLOUDFLARE_API_TOKEN."
         return 2
     fi
 
@@ -134,5 +136,5 @@ configure_cloudflare() {
         export CF_DNS_API_TOKEN="${token}"
     fi
     export CLOUDFLARE_PROPAGATION_TIMEOUT="${VALIDATED_PROPAGATION}"
-    export LEGO_DISABLE_CNAME_SUPPORT="${VALIDATED_DISABLE_CNAME_SUPPORT}"
+    export LEGO_DISABLE_CNAME_SUPPORT="${disable_cname_following}"
 }
