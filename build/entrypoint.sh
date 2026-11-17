@@ -91,7 +91,7 @@ if (( EUID == 0 )); then
         chown -- "${CERT_UID}:${CERT_GID}" /ssl-certs
     fi
 
-    exec gosu "${CERT_UID}:${CERT_GID}" "${script_dir}/run_lego.sh" "${selected[@]}"
+    exec su-exec "${CERT_UID}:${CERT_GID}" "${script_dir}/run_lego.sh" "${selected[@]}"
 fi
 
 if [[ "${EUID}" != "${CERT_UID}" || "$(id -g)" != "${CERT_GID}" ]]; then

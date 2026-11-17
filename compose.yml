@@ -1,16 +1,18 @@
 # Issue one certificate per selected group and exit.
-# Set CLOUDFLARE_API_TOKEN in .env and container settings in certgen.env.
+# Set CLOUDFLARE_API_TOKEN and container settings in .env.
 # Run docker compose run --rm certgen from this directory.
 
 name: lego-cloudflare-certgen
 
 services:
   certgen:
-    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:3.2}"
+    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:3.3}"
 
-    # Container settings (e-mail, timezone, UID/GID, etc.).
     env_file:
-      - ./certgen.env
+      - "${CERTGEN_ENV_FILE:-./.env}"
+    # Supply the canonical token through the Compose secret.
+    environment:
+      CLOUDFLARE_API_TOKEN: ""
 
     volumes:
       # One top-level YAML key per certificate and output directory.
@@ -30,7 +32,7 @@ services:
     # One-shot: do not restart after the container exits.
     restart: "no"
 
-    # CHOWN prepares the output volume. SETUID/SETGID let gosu drop privileges.
+    # CHOWN prepares the output volume. SETUID/SETGID let su-exec drop privileges.
     security_opt:
       - no-new-privileges:true
     cap_drop:

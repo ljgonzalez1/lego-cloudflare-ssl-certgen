@@ -13,15 +13,14 @@ RUN apk add --no-cache curl
 COPY download_lego.sh /tmp/download_lego.sh
 RUN sh /tmp/download_lego.sh /out
 
-FROM debian:bookworm-slim
+FROM alpine:3.24.4
 ARG LEGO_VERSION
 ARG TARGETARCH
-ARG DEBIAN_FRONTEND=noninteractive
 
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
-      org.opencontainers.image.version="3.2" \
+      org.opencontainers.image.version="3.3" \
       org.opencontainers.image.licenses="MIT" \
       com.certgen.lego.version="${LEGO_VERSION}"
 
@@ -33,12 +32,10 @@ ENV TZ=Etc/UTC \
     UID=1000 \
     GID=1000
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates gosu python3 python3-yaml tzdata \
- && rm -rf /var/lib/apt/lists/* \
- && groupadd --gid 1000 certgen \
- && useradd --uid 1000 --gid certgen --no-create-home \
-        --home-dir /nonexistent --shell /usr/sbin/nologin certgen \
+# Install only runtime dependencies. The downloader and archives stay in the download stage.
+RUN apk add --no-cache bash ca-certificates-bundle py3-yaml su-exec tzdata \
+ && addgroup -g 1000 certgen \
+ && adduser -D -H -u 1000 -G certgen -h /nonexistent -s /sbin/nologin certgen \
  && mkdir -p /app /ssl-certs \
  && chown certgen:certgen /ssl-certs
 
@@ -47,7 +44,7 @@ COPY --from=download /out/LICENSE /usr/share/licenses/lego/LICENSE
 COPY --chmod=755 entrypoint.sh validate_env.sh run_lego.sh read_domains.py print_summary.py /usr/local/bin/
 
 # Run the binary and wrapper dependencies on every target platform during the build.
-RUN lego_version="$(gosu 1000:1000 lego --version)" \
+RUN lego_version="$(su-exec 1000:1000 lego --version)" \
  && printf '%s\n' "$lego_version" \
  && test "$lego_version" = "lego version ${LEGO_VERSION#v} linux/${TARGETARCH}" \
  && smoke_config="$(mktemp)" \
