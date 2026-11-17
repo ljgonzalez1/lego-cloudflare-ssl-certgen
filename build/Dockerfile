@@ -33,7 +33,7 @@ LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
 # ------------------------------------------------------------------------------
 ENV TZ=Etc/UTC \
     PRODUCTION=false \
-    PROPAGATION_SECONDS=60 \
+    PROPAGATION_SECONDS=360 \
     DNS_RESOLVERS="1.1.1.1:53,8.8.8.8:53,1.0.0.1:53" \
     ACCEPT_LEGO_TOS=false \
     UID=1000 \
