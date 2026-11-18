@@ -73,13 +73,15 @@ The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](h
 
 ### :one: Prepare a working directory
 
-Download the two configuration files into a new directory.
+Run these commands once in a new directory to download the Compose file and templates.
 
 ```bash
 mkdir lego-certgen
 cd lego-certgen
-wget -O .env https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.8/example.env
-wget -O domains.yaml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.8/template.domains.yaml
+curl -fL -o compose.yml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.8/compose.yml
+curl -fL -o example.env https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.8/example.env
+curl -fL -o domains.yaml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.8/template.domains.yaml
+cp example.env .env
 chmod 600 .env
 mkdir -p ssl-certs
 ```
@@ -120,6 +122,24 @@ certificateB:
 See [`domains.yaml` format](#domainsyaml-format) for the rules.
 
 ### :four: Run the container
+
+#### :octopus: Docker Compose
+
+List the groups and preview the request.
+
+```bash
+docker compose run --rm certgen --list
+docker compose run --rm certgen --dry-run
+```
+
+Request staging certificates first. Once staging works, run the production command.
+
+```bash
+docker compose run --rm certgen --staging
+docker compose run --rm certgen --production
+```
+
+Certificates are saved in `ssl-certs/`. The provided [Compose file](compose.yml) mounts the token as a secret. See the [Compose settings](#environment-variables) for custom file paths.
 
 #### :whale: `docker run --rm`
 
@@ -164,30 +184,6 @@ Add any [command option](#command-options) after the image name, for example `--
 
   `-e CLOUDFLARE_API_TOKEN=` overrides any token left in `.env`, so the container reads the file. The configured `UID` must be able to read the file.
 - **Restrict the container** the same way Compose does with the flags in [Runtime permissions](#runtime-permissions).
-
-#### :octopus: Optional Docker Compose
-
-Download the Compose file into the same directory to reuse `.env` and `domains.yaml`.
-
-```bash
-wget -O compose.yml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.8/compose.yml
-```
-
-List the groups and preview the request.
-
-```bash
-docker compose run --rm certgen --list
-docker compose run --rm certgen --dry-run
-```
-
-Request staging certificates first. Once staging works, run the production command.
-
-```bash
-docker compose run --rm certgen --staging
-docker compose run --rm certgen --production
-```
-
-Certificates are saved in `ssl-certs/`. The provided [Compose file](compose.yml) mounts the token as a secret. See the [Compose settings](#environment-variables) for custom file paths.
 
 
 ---

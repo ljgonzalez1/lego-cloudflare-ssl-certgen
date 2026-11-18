@@ -17,8 +17,8 @@ Run these commands in a new working directory.
 ```bash
 mkdir lego-certgen
 cd lego-certgen
-wget -O domains.yaml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/master/template.domains.yaml
-wget -O .env https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/master/example.env
+curl -fL -o domains.yaml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/master/template.domains.yaml
+curl -fL -o .env https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/master/example.env
 chmod 600 .env
 mkdir -p ssl-certs
 ```
