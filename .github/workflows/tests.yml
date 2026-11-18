@@ -72,11 +72,7 @@ jobs:
 
   offline:
     name: Offline tests
-    needs: classify_branch
-    if: >-
-      ${{ !cancelled() && github.event.deleted != true &&
-          (github.event_name == 'release' || (github.base_ref || github.ref_name) == 'master' ||
-           needs.classify_branch.outputs.eligible == 'true') }}
+    needs: version_docs
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -87,34 +83,14 @@ jobs:
       - name: Run offline tests
         run: sh tests/run.sh
 
-  smoke_armv6:
-    if: >-
-      ${{ github.event.deleted != true &&
-          (github.event_name == 'release' || (github.base_ref || github.ref_name) == 'master') }}
+  smoke:
+    name: Smoke test (${{ matrix.platform }})
+    needs: offline
+    if: github.event_name == 'release'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/arm/v6, linux/arm/v7, linux/arm64, linux/386, linux/amd64]
     uses: ./.github/workflows/smoke.yml
     with:
-      platform: linux/arm/v6
-
-  smoke_armv7:
-    needs: smoke_armv6
-    uses: ./.github/workflows/smoke.yml
-    with:
-      platform: linux/arm/v7
-
-  smoke_arm64:
-    needs: smoke_armv7
-    uses: ./.github/workflows/smoke.yml
-    with:
-      platform: linux/arm64
-
-  smoke_x86:
-    needs: smoke_arm64
-    uses: ./.github/workflows/smoke.yml
-    with:
-      platform: linux/386
-
-  smoke_amd64:
-    needs: smoke_x86
-    uses: ./.github/workflows/smoke.yml
-    with:
-      platform: linux/amd64
+      platform: ${{ matrix.platform }}

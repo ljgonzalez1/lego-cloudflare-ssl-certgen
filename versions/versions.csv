@@ -25,3 +25,4 @@
 "Alpine","3.24.4","scratch","https://hub.docker.com/_/alpine","lego","v4.34.0","","https://github.com/go-acme/lego/releases/tag/v4.34.0","v4.2.6","","https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.6"
 "Alpine","3.24.4","scratch","https://hub.docker.com/_/alpine","lego","v4.34.0","","https://github.com/go-acme/lego/releases/tag/v4.34.0","v4.2.7","","https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.7"
 "Alpine","3.24.4","scratch","https://hub.docker.com/_/alpine","lego","v4.34.0","","https://github.com/go-acme/lego/releases/tag/v4.34.0","v4.2.8","","https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.8"
+"Alpine","3.24.4","scratch","https://hub.docker.com/_/alpine","lego","v4.34.0","","https://github.com/go-acme/lego/releases/tag/v4.34.0","v4.2.9","","https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9"
