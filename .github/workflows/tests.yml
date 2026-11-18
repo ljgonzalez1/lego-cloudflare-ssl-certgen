@@ -30,7 +30,7 @@ jobs:
     outputs:
       eligible: ${{ steps.match.outputs.eligible }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Match the version branch format
@@ -59,7 +59,7 @@ jobs:
       matrix:
         document: [DOCKERHUB.md, README.md]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Verify the committed Docker tag table
@@ -79,7 +79,7 @@ jobs:
            needs.classify_branch.outputs.eligible == 'true') }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Install dependencies

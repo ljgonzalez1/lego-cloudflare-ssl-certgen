@@ -26,7 +26,7 @@ def expected_tags() -> tuple[str, ...]:
         capture_output=True,
     )
     if result.returncode:
-        raise ValueError(result.stderr.strip() or "Cannot read the release tags from versions.txt.")
+        raise ValueError(result.stderr.strip() or "Cannot read the release tags from versions/versions.txt.")
     prefix = f"{DOCKER_IMAGE}:"
     refs = result.stdout.splitlines()
     if len(refs) != 9 or any(not ref.startswith(prefix) for ref in refs):
@@ -45,12 +45,12 @@ def check_ref(ref: str, version: str) -> None:
         capture_output=True,
     )
     if result.returncode == 1:
-        return  # A non-versioned ref uses the full APP_VERSION from versions.txt.
+        return  # A non-versioned ref uses the full APP_VERSION from versions/versions.txt.
     result.check_returncode()
     numbers = (part.lstrip("0") or "0" for part in result.stdout.strip().split(".")[:3])
     branch_version = list(numbers)
     if version[1:].split(".")[:len(branch_version)] != branch_version:
-        raise ValueError(f"{ref!r} does not match APP_VERSION={version[1:]} in versions.txt.")
+        raise ValueError(f"{ref!r} does not match APP_VERSION={version[1:]} in versions/versions.txt.")
 
 
 def main() -> int:
@@ -73,7 +73,7 @@ def main() -> int:
             )
         if latest.tags != tags:
             raise ValueError(
-                f"The Docker tags for {version} in versions/versions.csv differ from versions.txt. "
+                f"The Docker tags for {version} in versions/versions.csv differ from versions/versions.txt. "
                 "Check the Alpine, lego, and application versions and suffixes."
             )
 

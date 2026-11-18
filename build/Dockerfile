@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG ALPINE_VERSION=3.24.4
-ARG APP_VERSION=4.2.5
+ARG APP_VERSION=4.2.6
 ARG LEGO_VERSION=v4.34.0
 
 # Download and verify the official binary on the builder's native architecture.
