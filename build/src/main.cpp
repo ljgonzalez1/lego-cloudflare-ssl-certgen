@@ -33,13 +33,14 @@ int main(int argc, char* argv[]) {
             certgen::write_time_limit(argv[2], argv[3]);
         } else if (command == "supervise" && argc >= 4) {
             std::cout.flush();
-            return certgen::supervise(argv[2], argv + 3);
+            return certgen::supervise(argc - 2, argv + 2);
         } else if (command == "output-path" && argc == 5) {
             certgen::write_output_path(argv[2], argv[3], argv[4]);
         } else {
             std::cerr << "Usage: certgen-core domains FILE [GROUP...] | summary | identity"
                          " | own-output PATH UID GID | output-path ACTION DIRECTORY GROUP"
-                         " | time-limit NAMES PROPAGATION_SECONDS | supervise SECONDS COMMAND...\n";
+                         " | time-limit NAMES PROPAGATION_SECONDS"
+                         " | supervise [--log FILE] [--view NAME,...] SECONDS COMMAND...\n";
             return 2;
         }
         std::cout.flush();

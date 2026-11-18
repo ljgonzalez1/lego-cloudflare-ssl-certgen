@@ -119,6 +119,17 @@ validate_env() {
         invalid_setting "PROPAGATION_SECONDS: expected a non-negative integer in seconds."
     fi
 
+    # auto shows the live view when stdout is a terminal and lego's own log otherwise.
+    VALIDATED_LEGO_OUTPUT=${LEGO_OUTPUT:-auto}
+    case "$VALIDATED_LEGO_OUTPUT" in
+        auto)
+            VALIDATED_LEGO_OUTPUT=raw
+            [ ! -t 1 ] || VALIDATED_LEGO_OUTPUT=pretty
+            ;;
+        pretty|raw) ;;
+        *) invalid_setting "LEGO_OUTPUT: expected auto, pretty or raw." ;;
+    esac
+
     resolvers=${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}
     VALIDATED_DNS_RESOLVERS=
     while [ "${resolvers#* }" != "$resolvers" ]; do
