@@ -15,7 +15,7 @@ For a pull request, the relevant branch is its target. Merging updates the desti
 
 The smoke sequence is ARMv6 → ARMv7 → ARM64 → x86 → AMD64. Each document check and offline regression can run in parallel with that sequence. GitHub Actions runs ARM64 and AMD64 natively. The other images use QEMU and a dedicated Buildx builder. The smoke containers run with no network and use the locally built images.
 
-Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.2.6/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `versions/versions.txt`.
+Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.2.7/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `versions/versions.txt`.
 
 Both publication configurations subscribe to GitHub's `release.published` activity, including prereleases. The Git release tag selects the source commit. `versions/versions.txt` from that commit supplies the version numbers used in Docker Hub. A published prerelease follows the same sequence and updates `latest`.
 
@@ -56,7 +56,7 @@ Both publication configurations subscribe to GitHub's `release.published` activi
    bash ci/publish-image.sh --print-tags
    ```
 
-4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.2.6` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
+4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.2.7` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
 5. Select **Publish release**, then open **Actions → Publish release to Docker Hub**. After the document, offline, and smoke jobs pass, the publisher prepares the final builder.
 6. The publisher pushes one build under the first full tag, verifies the five platforms in the returned index, and assigns the remaining tags to that index in order. The last tag is `latest`. The final step uploads `DOCKERHUB.md`.
 7. Check **Tags** and **Overview** on Docker Hub. If a push fails after some aliases were written, inspect the run and correct the cause before rerunning. Changing the overview is a separate operation from pushing tags.
