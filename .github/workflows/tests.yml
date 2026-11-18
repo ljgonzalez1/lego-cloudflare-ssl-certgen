@@ -36,7 +36,10 @@ env:
 jobs:
   version_readme:
     name: Check version in README.md
-    if: github.event.deleted != true
+    if: >-
+      ${{ github.event.deleted != true &&
+          (github.event_name != 'push' || github.ref == 'refs/heads/master' ||
+           github.event.created != true || github.event.commits[0] != null) }}
     runs-on: ubuntu-24.04
     outputs:
       eligible: ${{ steps.check.outputs.eligible }}
@@ -50,7 +53,10 @@ jobs:
 
   version_dockerhub:
     name: Check version in DOCKERHUB.md
-    if: github.event.deleted != true
+    if: >-
+      ${{ github.event.deleted != true &&
+          (github.event_name != 'push' || github.ref == 'refs/heads/master' ||
+           github.event.created != true || github.event.commits[0] != null) }}
     runs-on: ubuntu-24.04
     outputs:
       eligible: ${{ steps.check.outputs.eligible }}
