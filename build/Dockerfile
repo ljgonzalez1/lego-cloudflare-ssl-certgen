@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG ALPINE_VERSION=3.24.4
+ARG APP_VERSION=4.2.4
 ARG LEGO_VERSION=v4.34.0
 
 # Download and verify the official binary on the builder's native architecture.
@@ -51,6 +52,7 @@ RUN /bin/sh /tmp/write_notices.sh /licenses /runtime "$LEGO_VERSION"
 # The filesystem above is Alpine. Starting with scratch keeps the builder's
 # layers and their BusyBox, curl, headers and compiler out of the resulting image.
 FROM scratch AS target
+ARG APP_VERSION
 ARG ALPINE_VERSION
 ARG LEGO_VERSION
 ARG TARGETARCH
@@ -59,7 +61,7 @@ ARG TARGETVARIANT
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
-      org.opencontainers.image.version="4.2.3" \
+      org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.licenses="MIT" \
       com.certgen.alpine.version="${ALPINE_VERSION}" \
       com.certgen.lego.version="${LEGO_VERSION}"

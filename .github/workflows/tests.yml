@@ -6,45 +6,63 @@ on:
       - master
       - '[vV][0-9]+.[0-9]*'
       - '[0-9]+.[0-9]*'
+  pull_request:
+    branches:
+      - master
+      - '[vV][0-9]+.[0-9]*'
+      - '[0-9]+.[0-9]*'
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
   classify_branch:
-    name: Check branch name
-    if: github.event.deleted == false
-    runs-on: ubuntu-latest
+    name: Check version branch name
+    if: >-
+      ${{ github.event_name != 'release' && github.event.deleted != true &&
+          (github.base_ref || github.ref_name) != 'master' }}
+    runs-on: ubuntu-24.04
     outputs:
       eligible: ${{ steps.match.outputs.eligible }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Match the version branch format
         id: match
         shell: bash
         env:
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
-          version='[vV]?[0-9]+(\.[0-9]+){1,3}'
-          suffix='[.-](build|audit|review|beta|alpha)([.-][0-9]+(\.[0-9]+){0,4})?'
-          if [[ "$BRANCH" == master || "$BRANCH" =~ ^${version}(${suffix})?$ ]]; then
+          case "$BRANCH" in
+            '') exit 1 ;;
+          esac
+          if bash ci/is-version-branch.sh "$BRANCH"; then
             echo 'eligible=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'eligible=false' >> "$GITHUB_OUTPUT"
           fi
 
   offline:
+    name: Offline tests
     needs: classify_branch
-    if: needs.classify_branch.outputs.eligible == 'true'
-    runs-on: ubuntu-latest
+    if: >-
+      ${{ !cancelled() && github.event.deleted != true &&
+          (github.event_name == 'release' || (github.base_ref || github.ref_name) == 'master' ||
+           needs.classify_branch.outputs.eligible == 'true') }}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ libyaml-dev
       - name: Run offline tests
         run: sh tests/run.sh
 
   smoke_armv6:
-    if: github.ref == 'refs/heads/master' && github.event.deleted == false
+    if: >-
+      ${{ github.event.deleted != true &&
+          (github.event_name == 'release' || (github.base_ref || github.ref_name) == 'master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/arm/v6

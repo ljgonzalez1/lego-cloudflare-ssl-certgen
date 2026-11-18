@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+source ci/versions.sh
+read_versions
+
 platform=$1
 image=$2
 
@@ -22,13 +25,22 @@ YAML
 chmod 644 "$work/domains.yaml"
 
 version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
-[[ "$version" == 4.2.3 ]] || { printf 'Expected image 4.2.3, found %s\n' "$version" >&2; exit 1; }
+if [[ "$version" != "$APP_VERSION" ]]; then
+    printf 'Expected image %s, found %s\n' "$APP_VERSION" "$version" >&2
+    exit 1
+fi
+
+alpine_version=$(docker image inspect --format '{{index .Config.Labels "com.certgen.alpine.version"}}' "$image")
+if [[ "$alpine_version" != "$ALPINE_VERSION" ]]; then
+    printf 'Expected Alpine %s, found %s\n' "$ALPINE_VERSION" "$alpine_version" >&2
+    exit 1
+fi
 
 args=(--rm --pull=never --platform "$platform" --network none)
 lego_arch=${platform#linux/}
 lego_arch=${lego_arch%%/*}
 lego_version=$(docker run "${args[@]}" --entrypoint /usr/local/bin/lego "$image" --version)
-[[ "$lego_version" == "lego version 4.34.0 linux/$lego_arch" ]]
+[[ "$lego_version" == "lego version $LEGO_VERSION linux/$lego_arch" ]]
 
 args+=(--env-file "$work/.env"
     --mount "type=bind,source=$work/domains.yaml,target=/app/domains.yaml,readonly")

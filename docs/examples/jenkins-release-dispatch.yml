@@ -1,0 +1,35 @@
+# Optional replacement for .github/workflows/release.yml.
+name: Send published release to Jenkins
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Queue the Jenkins release job
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_SHA: ${{ github.sha }}
+          JENKINS_RELEASE_URL: ${{ vars.JENKINS_RELEASE_URL }}
+          JENKINS_USER: ${{ secrets.JENKINS_USER }}
+          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
+        run: |
+          [[ "$JENKINS_RELEASE_URL" == https://*/buildWithParameters ]]
+          : "${JENKINS_USER:?Set JENKINS_USER}"
+          : "${JENKINS_API_TOKEN:?Set JENKINS_API_TOKEN}"
+          status=$(curl --silent --show-error --max-time 30 --output /dev/null \
+            --write-out '%{http_code}' --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
+            --data-urlencode "RELEASE_TAG=$RELEASE_TAG" \
+            --data-urlencode "RELEASE_SHA=$RELEASE_SHA" \
+            "$JENKINS_RELEASE_URL")
+          if [[ "$status" != 201 ]]; then
+            printf 'Jenkins returned HTTP %s while queuing the release\n' "$status" >&2
+            exit 1
+          fi

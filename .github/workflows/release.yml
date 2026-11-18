@@ -1,0 +1,54 @@
+name: Publish release to Docker Hub
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: certgen-dockerhub-publication
+  queue: max
+
+jobs:
+  checks:
+    name: Test the release commit
+    uses: ./.github/workflows/tests.yml
+
+  publish:
+    name: Push image and update Docker Hub
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Check that Docker Hub credentials are configured
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
+          DOCKERHUB_DESCRIPTION_TOKEN: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
+        run: |
+          : "${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}"
+          : "${DOCKERHUB_PUSH_TOKEN:?Set DOCKERHUB_PUSH_TOKEN}"
+          : "${DOCKERHUB_DESCRIPTION_TOKEN:?Set DOCKERHUB_DESCRIPTION_TOKEN}"
+
+      - name: Build and publish all five platforms
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
+        run: bash ci/publish-image.sh
+
+      - name: Update the Docker Hub overview
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
+          repository: ljgonzalez/lego-cloudflare-certgen
+          readme-filepath: ./DOCKERHUB.md
