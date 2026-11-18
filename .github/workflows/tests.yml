@@ -6,11 +6,15 @@ on:
       - master
       - '[vV][0-9]+.[0-9]*'
       - '[0-9]+.[0-9]*'
+      - '[vV][0-9]+.[0-9]*/**'
+      - '[0-9]+.[0-9]*/**'
   pull_request:
     branches:
       - master
       - '[vV][0-9]+.[0-9]*'
       - '[0-9]+.[0-9]*'
+      - '[vV][0-9]+.[0-9]*/**'
+      - '[0-9]+.[0-9]*/**'
   workflow_call:
 
 permissions:
@@ -41,6 +45,30 @@ jobs:
           if bash ci/is-version-branch.sh "$BRANCH"; then
             echo 'eligible=true' >> "$GITHUB_OUTPUT"
           fi
+
+  version_docs:
+    name: Check version in ${{ matrix.document }}
+    needs: classify_branch
+    if: >-
+      ${{ !cancelled() && github.event.deleted != true &&
+          (github.event_name == 'release' || (github.base_ref || github.ref_name) == 'master' ||
+           needs.classify_branch.outputs.eligible == 'true') }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        document: [DOCKERHUB.md, README.md]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify the committed Docker tag table
+        env:
+          DOCUMENT: ${{ matrix.document }}
+          VERSION_REF: >-
+            ${{ github.event.release.tag_name ||
+                (github.base_ref == 'master' && github.head_ref) || github.base_ref || github.ref_name }}
+        run: python3 -B versions/check_version.py "$DOCUMENT" --ref "$VERSION_REF"
 
   offline:
     name: Offline tests
