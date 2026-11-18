@@ -74,14 +74,18 @@ jobs:
         with:
           persist-credentials: false
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ libyaml-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ libyaml-dev jq
       - name: Run offline tests
         run: sh tests/run.sh
+      - name: Test Docker Hub verification logic
+        run: bash ci/test-dockerhub.sh
 
   smoke_armv6:
     name: ARMv6 smoke test
     needs: offline
-    if: github.event_name == 'release'
+    if: >-
+      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/arm/v6
@@ -89,7 +93,9 @@ jobs:
   smoke_armv7:
     name: ARMv7 smoke test
     needs: offline
-    if: github.event_name == 'release'
+    if: >-
+      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/arm/v7
@@ -97,7 +103,9 @@ jobs:
   smoke_arm64:
     name: ARM64 smoke test
     needs: offline
-    if: github.event_name == 'release'
+    if: >-
+      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/arm64
@@ -105,7 +113,9 @@ jobs:
   smoke_i386:
     name: i386 smoke test
     needs: offline
-    if: github.event_name == 'release'
+    if: >-
+      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/386
@@ -113,7 +123,9 @@ jobs:
   smoke_amd64:
     name: AMD64 smoke test
     needs: offline
-    if: github.event_name == 'release'
+    if: >-
+      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/amd64
@@ -153,7 +165,11 @@ jobs:
         run: |
           result="$RUNNER_TEMP/certgen-publish.json"
           PUBLISH_RESULT_FILE="$result" bash ci/publish-image.sh
-          jq -r '"image=\(.image)\ndigest=\(.digest)"' "$result" >> "$GITHUB_OUTPUT"
+          jq -er '
+            select(.image | strings | test("^ljgonzalez/lego-cloudflare-certgen:v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+            | select(.digest | strings | test("^sha256:[0-9a-f]{64}$"))
+            | "image=\(.image)\ndigest=\(.digest)"
+          ' "$result" >> "$GITHUB_OUTPUT"
 
   update_description:
     name: Update Docker Hub overview
@@ -172,29 +188,54 @@ jobs:
           repository: ljgonzalez/lego-cloudflare-certgen
           readme-filepath: ./DOCKERHUB.md
 
+  wait_image:
+    name: Wait 30 seconds for image propagation
+    needs: publish
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ needs.publish.outputs.image }}
+      digest: ${{ needs.publish.outputs.digest }}
+    steps:
+      - name: Wait for image propagation
+        run: |
+          sleep 30
+          echo Done waiting
+          true
+
   verify_image:
     name: Verify published version tag
-    needs: publish
+    needs: wait_image
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Verify tag and digest after 10 seconds
+      - name: Verify tag and digest
         env:
-          IMAGE: ${{ needs.publish.outputs.image }}
-          DIGEST: ${{ needs.publish.outputs.digest }}
+          IMAGE: ${{ needs.wait_image.outputs.image }}
+          DIGEST: ${{ needs.wait_image.outputs.digest }}
         run: bash ci/check-dockerhub.sh image "$IMAGE" "$DIGEST"
 
-  verify_description:
-    name: Verify published Docker Hub overview
+  wait_description:
+    name: Wait 30 seconds for description propagation
     needs: update_description
     runs-on: ubuntu-24.04
     steps:
+      - name: Wait for description propagation
+        run: |
+          sleep 30
+          echo Done waiting
+          true
+
+  verify_description:
+    name: Verify published Docker Hub overview
+    needs: wait_description
+    runs-on: ubuntu-24.04
+    steps:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Compare Docker Hub Markdown after 10 seconds
+      - name: Compare Docker Hub Markdown
         run: bash ci/check-dockerhub.sh description
