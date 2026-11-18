@@ -74,11 +74,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ libyaml-dev jq
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ libyaml-dev python3 python3-yaml jq
       - name: Run offline tests
         run: sh tests/run.sh
       - name: Test Docker Hub verification logic
         run: bash ci/test-dockerhub.sh
+      - name: Test CI event routing and job dependencies
+        run: python3 -B ci/test_workflows.py
 
   smoke_armv6:
     name: ARMv6 smoke test
@@ -165,11 +167,7 @@ jobs:
         run: |
           result="$RUNNER_TEMP/certgen-publish.json"
           PUBLISH_RESULT_FILE="$result" bash ci/publish-image.sh
-          jq -er '
-            select(.image | strings | test("^ljgonzalez/lego-cloudflare-certgen:v[0-9]+\\.[0-9]+\\.[0-9]+$"))
-            | select(.digest | strings | test("^sha256:[0-9a-f]{64}$"))
-            | "image=\(.image)\ndigest=\(.digest)"
-          ' "$result" >> "$GITHUB_OUTPUT"
+          bash ci/read-publish-result.sh "$result" >> "$GITHUB_OUTPUT"
 
   update_description:
     name: Update Docker Hub overview
@@ -215,6 +213,8 @@ jobs:
         env:
           IMAGE: ${{ needs.wait_image.outputs.image }}
           DIGEST: ${{ needs.wait_image.outputs.digest }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
         run: bash ci/check-dockerhub.sh image "$IMAGE" "$DIGEST"
 
   wait_description:
