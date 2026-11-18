@@ -6,18 +6,29 @@ Use GitHub Actions or Jenkins as the Docker Hub publisher for this repository. B
 
 For a pull request, the relevant branch is its target. Merging updates the destination branch and runs the push checks there.
 
-| Event | Offline regression | Docker smoke tests | Push image | Sync Docker Hub overview |
-|---|---|---|---|---|
-| PR or push to any other branch | — | — | — | — |
-| PR, push or merge to a valid version branch | Yes | — | — | — |
-| PR, push or merge to `master` | Yes | Five in sequence | — | — |
-| Publish a GitHub Release | Yes | Five in sequence | After both checks pass | After the image and all aliases are published |
+| Event | README and Docker Hub table checks | Offline regression | Docker smoke tests | Push image | Sync Docker Hub overview |
+|---|---|---|---|---|---|
+| PR or push to any other branch | — | — | — | — | — |
+| PR, push or merge to a valid version branch | Yes | Yes | — | — | — |
+| PR, push or merge to `master` | Yes | Yes | Five in sequence | — | — |
+| Publish a GitHub Release | Yes | Yes | Five in sequence | After all checks pass | After the image and all aliases are published |
 
-The smoke sequence is ARMv6 → ARMv7 → ARM64 → x86 → AMD64. Offline regression runs independently of this sequence. GitHub Actions runs ARM64 and AMD64 natively. The other images use QEMU and a dedicated Buildx builder. The smoke containers run with no network and use the locally built images.
+The smoke sequence is ARMv6 → ARMv7 → ARM64 → x86 → AMD64. Each document check and offline regression can run in parallel with that sequence. GitHub Actions runs ARM64 and AMD64 natively. The other images use QEMU and a dedicated Buildx builder. The smoke containers run with no network and use the locally built images.
 
-Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Branch names with a version prefix can start the branch-name check. The offline job starts only after the full version pattern matches.
+Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.2.8/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `versions/versions.txt`.
 
-Both publication configurations subscribe to GitHub's `release.published` activity, including prereleases. The Git release tag selects the source commit. `versions.txt` from that commit supplies the version numbers used in Docker Hub. A published prerelease follows the same sequence and updates `latest`.
+Both publication configurations subscribe to GitHub's `release.published` activity, including prereleases. The Git release tag selects the source commit. `versions/versions.txt` from that commit supplies the version numbers used in Docker Hub. A published prerelease follows the same sequence and updates `latest`.
+
+## Update the Markdown tables
+
+1. Update `versions/versions.txt` for the upcoming image and append its row to `versions/versions.csv`. Keep the upcoming release as the final CSV row.
+2. From the repository root, regenerate the short table in `DOCKERHUB.md` and the full history in `README.md`.
+
+   ```bash
+   python3 versions/tags_table.py
+   ```
+
+3. Commit the version files and both Markdown files before you open the PR or publish the release. The document jobs verify that the final CSV row matches the image tags from `versions/versions.txt` and that each committed table matches the CSV. Release publication starts after both documents, offline regression, and all five smoke tests pass.
 
 ## Set up Docker Hub access
 
@@ -38,19 +49,19 @@ Both publication configurations subscribe to GitHub's `release.published` activi
    | `DOCKERHUB_PUSH_TOKEN` | The `certgen-images` PAT |
    | `DOCKERHUB_DESCRIPTION_TOKEN` | The `certgen-overview` PAT |
 
-2. Commit the release content with `versions.txt`, `DOCKERHUB.md`, and the workflows. Edit `DOCKERHUB.md` to match the overview you want to publish. This file replaces the long Docker Hub overview. Keep the file at or below 25,000 bytes.
+2. Update the version files and generate both Markdown tables. Edit any other Docker Hub overview text in `DOCKERHUB.md`. The file must be at or below 25,000 bytes.
 3. Check the Docker tags locally from the repository root.
 
    ```bash
    bash ci/publish-image.sh --print-tags
    ```
 
-4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.2.4` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
-5. Select **Publish release**, then open **Actions → Publish release to Docker Hub**. Wait for the offline and smoke jobs. Only then does the publisher start, validate `versions.txt`, and prepare the final builder.
-6. The publisher pushes one build under the first full tag, verifies the five platforms in the returned index, and assigns the remaining tags to that index in order. The last tag is `latest`. The final step uploads `DOCKERHUB.md`.
-7. Check **Tags** and **Overview** on Docker Hub. If a push fails after some aliases were written, inspect the run and correct the cause before rerunning. Changing the overview is a separate operation from pushing tags.
+4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.2.8` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
+5. Select **Publish release**, then open **Actions → Publish release to Docker Hub**. After the document, offline, and smoke jobs pass, the publisher prepares the final builder.
+6. The publisher pushes one build under the first full tag, verifies the five platforms in the returned index, and assigns the remaining tags to that index in order. The last tag is `latest`. After the push, one job uploads `DOCKERHUB.md` while another waits 10 seconds and checks that the exact version tag resolves to the pushed index digest.
+7. When the overview update succeeds, another job waits 10 seconds and compares the public Markdown returned by Docker Hub with `DOCKERHUB.md`. The comparison tolerates CRLF and trailing whitespace at the end of the file. It preserves the Markdown within the description. This check depends on the overview update.
 
-All builds for an event use the source commit from that event. Where tag names are derived from versions.txt, the file from the release commit is used even if `master` has advanced. Creating a Git tag alone leaves publishing idle. If automation publishes the GitHub Release, use a GitHub App installation token or PAT to create the release so the event can start this workflow.
+All builds for an event use the source commit from that event. Where tag names are derived from versions/versions.txt, the file from the release commit is used even if `master` has advanced. Creating a Git tag alone leaves publishing idle. If automation publishes the GitHub Release, use a GitHub App installation token or PAT to create the release so the event can start this workflow.
 
 [Repository secrets](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets) · [GitHub release event](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release)
 
@@ -66,7 +77,7 @@ All builds for an event use the source commit from that event. Where tag names a
 
    | Label | Host and dependencies |
    |---|---|
-   | `certgen-ci-amd64` | AMD64, Bash, Git, g++, libyaml development headers, curl, jq, and Docker. Use two available executors across one or more agents so that offline and smoke can run concurrently. |
+   | `certgen-ci-amd64` | AMD64, Bash, Git, Python 3.10+, g++, libyaml development headers, curl, jq, and Docker. Use four available executors across one or more agents to run both document jobs, offline regression, and the first smoke test concurrently. |
    | `certgen-ci-arm64` | ARM64 Linux with Bash, Docker and Buildx. |
    | `certgen-publish-amd64` | A trusted AMD64 agent with Bash, jq, Docker, Buildx and permission to register binfmt via a privileged container. |
 
@@ -92,7 +103,7 @@ All builds for an event use the source commit from that event. Where tag names a
    ```
 
 4. Create a **Multibranch Pipeline** in the CI folder. Under **Branch Sources**, select **GitHub**, choose the app credential, and select `ljgonzalez1/lego-cloudflare-ssl-certgen`. Enable **Discover branches** and **Discover pull requests from origin**. For PR testing select **Merging the pull request with the current target branch revision**. Enable fork discovery only with the trust and agent isolation suitable for that code.
-5. Set the script path to `Jenkinsfile`. Save and scan. Use the GitHub webhook for ongoing push/PR updates. Tag discovery is unnecessary for this job. A matching version branch runs offline only, and `master` runs the full suite.
+5. Set the script path to `Jenkinsfile`. Save and scan. Use the GitHub webhook for ongoing push/PR updates. Tag discovery is unnecessary for this job. A matching version branch runs the document checks and offline regression. The `master` suite includes the smoke tests.
 
 [GitHub App setup for Jenkins](https://docs.cloudbees.com/docs/cloudbees-ci/latest/traditional-admin-guide/github-app-auth) · [Jenkins Multibranch Pipeline](https://www.jenkins.io/doc/book/pipeline/pipeline-as-code/)
 
@@ -115,7 +126,7 @@ All builds for an event use the source commit from that event. Where tag names a
 2. In **Settings → Secrets and variables → Actions**, add secret `JENKINS_USER` with the automation username and secret `JENKINS_API_TOKEN` with its API token. Under **Variables** add `JENKINS_RELEASE_URL`. For a job in folder `release`, use the form `https://your-jenkins.example/job/release/job/certgen-release/buildWithParameters`.
 3. Ensure the dispatch runner can reach that HTTPS URL. For a private Jenkins instance, run the dispatch job on a dedicated self-hosted runner that can reach Jenkins, by changing its `runs-on` label. The webhook used by the Multibranch Pipeline still needs a route from GitHub, or periodic repository indexing can be used for branch and PR discovery.
 4. Publish the GitHub Release. The dispatcher sends its tag and exact commit SHA. Jenkins verifies the published release with the GitHub API, fetches the tag, and checks the SHA before stashing the source for all stages.
-5. Follow the build in Jenkins. **Offline tests** and **Smoke sequence** run in parallel. **Build and push image** then creates the final Buildx environment, pushes the image and attaches aliases in order. **Update Docker Hub overview** runs after the image and all aliases are available.
+5. Follow the build in Jenkins. The document checks, **Offline tests**, and **Smoke sequence** run in parallel. **Build and push image** creates the final Buildx environment, pushes the image, and attaches aliases in order. It then starts the two release verification branches described above.
 
 To assign branch and PR tests exclusively to Jenkins, disable the GitHub workflow named **Tests** after switching the release trigger to the dispatcher. The dispatcher submits the job only. Check the final result in Jenkins.
 
