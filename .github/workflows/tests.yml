@@ -187,7 +187,7 @@ jobs:
           readme-filepath: ./DOCKERHUB.md
 
   wait_image:
-    name: Wait 30 seconds for image propagation
+    name: "Test: wait 20 seconds for image propagation"
     needs: publish
     runs-on: ubuntu-24.04
     outputs:
@@ -196,7 +196,7 @@ jobs:
     steps:
       - name: Wait for image propagation
         run: |
-          sleep 30
+          sleep 20
           echo Done waiting
           true
 
@@ -218,13 +218,13 @@ jobs:
         run: bash ci/check-dockerhub.sh image "$IMAGE" "$DIGEST"
 
   wait_description:
-    name: Wait 30 seconds for description propagation
+    name: "Test: wait 20 seconds for description propagation"
     needs: update_description
     runs-on: ubuntu-24.04
     steps:
       - name: Wait for description propagation
         run: |
-          sleep 30
+          sleep 20
           echo Done waiting
           true
 
