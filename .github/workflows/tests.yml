@@ -2,6 +2,7 @@ name: Tests
 
 on:
   push:
+    branches: [master]
   pull_request:
 
 permissions:
@@ -16,3 +17,33 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ libyaml-dev
       - name: Run offline tests
         run: sh tests/run.sh
+
+  smoke_armv6:
+    if: github.event_name == 'push' || github.base_ref == 'master'
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/arm/v6
+
+  smoke_armv7:
+    needs: smoke_armv6
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/arm/v7
+
+  smoke_arm64:
+    needs: smoke_armv7
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/arm64
+
+  smoke_x86:
+    needs: smoke_arm64
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/386
+
+  smoke_amd64:
+    needs: smoke_x86
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/amd64
