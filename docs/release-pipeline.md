@@ -1,6 +1,8 @@
 # Release pipeline
 
-GitHub Actions runs the release tests and uses `ci/publish-image.sh` to publish five platforms and nine tags to Docker Hub.
+The [CI/CD workflow](../.github/workflows/tests.yml) validates branch changes and publishes releases. It uses `ci/publish-image.sh` to publish five platforms and nine tags to Docker Hub.
+
+When applying the v4.2.10 hotfix over v4.2.9, remove `.github/workflows/release.yml`. The release trigger now lives in `tests.yml`.
 
 ## What runs
 
@@ -15,7 +17,27 @@ For a pull request, the relevant branch is its target. Merging updates the desti
 
 The two document checks run in parallel. Offline regression starts when both pass. On release, ARMv6, ARMv7, ARM64, i386, and AMD64 smoke tests then run in parallel. GitHub Actions runs ARM64 and AMD64 natively. The other platforms use QEMU and a dedicated Buildx builder. The smoke containers run with no network and use the locally built images.
 
-Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.2.9/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `versions/versions.txt`.
+```mermaid
+flowchart TD
+    readme["Check README.md"] --> offline["Offline tests"]
+    dockerhub["Check DOCKERHUB.md"] --> offline
+    offline --> release{"Published GitHub release?"}
+    release -->|Yes| v6["ARMv6 smoke test"]
+    release -->|Yes| v7["ARMv7 smoke test"]
+    release -->|Yes| arm64["ARM64 smoke test"]
+    release -->|Yes| i386["i386 smoke test"]
+    release -->|Yes| amd64["AMD64 smoke test"]
+    v6 --> push["Buildx and push"]
+    v7 --> push
+    arm64 --> push
+    i386 --> push
+    amd64 --> push
+    push --> tag["Check version tag and digest"]
+    push --> update["Update Docker Hub overview"]
+    update --> description["Check published overview"]
+```
+
+Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.2.10/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `versions/versions.txt`.
 
 The publishing workflow subscribes to GitHub's `release.published` activity, including prereleases. The Git release tag selects the source commit. `versions/versions.txt` from that commit supplies the version numbers used in Docker Hub. A published prerelease follows the same sequence and updates `latest`.
 
@@ -56,8 +78,8 @@ The publishing workflow subscribes to GitHub's `release.published` activity, inc
    bash ci/publish-image.sh --print-tags
    ```
 
-4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.2.9` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
-5. Select **Publish release**, then open **Actions → Publish release to Docker Hub**. After the document, offline, and smoke jobs pass, the publisher prepares the final builder.
+4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.2.10` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
+5. Select **Publish release**, then open the release run under **Actions → CI/CD**. After the document, offline, and five smoke jobs pass, the publisher prepares the final builder.
 6. The publisher pushes one build under the first full tag, verifies the five platforms in the returned index, and assigns the remaining tags to that index in order. The last tag is `latest`. After the push, one job uploads `DOCKERHUB.md` while another waits 10 seconds and checks that the exact version tag resolves to the pushed index digest.
 7. When the overview update succeeds, another job waits 10 seconds and compares the public Markdown returned by Docker Hub with `DOCKERHUB.md`. The comparison tolerates CRLF and trailing whitespace at the end of the file. It preserves the Markdown within the description. This check depends on the overview update.
 

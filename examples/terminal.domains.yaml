@@ -1,0 +1,12 @@
+# Reserved example names for demonstrating the wrapper with simulated ACME results.
+example-com:
+  - example.com
+  - www.example.com
+  - api.example.com
+  - '*.apps.example.com'
+
+example-org:
+  - example.org
+  - docs.example.org
+  - api.staging.example.org
+  - '*.staging.example.org'
