@@ -71,13 +71,8 @@ docker buildx build --builder "$builder" --platform "$platforms" --progress=plai
 
 digest=$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$work/image.json")
 image="$repository@$digest"
-docker buildx imagetools inspect --raw "$image" | jq -e '
-    [.manifests[] | .platform | select(.os == "linux") |
-        if .architecture == "arm" then .architecture + "/" + (.variant // "")
-        elif .architecture == "arm64" and ((.variant // "v8") != "v8") then "unexpected-arm64-variant"
-        else .architecture end]
-    | sort == ["386", "amd64", "arm/v6", "arm/v7", "arm64"]
-' >/dev/null
+docker buildx imagetools inspect --raw "$image" | jq -e '[.manifests[] | .platform]' |
+    jq -e -f ci/image-platforms.jq >/dev/null
 
 # Attach each alias to the same immutable index. The last registry write is latest.
 for tag in "${tags[@]:1}"; do
