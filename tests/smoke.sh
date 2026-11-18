@@ -22,7 +22,7 @@ YAML
 chmod 644 "$work/domains.yaml"
 
 version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
-[[ "$version" == 4.2.2 ]] || { printf 'Expected image 4.2.2, found %s\n' "$version" >&2; exit 1; }
+[[ "$version" == 4.2.3 ]] || { printf 'Expected image 4.2.3, found %s\n' "$version" >&2; exit 1; }
 
 args=(--rm --pull=never --platform "$platform" --network none)
 lego_arch=${platform#linux/}
