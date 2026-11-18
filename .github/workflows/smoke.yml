@@ -17,7 +17,6 @@ jobs:
     timeout-minutes: 60
     env:
       PLATFORM: ${{ inputs.platform }}
-      IMAGE: certgen-smoke:local
 
     steps:
       - uses: actions/checkout@v4
@@ -30,24 +29,6 @@ jobs:
         with:
           platforms: ${{ inputs.platform == 'linux/386' && '386' || 'arm' }}
 
-      - name: Set up Buildx for the emulated build
-        uses: docker/setup-buildx-action@v4
-        if: inputs.platform != 'linux/amd64' && inputs.platform != 'linux/arm64'
-
-      - name: Build and load the emulated platform image
-        if: inputs.platform != 'linux/amd64' && inputs.platform != 'linux/arm64'
+      - name: Build and run the staging simulation
         shell: bash
-        run: |
-          docker buildx build --platform "$PLATFORM" --progress=plain \
-            --load --tag "$IMAGE" ./build
-
-      - name: Build the image on the native runner
-        if: inputs.platform == 'linux/amd64' || inputs.platform == 'linux/arm64'
-        shell: bash
-        run: |
-          docker build --platform "$PLATFORM" --progress=plain \
-            --tag "$IMAGE" ./build
-
-      - name: Run the staging simulation
-        shell: bash
-        run: bash tests/smoke.sh "$PLATFORM" "$IMAGE"
+        run: bash ci/run-smoke.sh "$PLATFORM"
