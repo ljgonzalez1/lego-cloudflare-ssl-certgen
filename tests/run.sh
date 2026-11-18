@@ -796,6 +796,58 @@ summary_tty_width() {
     ' "$work/no-color"
 }
 
+core_license_notices() {
+    # The repository keeps the real license texts the image needs.
+    texts="$root/build/licenses"
+    assert_contains 'musl as a whole is licensed under the following standard MIT license' "$texts/musl.txt"
+    assert_contains 'Copyright (c) 2015 ncopa' "$texts/su-exec.txt"
+    assert_contains 'This file is not directly linked with dash.  However, its output is.' "$texts/dash.txt"
+    assert_contains 'Version 2, June 1991' "$texts/GPL-2.0-or-later.txt"
+    assert_contains 'Mozilla Public License Version 2.0' "$texts/MPL-2.0.txt"
+    assert_contains 'Kirill Simonov' "$texts/libyaml.txt"
+
+    mkdir -- "$work/apk-bin"
+    cat > "$work/apk-bin/apk" <<'SH'
+#!/bin/sh
+if [ "$1" = --root ]; then
+    printf 'musl-1.2.6-r3\nsu-exec-0.3-r0\nca-certificates-bundle-20261020-r0\ntzdata-2026f-r0\n'
+else
+    printf 'musl-1.2.6-r3\nyaml-0.2.5-r2\nyaml-dev-0.2.5-r2\nyaml-static-0.2.5-r2\n'
+    [ -n "${TEST_APK_NO_DASH:-}" ] || printf 'dash-0.5.13.1-r2\n'
+fi
+SH
+    chmod 755 "$work/apk-bin/apk"
+    printf '3.24.4\n' > "$work/alpine-release"
+    PATH="$work/apk-bin:$PATH" ALPINE_RELEASE_FILE="$work/alpine-release" expect_status 0 \
+        /bin/sh "$root/build/write_notices.sh" "$texts" "$work/notice-root" v4.34.0
+    licenses="$work/notice-root/usr/share/licenses"
+    for license in NOTICE musl/COPYRIGHT dash/COPYING dash/GPL-2.0-or-later su-exec/LICENSE \
+            ca-certificates/MPL-2.0 libyaml/LICENSE; do
+        [ -s "$licenses/$license" ]
+        [ "$(stat -c %a -- "$licenses/$license")" = 644 ]
+    done
+    cmp -- "$texts/GPL-2.0-or-later.txt" "$licenses/dash/GPL-2.0-or-later"
+    notice="$licenses/NOTICE"
+    assert_contains 'lego-cloudflare-certgen is MIT licensed.' "$notice"
+    assert_contains 'lego v4.34.0: MIT' "$notice"
+    assert_contains 'musl 1.2.6-r3: MIT' "$notice"
+    assert_contains 'https://musl.libc.org/releases/musl-1.2.6.tar.gz' "$notice"
+    assert_contains 'dash 0.5.13.1-r2: BSD-3-Clause' "$notice"
+    assert_contains 'http://gondor.apana.org.au/~herbert/dash/files/dash-0.5.13.1.tar.gz' "$notice"
+    assert_contains 'https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.24-stable/main/dash' "$notice"
+    assert_contains 'https://github.com/ncopa/su-exec/tree/v0.3' "$notice"
+    assert_contains 'ca-certificates-bundle 20261020-r0' "$notice"
+    assert_contains 'libyaml 0.2.5-r2, statically linked into certgen-core: MIT' "$notice"
+    assert_contains 'https://github.com/yaml/libyaml/tree/0.2.5' "$notice"
+    # Public-domain tzdata and build-only packages add nothing.
+    [ ! -e "$licenses/tzdata" ]
+    [ "$(find "$licenses" -type f | wc -l)" -eq 7 ]
+    # A missing package stops the build instead of writing a wrong notice.
+    TEST_APK_NO_DASH=1 PATH="$work/apk-bin:$PATH" ALPINE_RELEASE_FILE="$work/alpine-release" \
+        expect_status 1 /bin/sh "$root/build/write_notices.sh" "$texts" "$work/notice-missing" v4.34.0
+    assert_contains 'Cannot find the installed version of dash.' "$stderr"
+}
+
 archive_fixtures() {
     mkdir -- "$TEST_FIXTURES" "$work/archive"
     printf '#!/bin/sh\nprintf "lego fixture\\n"\n' > "$work/archive/lego"
@@ -930,5 +982,6 @@ check 'Official ARM64 release asset' test_download arm64 v8 arm64
 check 'Unsupported architectures fail before network requests' unsupported_targets
 check 'Malformed, missing and mismatching checksums' archive_checksum_failures
 check 'Explicit checksum and custom archive URL' archive_override
+check 'Third-party license texts and NOTICE for the image' core_license_notices
 printf '%s passed, %s failed, %s skipped\n' "$((count - failed))" "$failed" "$skipped"
 [ "$failed" -eq 0 ]
