@@ -1,4 +1,4 @@
-name: Tests
+name: CI/CD
 
 on:
   push:
@@ -15,64 +15,59 @@ on:
       - '[0-9]+.[0-9]*'
       - '[vV][0-9]+.[0-9]*/**'
       - '[0-9]+.[0-9]*/**'
-  workflow_call:
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
+concurrency:
+  group: >-
+    ${{ github.event_name == 'release' && 'certgen-dockerhub-publication' ||
+        format('certgen-ci-{0}', github.run_id) }}
+  queue: max
+
+env:
+  TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+  VERSION_REF: >-
+    ${{ github.event.release.tag_name ||
+        (github.base_ref == 'master' && github.head_ref) || github.base_ref || github.ref_name }}
+
 jobs:
-  classify_branch:
-    name: Check version branch name
-    if: >-
-      ${{ github.event_name != 'release' && github.event.deleted != true &&
-          (github.base_ref || github.ref_name) != 'master' }}
+  version_readme:
+    name: Check version in README.md
+    if: github.event.deleted != true
     runs-on: ubuntu-24.04
     outputs:
-      eligible: ${{ steps.match.outputs.eligible }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Match the version branch format
-        id: match
-        shell: bash
-        env:
-          BRANCH: ${{ github.base_ref || github.ref_name }}
-        run: |
-          case "$BRANCH" in
-            '') exit 1 ;;
-          esac
-          if bash ci/is-version-branch.sh "$BRANCH"; then
-            echo 'eligible=true' >> "$GITHUB_OUTPUT"
-          fi
-
-  version_docs:
-    name: Check version in ${{ matrix.document }}
-    needs: classify_branch
-    if: >-
-      ${{ !cancelled() && github.event.deleted != true &&
-          (github.event_name == 'release' || (github.base_ref || github.ref_name) == 'master' ||
-           needs.classify_branch.outputs.eligible == 'true') }}
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        document: [DOCKERHUB.md, README.md]
+      eligible: ${{ steps.check.outputs.eligible }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Verify the committed Docker tag table
-        env:
-          DOCUMENT: ${{ matrix.document }}
-          VERSION_REF: >-
-            ${{ github.event.release.tag_name ||
-                (github.base_ref == 'master' && github.head_ref) || github.base_ref || github.ref_name }}
-        run: python3 -B versions/check_version.py "$DOCUMENT" --ref "$VERSION_REF"
+        id: check
+        run: bash ci/check-version.sh README.md
+
+  version_dockerhub:
+    name: Check version in DOCKERHUB.md
+    if: github.event.deleted != true
+    runs-on: ubuntu-24.04
+    outputs:
+      eligible: ${{ steps.check.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify the committed Docker tag table
+        id: check
+        run: bash ci/check-version.sh DOCKERHUB.md
 
   offline:
     name: Offline tests
-    needs: version_docs
+    needs: [version_readme, version_dockerhub]
+    if: >-
+      ${{ needs.version_readme.outputs.eligible == 'true' &&
+          needs.version_dockerhub.outputs.eligible == 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -83,14 +78,123 @@ jobs:
       - name: Run offline tests
         run: sh tests/run.sh
 
-  smoke:
-    name: Smoke test (${{ matrix.platform }})
+  smoke_armv6:
+    name: ARMv6 smoke test
     needs: offline
     if: github.event_name == 'release'
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [linux/arm/v6, linux/arm/v7, linux/arm64, linux/386, linux/amd64]
     uses: ./.github/workflows/smoke.yml
     with:
-      platform: ${{ matrix.platform }}
+      platform: linux/arm/v6
+
+  smoke_armv7:
+    name: ARMv7 smoke test
+    needs: offline
+    if: github.event_name == 'release'
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/arm/v7
+
+  smoke_arm64:
+    name: ARM64 smoke test
+    needs: offline
+    if: github.event_name == 'release'
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/arm64
+
+  smoke_i386:
+    name: i386 smoke test
+    needs: offline
+    if: github.event_name == 'release'
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/386
+
+  smoke_amd64:
+    name: AMD64 smoke test
+    needs: offline
+    if: github.event_name == 'release'
+    uses: ./.github/workflows/smoke.yml
+    with:
+      platform: linux/amd64
+
+  publish:
+    name: Buildx and push to Docker Hub
+    if: github.event_name == 'release'
+    needs: [smoke_armv6, smoke_armv7, smoke_arm64, smoke_i386, smoke_amd64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Check that Docker Hub credentials are configured
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
+          DOCKERHUB_DESCRIPTION_TOKEN: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
+        run: |
+          : "${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}"
+          : "${DOCKERHUB_PUSH_TOKEN:?Set DOCKERHUB_PUSH_TOKEN}"
+          : "${DOCKERHUB_DESCRIPTION_TOKEN:?Set DOCKERHUB_DESCRIPTION_TOKEN}"
+
+      - name: Build and publish all five platforms
+        id: push
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
+        run: |
+          result="$RUNNER_TEMP/certgen-publish.json"
+          PUBLISH_RESULT_FILE="$result" bash ci/publish-image.sh
+          jq -r '"image=\(.image)\ndigest=\(.digest)"' "$result" >> "$GITHUB_OUTPUT"
+
+  update_description:
+    name: Update Docker Hub overview
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Update the Docker Hub overview
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
+          repository: ljgonzalez/lego-cloudflare-certgen
+          readme-filepath: ./DOCKERHUB.md
+
+  verify_image:
+    name: Verify published version tag
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify tag and digest after 10 seconds
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: bash ci/check-dockerhub.sh image "$IMAGE" "$DIGEST"
+
+  verify_description:
+    name: Verify published Docker Hub overview
+    needs: update_description
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Compare Docker Hub Markdown after 10 seconds
+        run: bash ci/check-dockerhub.sh description
