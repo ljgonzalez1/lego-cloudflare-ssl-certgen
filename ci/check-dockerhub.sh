@@ -19,7 +19,7 @@ retry() {
             return 0
         fi
         if (( attempt < 5 )); then
-            sleep 15
+            printf 'Retrying the API request; the propagation wait is a separate workflow job.\n'
         fi
     done
     printf 'Docker Hub verification failed after 5 attempts. See the request diagnostics above.\n' >&2
