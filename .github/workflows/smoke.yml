@@ -1,0 +1,53 @@
+name: Docker smoke test
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    name: Staging smoke test (${{ inputs.platform }})
+    runs-on: ${{ inputs.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    env:
+      PLATFORM: ${{ inputs.platform }}
+      IMAGE: certgen-smoke:local
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU for the target architecture
+        uses: docker/setup-qemu-action@v4
+        if: inputs.platform != 'linux/amd64' && inputs.platform != 'linux/arm64'
+        with:
+          platforms: ${{ inputs.platform == 'linux/386' && '386' || 'arm' }}
+
+      - name: Set up Buildx for the emulated build
+        uses: docker/setup-buildx-action@v4
+        if: inputs.platform != 'linux/amd64' && inputs.platform != 'linux/arm64'
+
+      - name: Build and load the emulated platform image
+        if: inputs.platform != 'linux/amd64' && inputs.platform != 'linux/arm64'
+        shell: bash
+        run: |
+          docker buildx build --platform "$PLATFORM" --progress=plain \
+            --load --tag "$IMAGE" ./build
+
+      - name: Build the image on the native runner
+        if: inputs.platform == 'linux/amd64' || inputs.platform == 'linux/arm64'
+        shell: bash
+        run: |
+          docker build --platform "$PLATFORM" --progress=plain \
+            --tag "$IMAGE" ./build
+
+      - name: Run the staging simulation
+        shell: bash
+        run: bash tests/smoke.sh "$PLATFORM" "$IMAGE"
