@@ -5,6 +5,7 @@ source ci/versions.sh
 read_versions
 
 repository=ljgonzalez/lego-cloudflare-certgen
+release_image="$repository:v${APP_VERSION}"
 app_minor=${APP_VERSION%.*}
 app_major=${APP_VERSION%%.*}
 lego_minor=${LEGO_VERSION%.*}
@@ -15,7 +16,7 @@ tags=(
     "$repository:alpine${alpine_minor}-lego${lego_minor}-v${app_minor}"
     "$repository:lego${LEGO_VERSION}-v${APP_VERSION}"
     "$repository:lego${lego_minor}-v${APP_VERSION}"
-    "$repository:v${APP_VERSION}"
+    "$release_image"
     "$repository:v${app_minor}"
     "$repository:v${app_major}"
     "$repository:latest"
@@ -82,5 +83,10 @@ docker buildx imagetools inspect --raw "$image" | jq -e '
 for tag in "${tags[@]:1}"; do
     docker buildx imagetools create --tag "$tag" "$image"
 done
+
+if [[ -n ${PUBLISH_RESULT_FILE:-} ]]; then
+    jq -n --arg image "$release_image" --arg digest "$digest" \
+        '{image: $image, digest: $digest}' > "$PUBLISH_RESULT_FILE"
+fi
 
 printf 'Published image index %s\n' "$image"

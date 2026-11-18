@@ -17,10 +17,13 @@ jobs:
     uses: ./.github/workflows/tests.yml
 
   publish:
-    name: Push image and update Docker Hub
+    name: Buildx and push to Docker Hub
     needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -39,12 +42,25 @@ jobs:
           : "${DOCKERHUB_DESCRIPTION_TOKEN:?Set DOCKERHUB_DESCRIPTION_TOKEN}"
 
       - name: Build and publish all five platforms
+        id: push
         shell: bash
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
-        run: bash ci/publish-image.sh
+        run: |
+          result="$RUNNER_TEMP/certgen-publish.json"
+          PUBLISH_RESULT_FILE="$result" bash ci/publish-image.sh
+          jq -r '"image=\(.image)\ndigest=\(.digest)"' "$result" >> "$GITHUB_OUTPUT"
 
+  update_description:
+    name: Update Docker Hub overview
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Update the Docker Hub overview
         uses: peter-evans/dockerhub-description@v5
         with:
@@ -52,3 +68,30 @@ jobs:
           password: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
           repository: ljgonzalez/lego-cloudflare-certgen
           readme-filepath: ./DOCKERHUB.md
+
+  verify_image:
+    name: Verify published version tag
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify tag and digest after 10 seconds
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: bash ci/check-dockerhub.sh image "$IMAGE" "$DIGEST"
+
+  verify_description:
+    name: Verify published Docker Hub overview
+    needs: update_description
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Compare Docker Hub Markdown after 10 seconds
+        run: bash ci/check-dockerhub.sh description
