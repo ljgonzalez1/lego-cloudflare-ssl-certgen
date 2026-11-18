@@ -16,6 +16,7 @@ RUN /bin/sh /tmp/download_lego.sh /out
 
 # Compile the C++ program and assemble an Alpine filesystem for the target CPU.
 FROM alpine:${ALPINE_VERSION} AS builder
+ARG LEGO_VERSION
 RUN apk add --no-cache build-base yaml-dev yaml-static dash
 COPY src/ /src/
 RUN mkdir -p /runtime/usr/local/bin \
@@ -41,6 +42,12 @@ RUN mkdir -p /runtime/bin /runtime/usr/bin /runtime/etc /runtime/app \
  && chmod 1777 /runtime/tmp \
  && chown 1000:1000 /runtime/ssl-certs
 
+# License texts the shipped binaries require, and a NOTICE with exact versions
+# and sources. Build-only packages are not shipped, so they need no texts.
+COPY licenses/ /licenses/
+COPY write_notices.sh /tmp/write_notices.sh
+RUN /bin/sh /tmp/write_notices.sh /licenses /runtime "$LEGO_VERSION"
+
 # The filesystem above is Alpine. Starting with scratch keeps the builder's
 # layers and their BusyBox, curl, headers and compiler out of the resulting image.
 FROM scratch AS target
@@ -52,7 +59,7 @@ ARG TARGETVARIANT
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
-      org.opencontainers.image.version="4.1.0" \
+      org.opencontainers.image.version="4.2.1" \
       org.opencontainers.image.licenses="MIT" \
       com.certgen.alpine.version="${ALPINE_VERSION}" \
       com.certgen.lego.version="${LEGO_VERSION}"
@@ -69,7 +76,6 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 COPY --from=builder /runtime/ /
 COPY --from=downloader /out/lego /usr/local/bin/lego
 COPY --from=downloader /out/LICENSE /usr/share/licenses/lego/LICENSE
-COPY licenses/libyaml.txt /usr/share/licenses/libyaml/LICENSE
 COPY --chmod=755 entrypoint.sh validate_env.sh run_lego.sh /usr/local/bin/
 
 WORKDIR /app
@@ -81,6 +87,10 @@ RUN --mount=type=tmpfs,target=/tmp set -eu \
         if command -v "$tool" >/dev/null; then printf 'Unexpected runtime program: %s\n' "$tool" >&2; exit 1; fi; \
     done \
  && test ! -e /bin/busybox && test ! -e /bin/ash \
+ && for license in NOTICE lego/LICENSE musl/COPYRIGHT dash/COPYING dash/GPL-2.0-or-later \
+        su-exec/LICENSE ca-certificates/MPL-2.0 libyaml/LICENSE; do \
+        test -s "/usr/share/licenses/$license"; \
+    done \
  && lego_version="$(su-exec 1000:1000 lego --version)" \
  && printf '%s (%s/%s)\n' "$lego_version" "$TARGETARCH" "$TARGETVARIANT" \
  && test "$lego_version" = "lego version ${LEGO_VERSION#v} linux/${TARGETARCH}" \
