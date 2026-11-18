@@ -4,8 +4,8 @@ read_versions() {
     local format='^(APP_VERSION|LEGO_VERSION|ALPINE_VERSION)=((0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2})$'
     local -A seen=()
 
-    if [[ ! -r versions.txt ]]; then
-        printf 'Cannot read versions.txt\n' >&2
+    if [[ ! -r versions/versions.txt ]]; then
+        printf 'Cannot read versions/versions.txt\n' >&2
         return 1
     fi
 
@@ -13,7 +13,7 @@ read_versions() {
         line=${line%$'\r'}
         [[ -z "$line" || "$line" == \#* ]] && continue
         if [[ ! "$line" =~ $format ]]; then
-            printf 'Invalid entry in versions.txt\n' >&2
+            printf 'Invalid entry in versions/versions.txt\n' >&2
             return 1
         fi
 
@@ -25,11 +25,11 @@ read_versions() {
 
         printf -v "$key" '%s' "${BASH_REMATCH[2]}"
         seen[$key]=1
-    done < versions.txt
+    done < versions/versions.txt
 
     for key in APP_VERSION LEGO_VERSION ALPINE_VERSION; do
         if [[ ! ${seen[$key]+found} ]]; then
-            printf 'Missing %s in versions.txt\n' "$key" >&2
+            printf 'Missing %s in versions/versions.txt\n' "$key" >&2
             return 1
         fi
     done
