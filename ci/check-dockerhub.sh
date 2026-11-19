@@ -202,7 +202,7 @@ PY
 
 load_candidates() {
     local candidates
-    candidates=$(python3 -B "$script_dir/../versions/release_config.py" --tag-candidates) || return 1
+    candidates=$(python3 -B "$script_dir/versions/release_config.py" --tag-candidates) || return 1
     mapfile -t release_candidates <<< "$candidates"
 }
 

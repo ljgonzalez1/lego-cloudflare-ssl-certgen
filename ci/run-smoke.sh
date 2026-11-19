@@ -39,4 +39,4 @@ else
     docker buildx build --builder "$builder" "${options[@]}" --load ./build
 fi
 
-bash tests/smoke.sh "$platform" "$image"
+bash ci/tests/smoke.sh "$platform" "$image"

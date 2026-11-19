@@ -12,28 +12,28 @@ from tags_table import CSV_PATH, REPO_DIR, read_releases
 def release_config():
     values = {}
     numeric = r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}"
-    for line in (REPO_DIR / "versions/versions.txt").read_text().splitlines():
+    for line in (REPO_DIR / "ci/versions/versions.txt").read_text().splitlines():
         if not line or line.startswith("#"):
             continue
         key, separator, value = line.partition("=")
         pattern = numeric + (r"(?:-[A-Za-z0-9_][A-Za-z0-9_.-]*)?" if key == "APP_VERSION" else "")
         if separator != "=" or key not in {"APP_VERSION", "LEGO_VERSION", "ALPINE_VERSION"} or not re.fullmatch(pattern, value):
-            raise ValueError("Invalid entry in versions/versions.txt")
+            raise ValueError("Invalid entry in ci/versions/versions.txt")
         if key in values:
             raise ValueError(f"Duplicate version key: {key}")
         values[key] = value
     if set(values) != {"APP_VERSION", "LEGO_VERSION", "ALPINE_VERSION"}:
-        raise ValueError("Missing version keys in versions/versions.txt")
+        raise ValueError("Missing version keys in ci/versions/versions.txt")
 
     latest = read_releases(CSV_PATH)[-1]
     app = re.sub(r"^[vV]", "", latest.app_full)
     configured_app = values["APP_VERSION"]
     if (app if "-" in configured_app else app.split("-", 1)[0]) != configured_app:
-        raise ValueError("The final CSV application version differs from APP_VERSION in versions/versions.txt")
+        raise ValueError("The final CSV application version differs from APP_VERSION in ci/versions/versions.txt")
     if latest.field("Docker OS").lower() != "alpine" or latest.field("Docker OS Version") != values["ALPINE_VERSION"]:
-        raise ValueError("The final CSV Alpine version differs from ALPINE_VERSION in versions/versions.txt")
+        raise ValueError("The final CSV Alpine version differs from ALPINE_VERSION in ci/versions/versions.txt")
     if re.sub(r"^[vV]", "", latest.field("Lego Version")) != values["LEGO_VERSION"] or latest.field("Lego Suffix"):
-        raise ValueError("The final CSV lego version differs from LEGO_VERSION in versions/versions.txt")
+        raise ValueError("The final CSV lego version differs from LEGO_VERSION in ci/versions/versions.txt")
     values["APP_VERSION"] = app
     values["APP_TAG"] = latest.app_full
     return values, latest.tags
