@@ -2,9 +2,11 @@
 
 #include <poll.h>
 #include <signal.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdlib>
 #include <iostream>
@@ -188,36 +190,94 @@ std::string choice_text(std::string_view label, bool selected) {
 }
 
 void draw(bool ansi, std::string_view title, const std::vector<std::string_view>& details,
-          const std::vector<std::string_view>& options, std::size_t selected) {
-    std::string page = ansi ? "\033[H\033[2J\033[1;36m" : "\n";
-    page += title;
-    page += ansi ? "\033[0m\n\n" : "\n\n";
-    for (const auto line : details) {
-        page += line;
+          const std::vector<std::string_view>& options, std::size_t selected, bool alert) {
+    winsize size{};
+    const auto columns = ioctl(STDERR_FILENO, TIOCGWINSZ, &size) == 0 && size.ws_col ? size.ws_col : 80;
+    // Leave one column free to avoid auto-wrapping at the right edge.
+    const bool boxed = columns >= 22;
+    const auto width = static_cast<std::size_t>(std::max(1, std::min(columns - 1, 76) - (boxed ? 4 : 0)));
+    const std::string_view accent = ansi ? (alert ? "\033[33m" : "\033[36m") : "";
+    const std::string_view reset = ansi ? "\033[0m" : "";
+    std::string page = ansi ? "\033[H\033[2J" : "\n";
+    if (ansi && columns >= 30) {
+        page += alert ? "⚠️  Let's Encrypt production\n\n" : "🔐 Certificate issuance\n\n";
+    }
+    const auto rule = [&] {
+        if (boxed) {
+            page += std::string(accent) + '+' + std::string(width + 2, '-') + '+';
+            page += reset;
+            page += '\n';
+        }
+    };
+    const auto row = [&](std::string_view content, std::size_t length) {
+        if (boxed) {
+            page += std::string(accent) + "| " + std::string(reset);
+        }
+        page += content;
+        if (boxed) {
+            page.append(width - length, ' ');
+            page += std::string(accent) + " |" + std::string(reset);
+        }
         page += '\n';
+    };
+    const auto wrap = [&](std::string_view line, bool bold = false) {
+        do {
+            auto count = std::min(width, line.size());
+            const auto space = line.rfind(' ', count);
+            if (count < line.size() && space != line.npos && space > 0) {
+                count = space;
+            }
+            auto chunk = std::string(line.substr(0, count));
+            if (ansi && bold) {
+                chunk = "\033[1m" + chunk + "\033[0m";
+            }
+            row(chunk, count);
+            line.remove_prefix(count);
+            if (!line.empty() && line.front() == ' ') {
+                line.remove_prefix(1);
+            }
+        } while (!line.empty());
+    };
+
+    rule();
+    wrap(title, true);
+    rule();
+    for (const auto line : details) {
+        wrap(line);
     }
-    page += '\n';
+    row("", 0);
+    std::string buttons;
+    std::size_t button_width = 0;
     for (std::size_t index = 0; index < options.size(); ++index) {
-        if (ansi && index == selected) {
-            page += "\033[1;7m";
+        const auto text = choice_text(options[index], index == selected);
+        if (!buttons.empty() && button_width + text.size() > width) {
+            row(buttons, button_width);
+            buttons.clear();
+            button_width = 0;
         }
-        page += choice_text(options[index], index == selected);
         if (ansi && index == selected) {
-            page += "\033[0m";
+            buttons += "\033[1;7m";
         }
+        buttons += text;
+        if (ansi && index == selected) {
+            buttons += reset;
+        }
+        button_width += text.size();
     }
-    page += "\n\nArrows or Tab: move | Enter: select | Esc: back | Ctrl+C: exit\n";
+    row(buttons, button_width);
+    rule();
+    wrap("Arrows or Tab: move | Enter: select | Esc: back | Ctrl+C: exit");
     std::cerr << page;
 }
 
 int choose(bool ansi, std::string_view title, const std::vector<std::string_view>& details,
-           const std::vector<std::string_view>& options, std::size_t selected) {
+           const std::vector<std::string_view>& options, std::size_t selected, bool alert = false) {
     // Each screen needs fresh input. Discard keys already queued for the previous question.
     if (tcflush(STDIN_FILENO, TCIFLUSH) != 0 && !interrupted) {
         terminal_error("could not reset terminal input");
     }
     for (;;) {
-        draw(ansi, title, details, options, selected);
+        draw(ansi, title, details, options, selected, alert);
         for (;;) {
             switch (read_key()) {
             case Key::previous: selected = (selected + options.size() - 1) % options.size(); break;
@@ -239,7 +299,7 @@ int confirm(bool ansi, bool production) {
                        "Default cap: 50 new certificates per registered domain per 7 days.",
                        "An identical set of names is also capped at 5 per 7 days.",
                        "https://letsencrypt.org/docs/rate-limits/"},
-                      {"Yes", "No"}, 1);
+                      {"Yes", "No"}, 1, true);
     }
     return choose(ansi, "Confirm staging issuance",
                   {"This contacts Let's Encrypt staging and updates DNS challenge records.",
