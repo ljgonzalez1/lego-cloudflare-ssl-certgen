@@ -80,6 +80,19 @@ while [ "$remaining" -gt 0 ]; do
 done
 
 validate_identity
+
+case "$CERTGEN_ACTION:${PRODUCTION:-false}" in
+    issue:[Tt][Rr][Uu][Ee])
+        selected_mode=$(certgen-core issuance-menu) || exit $?
+        case "$selected_mode" in
+            production) export PRODUCTION=true ;;
+            staging) export PRODUCTION=false ;;
+            cancel) log_info "Certificate issuance cancelled."; exit 0 ;;
+            *) log_err "Invalid response from the issuance menu."; exit 2 ;;
+        esac
+        ;;
+esac
+
 export CERTGEN_ACTION CERTGEN_CONFIG CERTGEN_OUTPUT
 identity=$(certgen-core identity)
 current_uid=${identity%:*}

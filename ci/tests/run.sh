@@ -460,12 +460,12 @@ cli_delegation_and_resolvers() {
     CLOUDFLARE_API_KEY=legacy-token CF_DNS_API_TOKEN=other-token \
         LEGO_DISABLE_CNAME_SUPPORT=FaLsE PROPAGATION_SECONDS=00060 \
         DNS_RESOLVERS=' 1.1.1.1:53, [2606:4700:4700::1111]:53 ' \
-        PRODUCTION=true expect_status 0 cli --only first
+        expect_status 0 cli --only first
     assert_line 'token=legacy-token' "$TEST_LEGO_LOG"
     assert_line 'legacy_key=' "$TEST_LEGO_LOG"
     assert_line 'cname=false' "$TEST_LEGO_LOG"
     assert_line 'propagation=60' "$TEST_LEGO_LOG"
-    assert_line 'https://acme-v02.api.letsencrypt.org/directory' "$TEST_LEGO_LOG"
+    assert_line 'https://acme-staging-v02.api.letsencrypt.org/directory' "$TEST_LEGO_LOG"
     assert_line '1.1.1.1:53' "$TEST_LEGO_LOG"
     assert_line '[2606:4700:4700::1111]:53' "$TEST_LEGO_LOG"
     awk '/^--dns.resolvers$/{getline;print}' "$TEST_LEGO_LOG" > "$work/resolvers"
