@@ -174,11 +174,132 @@ check_description() {
             printf 'Docker Hub description matches DOCKERHUB.md\n'
             return 0
         fi
+        # Print a line-by-line diff without exposing authentication responses.
+        python3 -B - "$work/description.json" DOCKERHUB.md <<'PY'
+import difflib
+import json
+from pathlib import Path
+import sys
+
+try:
+    response = json.loads(Path(sys.argv[1]).read_text())
+    received = response.get("full_description")
+    if not isinstance(received, str):
+        raise ValueError("full_description is not a string")
+    expected = Path(sys.argv[2]).read_text()
+    normalize = lambda value: value.replace("\r\n", "\n").rstrip(" \t\n") + "\n"
+    print("Description differences (- expected DOCKERHUB.md, + received Docker Hub):", file=sys.stderr)
+    sys.stderr.writelines(difflib.unified_diff(
+        normalize(expected).splitlines(keepends=True), normalize(received).splitlines(keepends=True),
+        fromfile="expected/DOCKERHUB.md", tofile="received/DockerHub.md",
+    ))
+except (OSError, ValueError, AttributeError) as error:
+    print(f"Cannot compare Docker Hub Markdown: {error}", file=sys.stderr)
+PY
     done
     return 1
 }
 
+load_candidates() {
+    local candidates
+    candidates=$(python3 -B "$script_dir/../versions/release_config.py" --tag-candidates) || return 1
+    mapfile -t release_candidates <<< "$candidates"
+}
+
+fetch_hub_tag() {
+    local url
+    for url in \
+        "https://hub.docker.com/v2/namespaces/${repository%/*}/repositories/${repository#*/}/tags/$tag" \
+        "https://hub.docker.com/v2/repositories/$repository/tags/$tag/"; do
+        printf 'Requesting Docker Hub tag %s\n' "$tag"
+        request "Docker Hub tag $tag" "$work/tag.json" "$url" || continue
+        if jq -es --arg tag "$tag" '
+            length == 1 and (.[0] | type == "object" and .name == $tag and
+                (.images | type == "array" and length > 0))
+        ' "$work/tag.json" >/dev/null; then
+            return 0
+        fi
+        printf 'Docker Hub tag %s: expected a matching name and nonempty images array.\n' "$tag" >&2
+    done
+    return 1
+}
+
+check_tag_exists() {
+    for tag in "${release_candidates[@]}"; do
+        if fetch_hub_tag; then
+            printf 'Found release image %s:%s\n' "$repository" "$tag"
+            if [[ -n ${GITHUB_OUTPUT:-} ]]; then
+                # Do not export the full repository name: it contains a masked secret.
+                printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+            fi
+            return 0
+        fi
+    done
+    printf 'None of the exact full-version tags is visible. Expected one of: %s\n' "${release_candidates[*]}" >&2
+    return 1
+}
+
+check_platform_digest() {
+    local actual count
+    fetch_hub_tag || return 1
+    # The index digest is optional in Hub responses, but must agree when present.
+    if [[ -n "$index_digest" ]] && ! jq -e --arg expected "$index_digest" \
+        '(.digest == null) or (.digest == $expected)' "$work/tag.json" >/dev/null; then
+        printf '%s:%s index mismatch: expected %s; received %s\n' "$repository" "$tag" \
+            "$index_digest" "$(jq -r '.digest' "$work/tag.json")" >&2
+        return 1
+    fi
+    if ! jq -e --arg platform "$platform" '
+        [.images[] | select(.os == "linux") |
+            select(if $platform == "linux/arm/v6" then .architecture == "arm" and .variant == "v6"
+                elif $platform == "linux/arm/v7" then .architecture == "arm" and .variant == "v7"
+                elif $platform == "linux/arm64" then .architecture == "arm64" and ((.variant // "v8") == "v8" or .variant == "")
+                elif $platform == "linux/386" then .architecture == "386" and ((.variant // "") == "")
+                else .architecture == "amd64" and ((.variant // "") == "") end)]
+    ' "$work/tag.json" > "$work/platform.json"; then
+        printf '%s: malformed Docker Hub platform data.\n' "$platform" >&2
+        return 1
+    fi
+    count=$(jq 'length' "$work/platform.json")
+    if [[ "$count" != 1 ]]; then
+        printf '%s:%s %s: expected exactly one platform entry; received %s.\n' "$repository" "$tag" "$platform" "$count" >&2
+        jq -c '.images[] | {os, architecture, variant, digest}' "$work/tag.json" >&2
+        return 1
+    fi
+    actual=$(jq -r '.[0].digest // "<missing>"' "$work/platform.json")
+    printf '%s:%s %s\n  expected: %s\n  received: %s\n' "$repository" "$tag" "$platform" "$digest" "$actual"
+    if [[ "$actual" != "$digest" ]]; then
+        printf 'SHA-256 MISMATCH for %s.\n' "$platform" >&2
+        return 1
+    fi
+    printf 'Verified SHA-256 for %s.\n' "$platform"
+}
+
 case "${1:-}" in
+    tag)
+        (( $# == 1 )) || { printf 'Usage: bash ci/check-dockerhub.sh tag\n' >&2; exit 2; }
+        load_candidates
+        printf 'Checking exact release tags from the final CSV row: %s\n' "${release_candidates[*]}"
+        retry check_tag_exists
+        ;;
+    platform)
+        if (( $# < 4 || $# > 5 )); then
+            printf 'Usage: bash ci/check-dockerhub.sh platform PLATFORM TAG DIGEST [INDEX_DIGEST]\n' >&2
+            exit 2
+        fi
+        platform=$2 tag=$3 digest=$4 index_digest=${5:-}
+        case "$platform" in linux/arm/v6|linux/arm/v7|linux/arm64|linux/386|linux/amd64) ;;
+            *) printf 'Unsupported platform: %s\n' "$platform" >&2; exit 2 ;; esac
+        load_candidates
+        found=false
+        for candidate in "${release_candidates[@]}"; do [[ "$tag" != "$candidate" ]] || found=true; done
+        if [[ "$found" != true || ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ||
+              ( -n "$index_digest" && ! "$index_digest" =~ ^sha256:[0-9a-f]{64}$ ) ]]; then
+            printf 'Expected a tag for this CSV release and valid SHA-256 digest inputs.\n' >&2
+            exit 2
+        fi
+        retry check_platform_digest
+        ;;
     image)
         if (( $# != 3 )); then
             printf 'Usage: bash ci/check-dockerhub.sh image IMAGE:TAG DIGEST\n' >&2
@@ -188,7 +309,7 @@ case "${1:-}" in
         image=${image#docker.io/}
         tag=${image#"$repository:"}
         if [[ "$image" != "$repository":* || ${#tag} -gt 128 ||
-              ! "$tag" =~ ^[vV]?[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9_][A-Za-z0-9_.-]*)?$ ]]; then
+              ! "$tag" =~ ^([A-Za-z0-9_][A-Za-z0-9_.-]*-)?[vV]?[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9_][A-Za-z0-9_.-]*)?$ ]]; then
             printf 'Expected an exact version tag for %s.\n' "$repository" >&2
             exit 2
         fi
@@ -206,7 +327,7 @@ case "${1:-}" in
         retry check_description
         ;;
     *)
-        printf 'Usage: bash ci/check-dockerhub.sh image IMAGE:TAG DIGEST | description\n' >&2
+        printf 'Usage: bash ci/check-dockerhub.sh tag | platform PLATFORM TAG DIGEST [INDEX_DIGEST] | image IMAGE:TAG DIGEST | description\n' >&2
         exit 2
         ;;
 esac

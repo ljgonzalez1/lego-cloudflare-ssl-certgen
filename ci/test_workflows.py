@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Check CI event routing, job dependencies and separate propagation waits offline."""
 
-import json
 import os
 from pathlib import Path
 import re
@@ -106,6 +105,7 @@ class WorkflowChecks(unittest.TestCase):
                 passed = self.route("release", failure=failed)
                 self.assertNotIn("publish", passed)
                 self.assertNotIn("verify_image", passed)
+                self.assertNotIn("verify_hashes", passed)
                 self.assertNotIn("verify_description", passed)
                 if failed.startswith("version_"):
                     self.assertNotIn("offline", passed)
@@ -171,39 +171,24 @@ class WorkflowChecks(unittest.TestCase):
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, 0 if branch in valid else 1)
 
-    def test_publisher_result_matches_this_checkout(self):
-        versions = ROOT / "ci/versions/versions.txt"
-        if not versions.exists():
-            versions = ROOT / "versions/versions.txt"
-        app, = re.findall(r"^APP_VERSION=(.+)$", versions.read_text(), re.M)
-        image = "ljgonzalez/lego-cloudflare-certgen:v" + app
-        digest = "sha256:" + "a" * 64
-        valid = {"image": image, "digest": digest}
-        invalid = [
-            {"image": image, "digest": "bad"}, {"image": image, "digest": None},
-            {"image": image, "digest": "sha256:" + "A" * 64},
-            {"image": image + "-wrong", "digest": digest},
-            {"image": "ljgonzalez/lego-cloudflare-certgen:latest", "digest": digest},
-            {"image": "elsewhere/certgen:v" + app, "digest": digest}, [], {},
-        ]
-        with tempfile.TemporaryDirectory() as directory:
-            result_file = Path(directory) / "result.json"
-            for record in [valid, *invalid]:
-                with self.subTest(record=record):
-                    result_file.write_text(json.dumps(record))
-                    result = subprocess.run(["bash", "ci/read-publish-result.sh", str(result_file)],
-                                            cwd=ROOT, capture_output=True, text=True, timeout=5)
-                    if record == valid:
-                        self.assertEqual(result.returncode, 0, result.stderr)
-                        self.assertEqual(result.stdout, f"image={image}\ndigest={digest}\n")
-                    else:
-                        self.assertNotEqual(result.returncode, 0)
-                        self.assertEqual(result.stdout, "")
-            result_file.write_text(json.dumps(valid) + "\n" + json.dumps(valid))
-            result = subprocess.run(["bash", "ci/read-publish-result.sh", str(result_file)],
-                                    cwd=ROOT, capture_output=True, text=True, timeout=5)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(result.stdout, "")
+    def test_platform_hash_jobs_depend_on_tag_and_publisher(self):
+        job = self.jobs["verify_hashes"]
+        self.assertEqual(set(job["needs"]), {"publish", "verify_image"})
+        self.assertFalse(job["strategy"]["fail-fast"])
+        matrix = job["strategy"]["matrix"]["include"]
+        self.assertEqual({row["platform"] for row in matrix}, set(SMOKE_JOBS.values()))
+        self.assertEqual(len(matrix), 5)
+        outputs = self.jobs["publish"]["outputs"]
+        self.assertEqual(set(outputs), {"digest", *(row["output"] for row in matrix)})
+        for row in matrix:
+            self.assertEqual(outputs[row["output"]], "${{ steps.push.outputs." + row["output"] + " }}")
+        step = job["steps"][-1]
+        self.assertEqual(step["env"]["EXPECTED_DIGEST"], "${{ needs.publish.outputs[matrix.output] }}")
+        self.assertEqual(step["env"]["TAG"], "${{ needs.verify_image.outputs.tag }}")
+        self.assertIn('"$EXPECTED_DIGEST"', step["run"])
+        self.assertNotIn("image", outputs)
+        self.assertIn("verify_hashes", self.route("release", failure="update_description"))
+        self.assertNotIn("verify_hashes", self.route("release", failure="verify_image"))
 
     def test_unrelated_branch_is_ineligible(self):
         with tempfile.TemporaryDirectory() as directory:
