@@ -94,8 +94,25 @@ else
 fi
 setup_status=0
 setup_result=2
+test_mode=false
 case "$CERTGEN_ACTION" in
     list) ;;
+    test)
+        test_mode=true
+        CERTGEN_ACTION=dry-run
+        PRODUCTION=false
+        validate_env || exit $?
+        if ! lego_version=$(certgen-core supervise 10 lego --version </dev/null 2>&1); then
+            log_err "Could not check the lego executable."
+            exit 1
+        fi
+        case "$lego_version" in
+            'lego version '*) ;;
+            *) log_err "Unexpected response from lego --version."; exit 1 ;;
+        esac
+        log_section "🧪 TEST MODE (offline)"
+        log_info "$lego_version"
+        ;;
     dry-run) validate_env || setup_status=$? ;;
     issue) validate_env && prepare_issuance || setup_status=$? ;;
 esac
@@ -149,5 +166,8 @@ GROUPS
 if [ "$CERTGEN_ACTION" = issue ]; then
     log_section "📋 Certificate request summary (DNS names per certificate)"
     printf '%s' "$report" | certgen-core summary
+fi
+if [ "$test_mode" = true ] && [ "$exit_status" -eq 0 ]; then
+    log_ok "Offline test passed."
 fi
 exit "$exit_status"
