@@ -9,5 +9,8 @@ if [[ "$GITHUB_EVENT_NAME" != release && "$TARGET_BRANCH" != master ]] &&
     exit 0
 fi
 
+if [[ "$GITHUB_EVENT_NAME" == release ]]; then
+    export RELEASE_TAG="$VERSION_REF"
+fi
 python3 -B ci/versions/check_version.py "$document" --ref "$VERSION_REF"
 echo 'eligible=true' >> "$GITHUB_OUTPUT"
