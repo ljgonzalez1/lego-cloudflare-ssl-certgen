@@ -93,6 +93,12 @@ for argument do
             ;;
         hang.example.org)
             trap '' TERM
+            if [ -n "${TEST_LEGO_READY_FILE:-}" ]; then
+                sleep 30 &
+                printf '%s %s\n' "$$" "$!" > "$TEST_LEGO_READY_FILE"
+                wait
+                exit 0
+            fi
             exec sleep 30
             ;;
     esac

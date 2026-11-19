@@ -35,6 +35,7 @@ constexpr std::uint64_t order_seconds = 120;
 constexpr std::uint64_t name_seconds = 60;
 constexpr std::uint64_t maximum_seconds = 2 * 60 * 60;
 constexpr double final_log_grace = 0.25;
+constexpr double interrupt_grace = 2.0;
 constexpr std::size_t max_log_line = 16384;
 volatile sig_atomic_t forwarded_signal = 0;
 
@@ -203,6 +204,7 @@ int supervise(int argc, char* argv[]) {
         view->start(now());
     }
     bool timed_out = false;
+    int interruption = 0;
     bool killed = false;
     bool pipe_open = true;
     double stop_at = deadline;
@@ -216,7 +218,7 @@ int supervise(int argc, char* argv[]) {
         log.observe(line);
         if (!was_failed && log.failed()) {
             // Give lego a moment to print the remainder of a multiline error and exit normally.
-            stop_at = std::min(deadline, now() + final_log_grace);
+            stop_at = std::min(stop_at, now() + final_log_grace);
         }
         if (view) {
             view->feed(line);
@@ -255,8 +257,31 @@ int supervise(int argc, char* argv[]) {
     };
 
     for (;;) {
+        if (forwarded_signal != 0) {
+            if (interruption == 0) {
+                interruption = forwarded_signal;
+                signal_lego(child, interruption);
+                stop_at = std::min(stop_at, now() + interrupt_grace);
+            }
+            forwarded_signal = 0;
+        }
+
         int status = 0;
-        const auto waited = waitpid(child, &status, WNOHANG);
+        pid_t waited = 0;
+        if (interruption != 0) {
+            siginfo_t exited{};
+            if (waitid(P_PID, child, &exited, WEXITED | WNOHANG | WNOWAIT) < 0) {
+                if (errno != EINTR) {
+                    os_error("cannot inspect lego's exit status");
+                }
+            } else if (exited.si_pid == child) {
+                // Stop any remaining members before reaping the process-group leader.
+                signal_lego(child, SIGKILL);
+                waited = waitpid(child, &status, WNOHANG);
+            }
+        } else {
+            waited = waitpid(child, &status, WNOHANG);
+        }
         if (waited < 0 && errno != EINTR) {
             os_error("cannot collect lego's exit status");
         }
@@ -277,7 +302,10 @@ int supervise(int argc, char* argv[]) {
             // 124 matches timeout(1). 75 is EX_TEMPFAIL: retry after the limit resets.
             int result = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
             std::string failure;
-            if (timed_out && !log.failed()) {
+            if (interruption != 0) {
+                result = 128 + interruption;
+                failure = "lego was interrupted by signal " + std::to_string(interruption) + '.';
+            } else if (timed_out && !log.failed()) {
                 result = 124;
                 failure = "lego did not finish within " + std::to_string(limit) + "s and was stopped with SIGKILL.";
             } else if (log.failed() || result != 0) {
@@ -309,10 +337,6 @@ int supervise(int argc, char* argv[]) {
             return result;
         }
 
-        if (forwarded_signal != 0) {
-            signal_lego(child, forwarded_signal);
-            forwarded_signal = 0;
-        }
         const double remaining = stop_at - now();
         if (!killed && remaining <= 0) {
             timed_out = !log.failed();

@@ -291,6 +291,52 @@ class MenuTests(unittest.TestCase):
             self.assertFalse(orders.exists())
             self.assertFalse(list(output.iterdir()))
 
+    def test_interrupted_issuance_stops_the_group_and_never_starts_another(self):
+        for interruption in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(interruption=interruption), TemporaryDirectory() as temp:
+                root = Path(temp)
+                command, env, _, orders = self.fixture(root)
+                (root / "domains.yaml").write_text("running: [hang.example.org]\nnext: [example.net]\n")
+                ready = root / "ready"
+                env["TEST_LEGO_READY_FILE"] = str(ready)
+                with subprocess.Popen(command + ["--staging"], env=os.environ | env, stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as app:
+                    children = []
+                    try:
+                        deadline = time.monotonic() + 5
+                        while not children and time.monotonic() < deadline and app.poll() is None:
+                            if ready.exists():
+                                children = list(map(int, ready.read_text().split()))
+                            time.sleep(0.01)
+                        self.assertEqual(len(children), 2)
+                        app.send_signal(interruption)
+                        _, errors = app.communicate(timeout=6)
+                        self.assertEqual(app.returncode, 128 + interruption, errors)
+                        self.assertIn(b"Certificate issuance cancelled", errors)
+                        self.assertNotIn("example.net", orders.read_text())
+                        for pid in children:
+                            status = Path(f"/proc/{pid}/status")
+                            # SIGKILL may still be pending briefly after the supervisor exits.
+                            deadline = time.monotonic() + 1
+                            while time.monotonic() < deadline:
+                                try:
+                                    state = status.read_text()
+                                except FileNotFoundError:
+                                    break
+                                if "State:\tZ" in state:
+                                    break
+                                time.sleep(0.01)
+                            else:
+                                self.fail(f"Child {pid} is still running after cancellation")
+                    finally:
+                        if app.poll() is None:
+                            app.kill()
+                            for pid in children:
+                                try:
+                                    os.kill(pid, signal.SIGKILL)
+                                except ProcessLookupError:
+                                    pass
+
     @staticmethod
     def fixture(root):
         config = root / "domains.yaml"
