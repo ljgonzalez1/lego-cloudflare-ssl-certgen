@@ -1,49 +1,60 @@
 # syntax=docker/dockerfile:1
 ARG ALPINE_VERSION=3.24.4
-ARG APP_VERSION=5.2.4
+ARG GO_VERSION=1.27.4
+ARG APP_VERSION=6.0.0-alpha-1
 ARG LEGO_VERSION=v4.34.0
 
-# Download and verify the official binary on the builder's native architecture.
-FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS downloader
+# Build tools always run natively. Go cross-compiles the static target binary.
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine3.24 AS go-toolchain
+FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS tools
+COPY --from=go-toolchain /usr/local/go/ /usr/local/go/
+ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local GOWORK=off CGO_ENABLED=0
+RUN ["apk", "add", "--no-cache", "ca-certificates-bundle", "tzdata"]
+WORKDIR /src
+COPY go.mod ./
+COPY vendor/ ./vendor/
+COPY internal/ ./internal/
+COPY cmd/ ./cmd/
+COPY licenses/ /licenses/
+RUN ["go", "build", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags=-compressdwarf=false", "-o", "/certgen-build", "./cmd/certgen-build"]
+
+# Download and SHA-256 verify the official lego binary for the requested CPU.
+FROM tools AS downloader
 ARG LEGO_VERSION
 ARG TARGETARCH
 ARG TARGETVARIANT
 ARG LEGO_TARBALL
 ARG LEGO_URL
 ARG LEGO_SHA256
-RUN ["apk", "add", "--no-cache", "build-base", "curl"]
-COPY tools.cpp /src/tools.cpp
-RUN ["g++", "-std=c++20", "-Og", "-g3", "-Wall", "-Wextra", "/src/tools.cpp", "-o", "/certgen-build"]
 RUN ["/certgen-build", "download", "/out"]
 
-# Compile and retain debug information on every target architecture.
-FROM alpine:${ALPINE_VERSION} AS builder
+FROM tools AS builder
 ARG LEGO_VERSION
-RUN ["apk", "add", "--no-cache", "build-base", "yaml-dev", "yaml-static"]
-COPY tools.cpp /src/tools.cpp
-COPY licenses/ /licenses/
-RUN ["g++", "-std=c++20", "-Og", "-g3", "-Wall", "-Wextra", "/src/tools.cpp", "-o", "/certgen-build"]
+ARG TARGETARCH
+ARG TARGETVARIANT
+ARG DELVE_VERSION=v1.27.2
 RUN ["/certgen-build", "prepare", "/runtime", "/licenses"]
-COPY src/ /src/
-RUN ["g++", "-std=c++20", "-Og", "-g3", "-Wall", "-Wextra", "-static", "/src/main.cpp", "/src/app.cpp", "/src/settings.cpp", "/src/child.cpp", "/src/image_test.cpp", "/src/domains.cpp", "/src/runtime.cpp", "/src/menu.cpp", "/src/summary.cpp", "/src/supervise.cpp", "/src/lego_log.cpp", "/src/lego_view.cpp", "-lyaml", "-o", "/runtime/usr/local/bin/certgen"]
-
+RUN ["/certgen-build", "compile", "/runtime/usr/local/bin/certgen"]
 RUN ["/certgen-build", "verify-debug", "/runtime/usr/local/bin/certgen"]
+# Delve supports amd64, arm64 and 386; 32-bit ARM retains full DWARF and traces.
+RUN ["/certgen-build", "delve", "/runtime"]
 
-# Copy only the application, lego and runtime data. The build tools stay behind.
 FROM scratch AS target
 ARG APP_VERSION
 ARG ALPINE_VERSION
 ARG LEGO_VERSION
+ARG GO_VERSION
 ARG TARGETARCH
 ARG TARGETVARIANT
 
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
-      org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01" \
+      org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01; Go debug alpha" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.licenses="MIT" \
       com.certgen.alpine.version="${ALPINE_VERSION}" \
-      com.certgen.lego.version="${LEGO_VERSION}"
+      com.certgen.lego.version="${LEGO_VERSION}" \
+      com.certgen.go.version="${GO_VERSION}"
 
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=Etc/UTC \
@@ -51,11 +62,20 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     DNS_RESOLVERS="1.1.1.1:53,8.8.8.8:53,1.0.0.1:53" \
     ACCEPT_LEGO_TOS=false \
     UID=1000 \
-    GID=1000
+    GID=1000 \
+    GOGC=off \
+    GOMEMLIMIT=256MiB \
+    GOTRACEBACK=system \
+    CERTGEN_TRACE=errors
 
 COPY --from=builder /runtime/ /
 COPY --from=downloader /out/lego /usr/local/bin/lego
 COPY --from=downloader /out/LICENSE /usr/share/licenses/lego/LICENSE
+# Keep original source paths for Delve and readable source-level stack traces.
+COPY go.mod /src/go.mod
+COPY internal/ /src/internal/
+COPY cmd/ /src/cmd/
+COPY vendor/ /src/vendor/
 WORKDIR /app
 
 # Exercise the real entry point and lego without a shell or network.

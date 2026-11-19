@@ -1,0 +1,7 @@
+# Keep caches and local binaries out of the build context.
+.git
+bin/
+dist/
+*.test
+coverage*
+*.out

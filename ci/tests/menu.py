@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the real C++ menu with a pseudo-terminal."""
+"""Exercise the real Go menu with a pseudo-terminal."""
 
 import errno
 import fcntl
