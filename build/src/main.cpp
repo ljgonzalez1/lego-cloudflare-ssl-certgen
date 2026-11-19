@@ -1,5 +1,7 @@
 #include "core.hpp"
 
+#include <arpa/inet.h>
+
 #include <charconv>
 #include <exception>
 #include <iostream>
@@ -28,6 +30,13 @@ int main(int argc, char* argv[]) {
             certgen::write_summary();
         } else if (command == "identity" && argc == 2) {
             certgen::write_identity();
+        } else if (command == "resolver-address" && argc == 4) {
+            const std::string_view family(argv[2]);
+            if (family != "4" && family != "6") {
+                return 2;
+            }
+            in6_addr address{};
+            return inet_pton(family == "4" ? AF_INET : AF_INET6, argv[3], &address) == 1 ? 0 : 1;
         } else if (command == "own-output" && argc == 5) {
             certgen::set_output_owner(argv[2], argv[3], argv[4]);
         } else if (command == "time-limit" && argc == 4) {

@@ -285,7 +285,11 @@ private:
             throw std::runtime_error(expected);
         }
         std::set<std::string> seen;
-        for (const auto& value : values) {
+        for (auto& value : values) {
+            // DNS permits a final root dot. ACME and filenames use the undotted form.
+            if (!value.value.empty() && value.value.back() == '.') {
+                value.value.pop_back();
+            }
             if (!valid_domain(value.value) || (value.implicitly_typed && plain_decimal(value.value))) {
                 throw std::runtime_error(group + ": invalid DNS name: " + visible(value.value));
             }
