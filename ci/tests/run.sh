@@ -350,16 +350,16 @@ yaml_unknown_selection() {
 
 cli_help() {
     UID=invalid expect_status 0 cli --help
-    assert_contains 'Usage: certgen [--list | --dry-run | --test]' "$stdout"
+    assert_contains 'Usage: certgen [--list | --dry-run | --test | --staging | --production]' "$stdout"
 }
 
 cli_argument_errors() {
     expect_status 2 cli --list --dry-run
     assert_contains 'mutually exclusive' "$stderr"
     expect_status 2 cli --staging --production
-    assert_contains 'Choose Staging or Production from the issuance menu' "$stderr"
-    expect_status 2 cli --production
-    assert_contains 'Choose Staging or Production from the issuance menu' "$stderr"
+    assert_contains '--staging and --production are mutually exclusive' "$stderr"
+    expect_status 2 cli --production --test
+    assert_contains 'cannot be combined with --list, --dry-run or --test' "$stderr"
     expect_status 2 cli --invalid
     assert_contains 'Unknown argument' "$stderr"
     expect_status 2 cli --only second --config

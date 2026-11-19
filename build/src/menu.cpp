@@ -330,7 +330,8 @@ std::string_view select_mode(bool ansi) {
 
 int issuance_menu() {
     if (!isatty(STDIN_FILENO) || !isatty(STDERR_FILENO)) {
-        std::cerr << "The issuance menu needs a terminal. Use docker run -it, or --test for offline checks.\n";
+        std::cerr << "The issuance menu needs a terminal. Use docker run -it, --test for offline checks, "
+                     "or an explicit mode for unattended issuance.\n";
         return 2;
     }
     MenuSignals signals_guard;
