@@ -347,7 +347,9 @@ cli_argument_errors() {
     expect_status 2 cli --list --dry-run
     assert_contains 'mutually exclusive' "$stderr"
     expect_status 2 cli --staging --production
-    assert_contains 'mutually exclusive' "$stderr"
+    assert_contains 'Set PRODUCTION=false or PRODUCTION=true' "$stderr"
+    expect_status 2 cli --production
+    assert_contains 'Set PRODUCTION=false or PRODUCTION=true' "$stderr"
     expect_status 2 cli --invalid
     assert_contains 'Unknown argument' "$stderr"
     expect_status 2 cli --only second --config
@@ -360,7 +362,7 @@ cli_listing_and_preview() {
     EMAIL= ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN= expect_status 0 cli --only second --list --only first
     printf 'first: 5 domains\nsecond: 2 domains\n' > "$work/expected"
     diff -u "$work/expected" "$stdout"
-    EMAIL= CLOUDFLARE_API_TOKEN= TZ=America/Santiago expect_status 0 cli --only first --production --dry-run
+    EMAIL= CLOUDFLARE_API_TOKEN= TZ=America/Santiago PRODUCTION=true expect_status 0 cli --only first --dry-run
     assert_contains 'https://acme-v02.api.letsencrypt.org/directory' "$stdout"
     assert_contains '_GMT-' "$stdout"
     assert_contains '*.nested.example.com' "$stdout"
@@ -368,10 +370,10 @@ cli_listing_and_preview() {
     [ -z "$(ls -A -- "$output")" ]
 }
 
-cli_mode_overrides() {
-    PRODUCTION=true expect_status 0 cli --dry-run --staging
+cli_environment_mode() {
+    PRODUCTION=false expect_status 0 cli --dry-run
     assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
-    PRODUCTION=invalid expect_status 0 cli --dry-run --production
+    PRODUCTION=true expect_status 0 cli --dry-run
     assert_contains 'https://acme-v02.api.letsencrypt.org/directory' "$stdout"
 }
 
@@ -438,7 +440,7 @@ cli_delegation_and_resolvers() {
     CLOUDFLARE_API_KEY=legacy-token CF_DNS_API_TOKEN=other-token \
         LEGO_DISABLE_CNAME_SUPPORT=FaLsE PROPAGATION_SECONDS=00060 \
         DNS_RESOLVERS=' 1.1.1.1:53, [2606:4700:4700::1111]:53 ' \
-        expect_status 0 cli --production --only first
+        PRODUCTION=true expect_status 0 cli --only first
     assert_line 'token=legacy-token' "$TEST_LEGO_LOG"
     assert_line 'legacy_key=' "$TEST_LEGO_LOG"
     assert_line 'cname=false' "$TEST_LEGO_LOG"
@@ -1055,7 +1057,7 @@ check 'Distinct missing selections' yaml_unknown_selection
 check 'Help works before environment validation' cli_help
 check 'Conflicting and missing CLI arguments' cli_argument_errors
 check 'List and dry-run preview without credentials' cli_listing_and_preview
-check 'CLI staging/production overrides' cli_mode_overrides
+check 'Environment selects staging or production' cli_environment_mode
 check 'Cross-zone names, DNS root dots and malformed contact or resolver input' cli_configuration_edges
 check 'Identity validation and privilege-drop command' cli_identities
 check 'Validate all YAML before any issue request' cli_yaml_before_issue

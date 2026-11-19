@@ -9,16 +9,14 @@ esac
 . "${script_dir}/validate_env.sh"
 
 usage() {
-    printf '%s\n' "Usage: certgen [--list | --dry-run] [--staging | --production]
+    printf '%s\n' "Usage: certgen [--list | --dry-run]
                [--only FOLDER]... [--config FILE] [--output DIRECTORY]
 
   --list          Validate the YAML and list certificate groups
   --dry-run       Show the planned groups, domains and output paths
   --only FOLDER   Process only this group (repeatable)
   --config FILE   Read this YAML file (default: /app/domains.yaml)
-  --output DIR    Write to this directory (default: /ssl-certs)
-  --staging       Use Let's Encrypt staging
-  --production    Use Let's Encrypt production"
+  --output DIR    Write to this directory (default: /ssl-certs)"
 }
 
 is_output_mounted() {
@@ -34,7 +32,6 @@ is_output_mounted() {
 CERTGEN_ACTION=issue
 CERTGEN_CONFIG=/app/domains.yaml
 CERTGEN_OUTPUT=/ssl-certs
-mode_override=
 
 # Queue selected groups behind the CLI arguments that remain to be parsed.
 remaining=$#
@@ -53,12 +50,8 @@ while [ "$remaining" -gt 0 ]; do
             CERTGEN_ACTION=$action
             ;;
         --staging|--production)
-            mode=${option#--}
-            if [ -n "$mode_override" ] && [ "$mode_override" != "$mode" ]; then
-                log_err "--staging and --production are mutually exclusive."
-                exit 2
-            fi
-            mode_override=$mode
+            log_err "Set PRODUCTION=false or PRODUCTION=true in .env and pass it using --env-file."
+            exit 2
             ;;
         --only|--config|--output)
             if [ "$remaining" -eq 0 ]; then
@@ -84,11 +77,6 @@ while [ "$remaining" -gt 0 ]; do
             ;;
     esac
 done
-
-case "$mode_override" in
-    staging) export PRODUCTION=false ;;
-    production) export PRODUCTION=true ;;
-esac
 
 validate_identity
 export CERTGEN_ACTION CERTGEN_CONFIG CERTGEN_OUTPUT
