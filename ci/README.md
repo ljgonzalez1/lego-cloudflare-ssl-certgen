@@ -45,7 +45,7 @@ flowchart TD
     WaitDescription --> Verify["Check published overview"]
 ```
 
-Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.4.0/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `ci/versions/versions.txt`.
+Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.4.1/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `ci/versions/versions.txt`.
 
 The publishing workflow subscribes to GitHub's `release.published` activity, including prereleases. The Git release tag selects the source commit. `ci/versions/versions.txt` from that commit supplies the version numbers used in Docker Hub. A published prerelease follows the same sequence and updates `latest`.
 
@@ -86,7 +86,7 @@ The publishing workflow subscribes to GitHub's `release.published` activity, inc
    bash ci/publish-image.sh --print-tags
    ```
 
-4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.4.0` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
+4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.4.1` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
 5. Select **Publish release**, then open the release run under **Actions → CI/CD**. After the document, offline, and five smoke jobs pass, the publisher prepares the final builder.
 6. The publisher runs Buildx with `--metadata-file build-metadata.json` in its temporary build directory. It reads `containerimage.digest`, fetches that immutable index by `repository@sha256:...`, verifies its bytes against the metadata digest, and extracts exactly one manifest digest for each of the five platforms. The image config digest is not used. It assigns every alias to the same index, publishing `latest` last. After all writes succeed, it exports `digest`, `digest_armv6`, `digest_armv7`, `digest_arm64`, `digest_i386` and `digest_amd64` through `$GITHUB_OUTPUT` and the publisher job's outputs.
 7. Two independent paths now start. The overview path immediately updates Docker Hub, waits 20 seconds if the update succeeds, and compares the returned Markdown with `DOCKERHUB.md`. It tolerates CRLF and trailing whitespace at the end. A content mismatch prints a unified diff with `-` lines from the committed file and `+` lines from Docker Hub.
