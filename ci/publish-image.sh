@@ -4,6 +4,11 @@ set -euo pipefail
 source ci/versions.sh
 read_versions
 
+if [[ ${RELEASE_TAG+x} && "${RELEASE_TAG#[vV]}" != "$APP_VERSION" ]]; then
+    printf 'Git release tag %s does not match APP_VERSION=%s.\n' "$RELEASE_TAG" "$APP_VERSION" >&2
+    exit 2
+fi
+
 repository=ljgonzalez/lego-cloudflare-certgen
 tags=()
 for tag in "${release_tags[@]}"; do tags+=("$repository:$tag"); done
@@ -62,7 +67,7 @@ printf 'Reading platform hashes from immutable build index %s\n' "$image"
 docker buildx imagetools inspect --raw "$image" > "$work/build-index.json"
 python3 -B ci/publish_result.py collect "$work/build-metadata.json" "$work/build-index.json" "$work/result.json"
 
-# Attach each alias to the same immutable index. The last registry write is latest.
+# Attach each alias to the same immutable index. When present, latest is the last registry write.
 for tag in "${tags[@]:1}"; do
     printf 'Publishing alias %s at %s\n' "$tag" "$digest"
     docker buildx imagetools create --tag "$tag" "$image"

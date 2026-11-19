@@ -7,16 +7,17 @@ Run:
 Input:  versions.csv (UTF-8; comma-separated; 11 columns, with/without header)
 Output: the marked blocks in ../README.md (complete) and ../DOCKERHUB.md (short)
 
-Append each new release to the END of versions.csv. The last release owns
-rolling Docker tags that were also published in older releases, including
-``latest``; both tables are displayed newest-first. The short table contains
+Append each new release to the END of versions.csv. The last publisher of a
+rolling tag owns it. Alpha, alfa and beta releases keep their suffix on every
+tag and leave ``latest`` on the last eligible release. Both tables are displayed
+newest-first. The short table keeps the row that owns ``latest`` visible and contains
 at most seven releases. The COMPLETE table shows every currently owned tag,
 without any display limit; the SHORT table shows at most four tags per row
 (primary plus up to three more, counting ``latest``). The fully qualified
 OS+lego+app tag is always the last visible alias.
 No tag overrides are used.
 
-Every release generates exactly nine *unique* Docker tags by this convention:
+Every release generates eight or nine *unique* Docker tags by this convention:
     1. OS(full)-lego(full)-app(full)
     2. OS(short)-lego(short)-app(full)
     3. OS(generic)-lego(short)-app(minor)
@@ -25,7 +26,7 @@ Every release generates exactly nine *unique* Docker tags by this convention:
     6. app(full)
     7. app(minor)
     8. app(major)
-    9. latest
+    9. latest (omitted for alpha, alfa and beta)
 
 For Alpine, OS(short) and OS(generic) both preserve major.minor, following
 Alpine's established naming; for Debian, OS(generic) is ``debian[-suffix]``.
@@ -81,7 +82,11 @@ HEADER_ALIASES = {
 }
 
 VALID_TAG = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
-APP_VERSION = re.compile(r"(?P<prefix>[vV]?)(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?P<suffix>-[A-Za-z0-9_.-]+)?\Z")
+APP_VERSION = re.compile(
+    r"(?P<prefix>[vV]?)(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)"
+    r"(?P<suffix>-[A-Za-z0-9_][A-Za-z0-9_.-]*)?\Z"
+)
+PRERELEASE = re.compile(r"(?:^|[._-])(?:alpha|alfa|beta)[0-9]*(?:$|[._-])", re.IGNORECASE)
 
 
 def normalize_header(value: str) -> str:
@@ -173,7 +178,7 @@ def make_release(fields: dict[str, str], line: int) -> Release:
         raise ValueError(
             f"CSV line {line}: App Version must have major.minor.patch "
             f"(optionally prefixed with v and/or followed by -prerelease); got {app_version!r}. "
-            "Three numeric components are necessary to generate nine distinct tags."
+            "Three numeric components are necessary to generate distinct tags."
         )
 
     for key, value in (("Docker OS Version", os_version), ("Lego Version", lego_version)):
@@ -187,7 +192,7 @@ def make_release(fields: dict[str, str], line: int) -> Release:
     prefix = match.group("prefix")
     minor_base = f"{prefix}{match.group('major')}.{match.group('minor')}"
     major_base = f"{prefix}{match.group('major')}"
-    embedded_suffix = slug((match.group("suffix") or "").lstrip("-"))
+    embedded_suffix = (match.group("suffix") or "").removeprefix("-")
     combined_suffix = "-".join(part for part in (embedded_suffix, app_suffix) if part)
     app_full = with_suffix(app_version, app_suffix)
     app_minor = with_suffix(minor_base, combined_suffix)
@@ -216,16 +221,17 @@ def make_release(fields: dict[str, str], line: int) -> Release:
         app_full,
         app_minor,
         app_major,
-        "latest",
     )
+    if not PRERELEASE.search(combined_suffix):
+        tags += ("latest",)
 
     for tag in tags:
         if not VALID_TAG.fullmatch(tag):
             raise ValueError(f"CSV line {line}: invalid Docker tag {tag!r} (allowed: [A-Za-z0-9_.-], maximum 128 characters).")
-    if len(set(tags)) != 9:
+    if len(set(tags)) != len(tags):
         repeats = sorted({tag for tag in tags if tags.count(tag) > 1})
         raise ValueError(
-            f"CSV line {line}: cannot generate nine UNIQUE tags from these versions; "
+            f"CSV line {line}: cannot generate unique tags from these versions; "
             f"collisions: {', '.join(repeats)}. Supply more specific OS/lego versions."
         )
     return Release(fields, line, tags, os_short, os_full, lego_short, lego_full, app_full)
@@ -344,7 +350,11 @@ def complete_table(
         "|---|---|---|---|",
     ]
     first_index = 0 if max_releases is None else max(0, len(releases) - max_releases)
-    for index in range(len(releases) - 1, first_index - 1, -1):
+    visible = list(range(first_index, len(releases)))
+    latest_owner = owners.get("latest")
+    if visible and latest_owner is not None and latest_owner < first_index:
+        visible[0] = latest_owner
+    for index in reversed(visible):
         record = releases[index]
         url = record.field("App URL")
         principal = [tag_link(record.app_full, url)]
@@ -360,7 +370,7 @@ def complete_table(
 
 
 def short_table(releases: list[Release]) -> str:
-    """Same four-column layout, latest seven releases, at most four tags each."""
+    """At most seven rows and four tags each, including the owner of latest."""
     return complete_table(
         releases,
         max_releases=SHORT_MAX_RELEASES,
@@ -411,11 +421,20 @@ def write_tables(releases: list[Release]) -> None:
 
 
 def buildx_command(record: Release) -> str:
+    app_version = record.app_full.removeprefix("v").removeprefix("V")
+    build_args = [f"  --build-arg APP_VERSION={app_version} \\"]
+    if record.field("Docker OS").casefold() == "alpine":
+        lego_version = record.field("Lego Version").removeprefix("v").removeprefix("V")
+        if lego_version:
+            build_args.append(f"  --build-arg LEGO_VERSION=v{lego_version} \\")
+        if os_version := record.field("Docker OS Version"):
+            build_args.append(f"  --build-arg ALPINE_VERSION={os_version} \\")
     lines = [
         "docker buildx build \\",
         f"  --builder {BUILDER} \\",
         f"  --platform {PLATFORMS} \\",
         "  --progress=plain \\",
+        *build_args,
         *(f"  -t {DOCKER_IMAGE}:{tag} \\" for tag in record.tags),
         "  --push ./build",
     ]
@@ -424,7 +443,7 @@ def buildx_command(record: Release) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Update the Docker tag tables in README.md and DOCKERHUB.md.")
-    parser.add_argument("--buildx-version", metavar="VERSION", help="Additionally print the nine-tag Buildx command for an app version")
+    parser.add_argument("--buildx-version", metavar="VERSION", help="Also print the Buildx command for an app version")
     parser.add_argument("--allow-old-latest", action="store_true", help="Permit Buildx for an older version that overwrites latest")
     args = parser.parse_args()
     try:
@@ -434,9 +453,11 @@ def main() -> int:
             selected = next((r for r in releases if r.app_full == args.buildx_version), None)
             if selected is None:
                 raise ValueError(f"Unknown App Version {args.buildx_version!r}.")
-            if selected is not releases[-1] and not args.allow_old_latest:
+            latest_owner = ownership(releases).get("latest")
+            if ("latest" in selected.tags and latest_owner is not None
+                    and releases[latest_owner] is not selected and not args.allow_old_latest):
                 raise ValueError(
-                    f"{selected.app_full} is not the last CSV release. Its Buildx command would overwrite latest. "
+                    f"{selected.app_full} does not own latest. Its Buildx command would overwrite latest. "
                     "Use --allow-old-latest if intentional."
                 )
         write_tables(releases)

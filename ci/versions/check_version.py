@@ -29,8 +29,8 @@ def expected_tags() -> tuple[str, ...]:
         raise ValueError(result.stderr.strip() or "Cannot read the release tags from ci/versions/versions.txt.")
     prefix = f"{DOCKER_IMAGE}:"
     refs = result.stdout.splitlines()
-    if len(refs) != 9 or any(not ref.startswith(prefix) for ref in refs):
-        raise ValueError("The publisher must provide nine Docker tags.")
+    if len(refs) not in (8, 9) or any(not ref.startswith(prefix) for ref in refs):
+        raise ValueError("The publisher must provide eight or nine Docker tags.")
     return tuple(ref.removeprefix(prefix) for ref in refs)
 
 

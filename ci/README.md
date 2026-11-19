@@ -1,6 +1,6 @@
 # Release pipeline
 
-GitHub Actions runs the release tests and uses `ci/publish-image.sh` to publish five platforms and nine tags to Docker Hub.
+GitHub Actions runs the release tests and uses `ci/publish-image.sh` to publish five platforms and eight or nine tags to Docker Hub.
 
 [CI/CD diagram](../README.md#cicd-pipeline)
 
@@ -45,13 +45,13 @@ flowchart TD
     WaitDescription --> Verify["Check published overview"]
 ```
 
-Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v5.2.2/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `ci/versions/versions.txt`.
+Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v5.2.3/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch, the first two or three components must agree with `APP_VERSION` in `ci/versions/versions.txt`.
 
-The publishing workflow subscribes to GitHub's `release.published` activity, including prereleases. The Git release tag selects the source commit. `ci/versions/versions.txt` from that commit supplies the version numbers used in Docker Hub. A published prerelease follows the same sequence and updates `latest`.
+The publishing workflow subscribes to GitHub's `release.published` activity, including prereleases. The Git release tag selects the source commit. `ci/versions/versions.txt` from that commit supplies the version numbers used in Docker Hub. The Git release tag must match the full `APP_VERSION`, including any suffix, with an optional `v` or `V`. Releases with an `alpha`, `alfa` or `beta` suffix publish eight tags, all suffixed. The last eligible release owns `latest` in Docker Hub and in both tables. The short table keeps that row visible even after seven newer prereleases.
 
 ## Update the Markdown tables
 
-1. Update `ci/versions/versions.txt` for the upcoming image and append its row to `ci/versions/versions.csv`. Keep the upcoming release as the final CSV row.
+1. Update `ci/versions/versions.txt` for the upcoming image and append its row to `ci/versions/versions.csv`. Keep the upcoming release as the final CSV row. For example, set `APP_VERSION=5.2.3-beta-1`, use `v5.2.3-beta-1` as the Git release tag, and record `v5.2.3-beta-1` in the CSV's App Version column. The CSV also accepts a separate App Suffix value of `beta-1` when App Version is `v5.2.3`.
 2. From the repository root, regenerate the short table in `DOCKERHUB.md` and the full history in `README.md`.
 
    ```bash
@@ -65,7 +65,7 @@ The publishing workflow subscribes to GitHub's `release.published` activity, inc
 1. Sign in to [Docker Home](https://app.docker.com/) with a Docker ID that can push to and edit `ljgonzalez/lego-cloudflare-certgen`. Verify the account email if Docker requires it for personal access tokens.
 2. Open your avatar menu, choose **Account settings → Personal access tokens → Generate new token**, and name the token `certgen-images`. Set an expiry and choose **Repo Read & Write**. Generate and copy the token.
 3. Make a second token named `certgen-overview` and choose **Repo Read, Write, Delete**, the scope required by the overview updater. Copy this value separately.
-4. Review the repository's tag immutability settings. The pipeline updates the current minor and major aliases and `latest`. Any shared aliases covered by immutability rules will cause publication to fail.
+4. Review the repository's tag immutability settings. The pipeline updates the release's minor and major aliases and updates `latest` for eligible releases. Any shared aliases covered by immutability rules will cause publication to fail.
 
 [Docker PAT setup](https://docs.docker.com/security/access-tokens/personal-access-tokens/) · [Repository access scopes](https://docs.docker.com/security/access-tokens/reference/) · [Overview updater](https://github.com/peter-evans/dockerhub-description#action-inputs)
 
@@ -86,7 +86,7 @@ The publishing workflow subscribes to GitHub's `release.published` activity, inc
    bash ci/publish-image.sh --print-tags
    ```
 
-4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v5.2.2` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
+4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v5.2.3` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
 5. Select **Publish release**, then open the release run under **Actions → CI/CD**. After the document, offline, and five smoke jobs pass, the publisher prepares the final builder.
 6. The publisher runs Buildx with `--metadata-file build-metadata.json` in its temporary build directory. It reads `containerimage.digest`, fetches that immutable index by `repository@sha256:...`, verifies its bytes against the metadata digest, and extracts exactly one manifest digest for each of the five platforms. The image config digest is not used. It assigns every alias to the same index, publishing `latest` last. After all writes succeed, it exports `digest`, `digest_armv6`, `digest_armv7`, `digest_arm64`, `digest_i386` and `digest_amd64` through `$GITHUB_OUTPUT` and the publisher job's outputs.
 7. Two independent paths now start. The overview path immediately updates Docker Hub, waits 20 seconds if the update succeeds, and compares the returned Markdown with `DOCKERHUB.md`. It tolerates CRLF and trailing whitespace at the end. A content mismatch prints a unified diff with `-` lines from the committed file and `+` lines from Docker Hub.
@@ -107,7 +107,7 @@ The workflow has no `create` subscription. A push that only creates a version re
 
 The repository name is derived locally in downstream jobs. It is not exported as a job output: `DOCKERHUB_USERNAME` is a GitHub secret and a full image name containing that value can be suppressed by the runner. This avoids a successful push followed by an empty `IMAGE` input. Only hashes and the detected tag cross job boundaries. `ci/read-publish-result.sh` validates the entire result before emitting any outputs, including the full application identity and all five platform hashes.
 
-`ci/versions/release_config.py` reads the final CSV release through the same parser as the Markdown generator. It checks the numeric application, Alpine and lego versions against `ci/versions/versions.txt`, preserves the CSV's application prefix and optional suffix, and supplies the same nine tags to the publisher and table checks. `APP_VERSION` in `versions.txt` may be numeric or include the exact full application suffix. A numeric value uses the suffix from the CSV; build labels include that effective suffix. Publishing scripts and smoke scripts require Python 3.10+ on the host, in addition to their existing Docker dependencies.
+`ci/versions/release_config.py` reads the final CSV release through the same parser as the Markdown generator. It checks the numeric application, Alpine and lego versions against `ci/versions/versions.txt`, preserves the CSV's application prefix and optional suffix, and supplies the same eight or nine tags to the publisher and table checks. `APP_VERSION` in `versions.txt` may be numeric or include the exact full application suffix. A numeric value uses the suffix from the CSV; build labels include that effective suffix. Publishing scripts and smoke scripts require Python 3.10+ on the host, in addition to their existing Docker dependencies.
 
 The offline job exercises HTTP failures, HTML, malformed/empty responses, tag variants, platform selection and Markdown diffs with deterministic fixtures in `ci/test_dockerhub.py`. `ci/test_publish.py` verifies Buildx metadata, immutable index bytes, output validation, prefix/suffix handling and a simulated publish including all aliases. `ci/test_workflows.py` checks event routing and both independent post-publication paths. Run locally with Python, PyYAML and jq:
 

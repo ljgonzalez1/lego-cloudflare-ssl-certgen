@@ -102,6 +102,8 @@ jobs:
         run: python3 -B ci/test_publish.py
       - name: Test CI event routing and job dependencies
         run: python3 -B ci/test_workflows.py
+      - name: Test prerelease tag policy
+        run: python3 -B ci/versions/test_tags.py
 
   smoke_armv6:
     name: ARMv6 smoke test
@@ -189,6 +191,7 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           result="$RUNNER_TEMP/certgen-publish.json"
           PUBLISH_RESULT_FILE="$result" bash ci/publish-image.sh
