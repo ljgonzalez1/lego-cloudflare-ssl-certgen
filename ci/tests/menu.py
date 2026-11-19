@@ -2,18 +2,23 @@
 """Exercise the real C++ menu with a pseudo-terminal."""
 
 import errno
+import fcntl
 import os
 import pty
 import select
 import signal
+import struct
 import subprocess
 import sys
 import termios
 import time
 import unittest
 from contextlib import contextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 CORE = sys.argv.pop(1)
+ENTRY = sys.argv.pop(1)
 LEFT = b"\x1b[D"
 RIGHT = b"\x1b[C"
 ENTER = b"\r"
@@ -23,10 +28,11 @@ STAGING = b"Confirm staging issuance"
 
 
 class TerminalSession:
-    def __init__(self, master, slave, process):
+    def __init__(self, master, slave, process, original):
         self.master = master
         self.slave = slave
         self.process = process
+        self.original = original
         self.buffer = b""
 
     def read_until(self, expected):
@@ -50,25 +56,31 @@ class TerminalSession:
     def send(self, keys):
         os.write(self.master, keys)
 
+    def assert_restored(self):
+        if termios.tcgetattr(self.slave) != self.original:
+            raise AssertionError("The menu did not restore the terminal settings")
+
     def result(self):
         stdout, _ = self.process.communicate(timeout=5)
         return self.process.returncode, stdout
 
 
 @contextmanager
-def terminal(command, *, term="xterm", env=None, stdout=subprocess.PIPE):
+def terminal(command, *, term="xterm", env=None, columns=80):
     master, slave = pty.openpty()
     settings = os.environ.copy()
     settings.pop("NO_COLOR", None)
     settings["TERM"] = term
     settings.update(env or {})
     try:
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, columns, 0, 0))
+        original = termios.tcgetattr(slave)
         process = subprocess.Popen(
-            command, stdin=slave, stdout=stdout, stderr=slave,
+            command, stdin=slave, stdout=subprocess.PIPE, stderr=slave,
             env=settings, start_new_session=True,
         )
         try:
-            yield TerminalSession(master, slave, process)
+            yield TerminalSession(master, slave, process, original)
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -122,6 +134,106 @@ class MenuTests(unittest.TestCase):
             session.read_until(b"> Cancel <")
             session.send(ENTER)
             self.assertEqual(session.result(), (0, b"cancel\n"))
+
+
+    def test_plain_text_and_narrow_frame(self):
+        for settings in ({"term": "dumb"}, {"env": {"NO_COLOR": "1"}}):
+            with self.subTest(settings=settings), terminal([CORE, "issuance-menu"], columns=22, **settings) as session:
+                frame = session.read_until(b"> Staging <")
+                self.assertNotIn(b"\x1b[", frame)
+                self.assertTrue(any(line.startswith(b"+-") for line in frame.splitlines()))
+                self.assertTrue(all(len(line) <= 21 for line in frame.splitlines()))
+                session.send(LEFT)
+                session.read_until(b"> Cancel <")
+                session.send(ENTER)
+                self.assertEqual(session.result(), (0, b"cancel\n"))
+                session.assert_restored()
+
+    def test_escape_leaves_confirmation_without_issuing(self):
+        with terminal([CORE, "issuance-menu"]) as session:
+            session.read_until(b"> Staging <")
+            session.send(RIGHT)
+            session.read_until(b"> Production <")
+            session.send(ENTER)
+            session.read_until(PRODUCTION)
+            session.read_until(b"> No <")
+            session.send(b"\x1b")
+            session.read_until(MAIN)
+            session.read_until(b"> Staging <")
+            session.send(b"\x1b")
+            self.assertEqual(session.result(), (0, b"cancel\n"))
+
+    def test_interruptions_restore_the_terminal(self):
+        for key, expected in ((b"\x03", (130, b"")), (b"\x04", (0, b"cancel\n")), (None, (143, b""))):
+            with self.subTest(key=key), terminal([CORE, "issuance-menu"]) as session:
+                session.read_until(b"> Staging <")
+                if key is None:
+                    session.process.send_signal(signal.SIGTERM)
+                else:
+                    session.send(key)
+                self.assertEqual(session.result(), expected)
+                session.read_until(b"\x1b[?1049l")
+                session.assert_restored()
+
+    def test_non_terminal_fails_closed(self):
+        process = subprocess.run(
+            [CORE, "issuance-menu"], input=b"\x1b[C\r\x1b[D\r",
+            capture_output=True, timeout=5,
+        )
+        self.assertEqual(process.returncode, 2)
+        self.assertEqual(process.stdout, b"")
+        self.assertIn(b"docker run -it", process.stderr)
+
+    def test_entrypoint_uses_only_the_confirmed_server(self):
+        for production in (False, True):
+            with self.subTest(production=production), TemporaryDirectory() as temp:
+                command, env, output, orders = self.fixture(Path(temp))
+                with terminal(command, env=env) as session:
+                    session.read_until(b"> Staging <")
+                    if production:
+                        session.send(RIGHT)
+                        session.read_until(b"> Production <")
+                    session.send(ENTER)
+                    session.read_until(PRODUCTION if production else STAGING)
+                    session.read_until(b"> No <")
+                    self.assertFalse(orders.exists())
+                    self.assertFalse(list(output.iterdir()))
+                    session.send(LEFT)
+                    session.read_until(b"> Yes <")
+                    session.send(ENTER)
+                    status, _ = session.result()
+                    self.assertEqual(status, 0)
+                selected = "https://acme-v02" if production else "https://acme-staging-v02"
+                self.assertIn(selected, orders.read_text())
+                self.assertEqual(orders.read_text().count("order\n"), 1)
+                self.assertTrue(list(output.rglob("example.com.crt")))
+
+    def test_entrypoint_cancel_has_no_side_effects(self):
+        with TemporaryDirectory() as temp:
+            command, env, output, orders = self.fixture(Path(temp))
+            with terminal(command, env=env) as session:
+                session.read_until(b"> Staging <")
+                session.send(LEFT)
+                session.read_until(b"> Cancel <")
+                session.send(ENTER)
+                self.assertEqual(session.result()[0], 0)
+            self.assertFalse(orders.exists())
+            self.assertFalse(list(output.iterdir()))
+
+    @staticmethod
+    def fixture(root):
+        config = root / "domains.yaml"
+        config.write_text("certificate: [example.com, example.net]\n")
+        output = root / "certificates"
+        output.mkdir()
+        # A legacy deployment setting cannot pick a server.
+        orders = root / "orders"
+        env = {
+            "TEST_REAL_ISSUANCE_MENU": "1",
+            "TEST_LEGO_LOG": str(orders),
+            "PRODUCTION": "true",
+        }
+        return ["/bin/sh", ENTRY, "--config", str(config), "--output", str(output)], env, output, orders
 
 
 if __name__ == "__main__":
