@@ -35,7 +35,7 @@ def as_context(value):
     return value
 
 
-def accepts(expression, github, needs):
+def accepts(expression, github, needs, steps=None):
     # Only evaluate expressions read from this repository's own workflow.
     expression = expression.removeprefix("${{").removesuffix("}}").strip()
     expression = expression.replace("&&", " and ").replace("||", " or ")
@@ -43,7 +43,7 @@ def accepts(expression, github, needs):
     expression = re.sub(r"(?<!['\"])\bfalse\b(?!['\"])", "False", expression)
     expression = re.sub(r"(?<!['\"])\bnull\b(?!['\"])", "None", expression)
     return bool(eval("(" + expression + ")", {"__builtins__": {}}, {
-        "github": as_context(github), "needs": as_context(needs),
+        "github": as_context(github), "needs": as_context(needs), "steps": as_context(steps or {}),
     }))
 
 
@@ -53,7 +53,7 @@ class WorkflowChecks(unittest.TestCase):
         cls.workflow = yaml.safe_load((ROOT / ".github/workflows/tests.yml").read_text())
         cls.jobs = cls.workflow["jobs"]
 
-    def route(self, event, branch="master", *, created=False, commits=None, deleted=False, failure=None):
+    def route(self, event, branch="master", *, created=False, commits=None, deleted=False, failure=None, version_failures=()):
         github = {"event_name": event, "ref": "refs/heads/" + branch,
                   "event": {"created": created, "deleted": deleted,
                             "commits": [] if commits is None else commits}}
@@ -65,8 +65,53 @@ class WorkflowChecks(unittest.TestCase):
             ready = all(results[dependency]["result"] == "success" for dependency in needs)
             allowed = ready and accepts(job.get("if", "true").strip(), github, results)
             result = "failure" if allowed and name == failure else ("success" if allowed else "skipped")
-            results[name] = {"result": result, "outputs": {"eligible": "true"}}
+            eligible = "true"
+            if allowed and name in version_failures:
+                eligible = ""  # check-version.sh exits before emitting eligible on failure.
+                check = next(step for step in job["steps"] if step.get("id") == "check")
+                if not accepts(check.get("continue-on-error", "false"), github, results):
+                    result = "failure"
+            results[name] = {"result": result, "outputs": {"eligible": eligible}}
         return {name for name, result in results.items() if result["result"] == "success"}
+
+    def test_version_failures_are_advisory_only_on_master_pushes(self):
+        documents = ("version_readme", "version_dockerhub")
+        for failures in ((documents[0],), (documents[1],), documents):
+            for event, branch in (("push", "master"), ("pull_request", "master"),
+                                  ("release", "master"), ("release", "v4.2.16"), ("push", "v4.2.16")):
+                with self.subTest(failures=failures, event=event, branch=branch):
+                    passed = self.route(event, branch, version_failures=failures)
+                    if event == "push" and branch == "master":
+                        self.assertTrue({"offline", *SMOKE_JOBS}.issubset(passed))
+                        self.assertNotIn("publish", passed)
+                    else:
+                        self.assertNotIn("offline", passed)
+                        self.assertTrue(set(SMOKE_JOBS).isdisjoint(passed))
+                        self.assertNotIn("publish", passed)
+        # Only document validation is advisory; checkout/job and offline failures still block.
+        for failure in (*documents, "offline"):
+            self.assertTrue(set(SMOKE_JOBS).isdisjoint(self.route("push", failure=failure)))
+
+    def test_advisory_failures_emit_warnings_and_summaries(self):
+        for name, document in (("version_readme", "README.md"), ("version_dockerhub", "DOCKERHUB.md")):
+            job = self.jobs[name]
+            check = next(step for step in job["steps"] if step.get("id") == "check")
+            warning = next(step for step in job["steps"] if step.get("name") == "Report advisory version failure")
+            for event, branch in (("push", "master"), ("pull_request", "master"), ("release", "master"), ("push", "v4.2.16")):
+                github = {"event_name": event, "ref": "refs/heads/" + branch}
+                advisory = event == "push" and branch == "master"
+                self.assertEqual(accepts(check["continue-on-error"], github, {}), advisory)
+                for outcome in ("success", "failure"):
+                    self.assertEqual(accepts(warning["if"], github, {}, {"check": {"outcome": outcome}}),
+                                     advisory and outcome == "failure")
+            with tempfile.TemporaryDirectory() as directory:
+                summary = Path(directory) / "summary.md"
+                result = subprocess.run(["bash", "-e", "-c", warning["run"]], text=True, capture_output=True,
+                                        env=os.environ | {"GITHUB_STEP_SUMMARY": str(summary)}, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("::warning file=" + document, result.stdout)
+                self.assertIn(document, summary.read_text())
+                self.assertIn("Subsequent tests continue", summary.read_text())
 
     def test_push_version_runs_documents_and_offline(self):
         self.assertEqual(self.route("push", "v4.2.14", commits=[{"id": "new"}]),
