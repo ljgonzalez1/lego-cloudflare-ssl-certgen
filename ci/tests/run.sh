@@ -45,6 +45,11 @@ cat > "$work/bin/lego" <<'SH'
 #!/bin/sh
 set -euf
 PATH=/usr/local/bin:/usr/bin:/bin
+if [ "$#" -eq 1 ] && [ "$1" = --version ]; then
+    [ "${TEST_LEGO_VERSION_FAIL:-0}" -eq 0 ] || exit 7
+    printf 'lego version 4.34.0 linux/amd64\n'
+    exit 0
+fi
 {
     printf 'order\ntoken=%s\ntoken_file=%s\nlegacy_key=%s\ncname=%s\npropagation=%s\n' \
         "${CF_DNS_API_TOKEN:-}" "${CF_DNS_API_TOKEN_FILE:-}" "${CLOUDFLARE_API_KEY:-}" \
@@ -340,7 +345,7 @@ yaml_unknown_selection() {
 
 cli_help() {
     UID=invalid expect_status 0 cli --help
-    assert_contains 'Usage: certgen [--list | --dry-run]' "$stdout"
+    assert_contains 'Usage: certgen [--list | --dry-run | --test]' "$stdout"
 }
 
 cli_argument_errors() {
@@ -375,6 +380,21 @@ cli_environment_mode() {
     assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
     PRODUCTION=true expect_status 0 cli --dry-run
     assert_contains 'https://acme-v02.api.letsencrypt.org/directory' "$stdout"
+}
+
+cli_offline_test_mode() {
+    PRODUCTION=true ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN= expect_status 0 cli --test --only first
+    assert_contains '🧪 TEST MODE (offline)' "$stdout"
+    assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
+    assert_contains 'Offline test passed.' "$stdout"
+    [ ! -s "$TEST_LEGO_LOG" ]
+    [ -z "$(ls -A -- "$output")" ]
+    TEST_LEGO_VERSION_FAIL=1 expect_status 1 cli --test
+    assert_contains 'Could not check the lego executable.' "$stderr"
+    expect_status 2 cli --test --list
+    expect_status 2 cli --test --only missing
+    DNS_RESOLVERS='[:::]:53' expect_status 2 cli --test
+    [ ! -s "$TEST_LEGO_LOG" ]
 }
 
 cli_configuration_edges() {
@@ -1058,6 +1078,7 @@ check 'Help works before environment validation' cli_help
 check 'Conflicting and missing CLI arguments' cli_argument_errors
 check 'List and dry-run preview without credentials' cli_listing_and_preview
 check 'Environment selects staging or production' cli_environment_mode
+check 'Unattended test checks lego and previews staging without issuance' cli_offline_test_mode
 check 'Cross-zone names, DNS root dots and malformed contact or resolver input' cli_configuration_edges
 check 'Identity validation and privilege-drop command' cli_identities
 check 'Validate all YAML before any issue request' cli_yaml_before_issue

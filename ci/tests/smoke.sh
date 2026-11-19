@@ -39,8 +39,6 @@ fi
 args=(--rm --pull=never --platform "$platform" --network none)
 lego_arch=${platform#linux/}
 lego_arch=${lego_arch%%/*}
-lego_version=$(docker run "${args[@]}" --entrypoint /usr/local/bin/lego "$image" --version)
-[[ "$lego_version" == "lego version $LEGO_VERSION linux/$lego_arch" ]]
 
 args+=(--env-file "$work/.env"
     --mount "type=bind,source=$work/domains.yaml,target=/app/domains.yaml,readonly")
@@ -48,8 +46,11 @@ groups=$(docker run "${args[@]}" "$image" --list)
 printf '%s\n' "$groups"
 [[ "$groups" == 'smoke: 3 domains' ]]
 
-plan=$(docker run "${args[@]}" "$image" --dry-run)
+plan=$(docker run "${args[@]}" "$image" --test)
 printf '%s\n' "$plan"
+grep -Fxq '🧪 TEST MODE (offline)' <<< "$plan"
+grep -Fxq "ℹ️  lego version $LEGO_VERSION linux/$lego_arch" <<< "$plan"
+grep -Fxq '✅ Offline test passed.' <<< "$plan"
 grep -Fxq '🧪 STAGING MODE' <<< "$plan"
 grep -Fxq 'ℹ️  ACME server: https://acme-staging-v02.api.letsencrypt.org/directory' <<< "$plan"
 grep -Fxq 'ℹ️  Domains (3):' <<< "$plan"

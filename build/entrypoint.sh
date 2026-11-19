@@ -9,11 +9,12 @@ esac
 . "${script_dir}/validate_env.sh"
 
 usage() {
-    printf '%s\n' "Usage: certgen [--list | --dry-run]
+    printf '%s\n' "Usage: certgen [--list | --dry-run | --test]
                [--only FOLDER]... [--config FILE] [--output DIRECTORY]
 
   --list          Validate the YAML and list certificate groups
   --dry-run       Show the planned groups, domains and output paths
+  --test          Check lego and preview an offline staging run for CI
   --only FOLDER   Process only this group (repeatable)
   --config FILE   Read this YAML file (default: /app/domains.yaml)
   --output DIR    Write to this directory (default: /ssl-certs)"
@@ -41,10 +42,10 @@ while [ "$remaining" -gt 0 ]; do
     remaining=$((remaining - 1))
     case "$option" in
         -h|--help) usage; exit 0 ;;
-        --list|--dry-run)
+        --list|--dry-run|--test)
             action=${option#--}
             if [ "$CERTGEN_ACTION" != issue ] && [ "$CERTGEN_ACTION" != "$action" ]; then
-                log_err "--list and --dry-run are mutually exclusive."
+                log_err "--list, --dry-run and --test are mutually exclusive."
                 exit 2
             fi
             CERTGEN_ACTION=$action
