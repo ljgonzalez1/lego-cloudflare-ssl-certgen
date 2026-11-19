@@ -67,7 +67,8 @@ private:
 bool supports_ansi() {
     const auto* term = std::getenv("TERM");
     const auto* no_color = std::getenv("NO_COLOR");
-    return term && *term && std::string_view(term) != "dumb" && (!no_color || !*no_color);
+    const std::string_view terminal = term ? term : "";
+    return !terminal.empty() && terminal != "dumb" && terminal != "unknown" && (!no_color || !*no_color);
 }
 
 class MenuTerminal {
@@ -85,7 +86,7 @@ public:
             terminal_error("could not enable interactive input");
         }
         if (ansi) {
-            std::cerr << "\033[?1049h\033[?25l";
+            std::cerr << "\033[?1049h\033[?25l\033[?2004h";
         }
     }
 
@@ -93,7 +94,7 @@ public:
         while (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_) != 0 && errno == EINTR) {
         }
         if (ansi) {
-            std::cerr << "\033[0m\033[?25h\033[?1049l";
+            std::cerr << "\033[?2004l\033[0m\033[?25h\033[?1049l";
         }
     }
 
@@ -124,11 +125,15 @@ int read_byte(int timeout = -1) {
         }
         unsigned char key = 0;
         const auto count = read(STDIN_FILENO, &key, 1);
-        if (count < 0 && errno == EINTR) {
+        if (count < 0 && (errno == EINTR || errno == EAGAIN)) {
             continue;
         }
         if (count < 0 && (input.revents & POLLHUP) == 0) {
             terminal_error("could not read terminal input");
+        }
+        if (count == 1 && key == 3) {  // Ctrl+C
+            interrupted = SIGINT;
+            return cancel;
         }
         return count == 1 ? key : cancel;
     }
@@ -137,14 +142,26 @@ int read_byte(int timeout = -1) {
 
 enum class Key { previous, next, enter, back, cancel, none };
 
+Key discard_paste() {
+    constexpr std::string_view end = "\033[201~";
+    std::size_t matched = 0;
+    for (;;) {
+        const auto byte = read_byte();
+        if (byte == cancel) {
+            return Key::cancel;
+        }
+        matched = byte == end[matched] ? matched + 1 : byte == end.front() ? 1 : 0;
+        if (matched == end.size()) {
+            return Key::none;
+        }
+    }
+}
+
 Key read_key() {
     const auto key = read_byte();
     switch (key) {
     case cancel:
     case 4:  // Ctrl+D
-        return Key::cancel;
-    case 3:  // Ctrl+C
-        interrupted = SIGINT;
         return Key::cancel;
     case '\r':
     case '\n':
@@ -161,12 +178,31 @@ Key read_key() {
         if (prefix == no_byte || prefix == 27) {
             return Key::back;
         }
+        if (prefix == cancel) {
+            return Key::cancel;
+        }
         if (prefix != '[' && prefix != 'O') {
             return Key::none;
         }
+        std::string parameters;
+        bool too_long = false;
         auto code = read_byte(120);
-        for (int remaining = 12; remaining > 0 && code >= 32 && code < 64; --remaining) {
+        while (code >= 32 && code < 64) {
+            if (parameters.size() < 16) {
+                parameters += static_cast<char>(code);
+            } else {
+                too_long = true;
+            }
             code = read_byte(120);
+        }
+        if (code == cancel) {
+            return Key::cancel;
+        }
+        if (too_long) {
+            return Key::none;
+        }
+        if (prefix == '[' && parameters == "200" && code == '~') {
+            return discard_paste();
         }
         switch (code) {
         case 'A':

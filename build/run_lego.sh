@@ -106,9 +106,13 @@ case "$CERTGEN_ACTION" in
     test)
         test_mode=true
         CERTGEN_ACTION=dry-run
+        issuance_mode=staging
         validate_env || exit $?
-        if ! lego_version=$(certgen-core supervise 10 lego --version </dev/null 2>&1); then
-            log_err "Could not check the lego executable."
+        if lego_version=$(certgen-core supervise 10 lego --version </dev/null 2>&1); then
+            :
+        else
+            log_err "Could not check the lego executable (exit $?)."
+            [ -z "$lego_version" ] || printf '%s\n' "$lego_version" >&2
             exit 1
         fi
         case "$lego_version" in

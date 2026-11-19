@@ -137,7 +137,7 @@ class MenuTests(unittest.TestCase):
 
 
     def test_plain_text_and_narrow_frame(self):
-        for settings in ({"term": "dumb"}, {"env": {"NO_COLOR": "1"}}):
+        for settings in ({"term": "dumb"}, {"term": "unknown"}, {"env": {"NO_COLOR": "1"}}):
             with self.subTest(settings=settings), terminal([CORE, "issuance-menu"], columns=22, **settings) as session:
                 frame = session.read_until(b"> Staging <")
                 self.assertNotIn(b"\x1b[", frame)
@@ -217,6 +217,77 @@ class MenuTests(unittest.TestCase):
                 session.read_until(b"> Cancel <")
                 session.send(ENTER)
                 self.assertEqual(session.result()[0], 0)
+            self.assertFalse(orders.exists())
+            self.assertFalse(list(output.iterdir()))
+
+
+    def test_paste_cannot_confirm_production(self):
+        with terminal([CORE, "issuance-menu"]) as session:
+            self.assertIn(b"\x1b[?2004h", session.read_until(b"> Staging <"))
+            session.send(RIGHT)
+            session.read_until(b"> Production <")
+            session.send(ENTER)
+            session.read_until(PRODUCTION)
+            session.read_until(b"> No <")
+            session.send(b"\x1b[200~" + LEFT + ENTER + b"\x1b[201~" + ENTER)
+            # The last Enter accepts the still-selected No, returning to the menu.
+            session.read_until(MAIN)
+            session.read_until(b"> Staging <")
+            session.send(b"\x04")
+            self.assertEqual(session.result(), (0, b"cancel\n"))
+            session.read_until(b"\x1b[?2004l")
+            session.assert_restored()
+
+    def test_ctrl_c_can_interrupt_incomplete_paste(self):
+        with terminal([CORE, "issuance-menu"]) as session:
+            session.read_until(b"> Staging <")
+            session.send(b"\x1b[200~" + RIGHT + ENTER + b"\x03")
+            self.assertEqual(session.result(), (130, b""))
+            session.assert_restored()
+
+    def test_noninteractive_flags_select_the_correct_server(self):
+        for flag, expected in (("--staging", "acme-staging-v02"), ("--production", "acme-v02")):
+            with self.subTest(flag=flag), TemporaryDirectory() as temp:
+                command, env, output, orders = self.fixture(Path(temp))
+                process = subprocess.run(command + [flag], env=os.environ | env, input=b"",
+                                         capture_output=True, timeout=5)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                self.assertIn(expected, orders.read_text())
+                self.assertTrue(list(output.rglob("example.com.crt")))
+                if flag == "--production":
+                    self.assertIn(b"without confirmation", process.stderr)
+                else:
+                    self.assertNotIn(b"without confirmation", process.stderr)
+
+    def test_conflicts_typos_and_inherited_mode_cannot_issue(self):
+        cases = (
+            (["--production", "--staging"], b"mutually exclusive"),
+            (["--test", "--production"], b"cannot be combined"),
+            (["--production", "--test"], b"cannot be combined"),
+            (["--staging", "--list"], b"cannot be combined"),
+            (["--dry-run", "--production"], b"cannot be combined"),
+            (["--prodution"], b"Unknown argument"),
+            ([], b"The issuance menu needs a terminal"),
+        )
+        with TemporaryDirectory() as temp:
+            command, env, output, orders = self.fixture(Path(temp))
+            env.update(CERTGEN_ACTION="issue", CERTGEN_MODE="production")
+            for flags, diagnostic in cases:
+                with self.subTest(flags=flags):
+                    process = subprocess.run(command + flags, env=os.environ | env, input=b"yes\n",
+                                             capture_output=True, timeout=5)
+                    self.assertEqual(process.returncode, 2, process.stderr)
+                    self.assertIn(diagnostic, process.stderr)
+                    self.assertFalse(orders.exists())
+                    self.assertFalse(list(output.iterdir()))
+
+    def test_wrong_container_user_is_reported_before_prompting(self):
+        with TemporaryDirectory() as temp:
+            command, env, output, orders = self.fixture(Path(temp))
+            env["TEST_CALLER_UID"] = "2000"
+            process = subprocess.run(command, env=os.environ | env, input=b"", capture_output=True, timeout=5)
+            self.assertEqual(process.returncode, 1, process.stderr)
+            self.assertIn(b"The container user must match the configured UID/GID", process.stderr)
             self.assertFalse(orders.exists())
             self.assertFalse(list(output.iterdir()))
 
