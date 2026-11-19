@@ -9,6 +9,12 @@ case "$0" in
 esac
 . "${script_dir}/validate_env.sh"
 
+# The entrypoint passes its selection as an argument.
+case "${1:-}" in
+    staging|production) issuance_mode=$1; shift ;;
+    *) log_err "Missing or invalid internal issuance mode."; exit 2 ;;
+esac
+
 # Return 1 when no certificate was saved and 2 for a group that never reached lego.
 run_group() (
     target=$(certgen-core output-path "$CERTGEN_ACTION" "$CERTGEN_OUTPUT" "$group") || return 2
@@ -100,7 +106,6 @@ case "$CERTGEN_ACTION" in
     test)
         test_mode=true
         CERTGEN_ACTION=dry-run
-        PRODUCTION=false
         validate_env || exit $?
         if ! lego_version=$(certgen-core supervise 10 lego --version </dev/null 2>&1); then
             log_err "Could not check the lego executable."
@@ -119,7 +124,7 @@ esac
 
 if [ "$CERTGEN_ACTION" != list ] && [ "$setup_status" -eq 0 ]; then
     export TZ="$VALIDATED_TZ"
-    if [ "$VALIDATED_PRODUCTION" = true ]; then
+    if [ "$issuance_mode" = production ]; then
         log_section "🚨 PRODUCTION MODE"
     else
         log_section "🧪 STAGING MODE"

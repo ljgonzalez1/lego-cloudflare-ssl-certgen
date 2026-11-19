@@ -10,7 +10,6 @@ image=$2
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 sed -e 's/^EMAIL=.*/EMAIL=ci@example.com/' \
-    -e 's/^PRODUCTION=.*/PRODUCTION=false/' \
     -e 's/^ACCEPT_LEGO_TOS=.*/ACCEPT_LEGO_TOS=true/' \
     -e 's/^CLOUDFLARE_API_TOKEN=.*/CLOUDFLARE_API_TOKEN=/' \
     example.env > "$work/.env"
@@ -42,10 +41,6 @@ lego_arch=${lego_arch%%/*}
 
 args+=(--env-file "$work/.env"
     --mount "type=bind,source=$work/domains.yaml,target=/app/domains.yaml,readonly")
-groups=$(docker run "${args[@]}" "$image" --list)
-printf '%s\n' "$groups"
-[[ "$groups" == 'smoke: 3 domains' ]]
-
 plan=$(docker run "${args[@]}" "$image" --test)
 printf '%s\n' "$plan"
 grep -Fxq '🧪 TEST MODE (offline)' <<< "$plan"

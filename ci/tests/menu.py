@@ -17,7 +17,7 @@ CORE = sys.argv.pop(1)
 LEFT = b"\x1b[D"
 RIGHT = b"\x1b[C"
 ENTER = b"\r"
-MAIN = b"Issue production certificates?"
+MAIN = b"Choose an issuance environment"
 PRODUCTION = b"Confirm production issuance"
 STAGING = b"Confirm staging issuance"
 
@@ -84,12 +84,11 @@ class MenuTests(unittest.TestCase):
     def test_production_requires_two_choices(self):
         with terminal([CORE, "issuance-menu"]) as session:
             session.read_until(MAIN)
-            first = session.read_until(b"> No <")
-            self.assertIn(b"   Yes   ", first)
-            self.assertIn(b"\x1b[1;7m > No <", first)
+            first = session.read_until(b"> Staging <")
+            self.assertIn(b"\x1b[1;7m > Staging <", first)
 
-            session.send(LEFT)
-            session.read_until(b"> Yes <")
+            session.send(RIGHT)
+            session.read_until(b"> Production <")
             session.send(ENTER)
             session.read_until(PRODUCTION)
             confirmation = session.read_until(b"> No <")
@@ -99,9 +98,9 @@ class MenuTests(unittest.TestCase):
             session.send(ENTER)
             self.assertEqual(session.result(), (0, b"production\n"))
 
-    def test_no_offers_staging(self):
+    def test_staging_requires_confirmation(self):
         with terminal([CORE, "issuance-menu"]) as session:
-            session.read_until(b"> No <")
+            session.read_until(b"> Staging <")
             session.send(ENTER)
             session.read_until(STAGING)
             session.read_until(b"> No <")
@@ -112,14 +111,14 @@ class MenuTests(unittest.TestCase):
 
     def test_no_on_confirmation_returns_to_menu(self):
         with terminal([CORE, "issuance-menu"]) as session:
-            session.read_until(b"> No <")
+            session.read_until(b"> Staging <")
             session.send(ENTER)
             session.read_until(STAGING)
             session.read_until(b"> No <")
             session.send(ENTER)
             session.read_until(MAIN)
-            session.read_until(b"> No <")
-            session.send(RIGHT)
+            session.read_until(b"> Staging <")
+            session.send(LEFT)
             session.read_until(b"> Cancel <")
             session.send(ENTER)
             self.assertEqual(session.result(), (0, b"cancel\n"))

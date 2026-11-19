@@ -99,16 +99,14 @@ validate_env() {
         fi
     fi
 
-    case "${PRODUCTION:-false}" in
-        [Tt][Rr][Uu][Ee])
-            VALIDATED_PRODUCTION=true
+    case "$issuance_mode" in
+        production)
             ACME_SERVER=https://acme-v02.api.letsencrypt.org/directory
             ;;
-        [Ff][Aa][Ll][Ss][Ee])
-            VALIDATED_PRODUCTION=false
+        staging)
             ACME_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
             ;;
-        *) invalid_setting "PRODUCTION: expected true or false." ;;
+        *) invalid_setting "Certificate mode: expected staging or production." ;;
     esac
 
     if [ "$CERTGEN_ACTION" = issue ]; then
