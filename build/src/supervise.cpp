@@ -256,7 +256,11 @@ int supervise(int argc, char* argv[]) {
 
     for (;;) {
         int status = 0;
-        if (waitpid(child, &status, WNOHANG) == child) {
+        const auto waited = waitpid(child, &status, WNOHANG);
+        if (waited < 0 && errno != EINTR) {
+            os_error("cannot collect lego's exit status");
+        }
+        if (waited == child) {
             // Drain what lego wrote before it exited without waiting for
             // any process that might still hold the pipe open.
             while (pipe_open && relay()) {
