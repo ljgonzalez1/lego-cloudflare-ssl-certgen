@@ -15,8 +15,19 @@ case "${1:-}" in
     *) log_err "Missing or invalid internal issuance mode."; exit 2 ;;
 esac
 
+active_pid=
+cancel_status=0
+
+stop_issuance() {
+    [ "$cancel_status" -ne 0 ] || cancel_status=$1
+    if [ -n "$active_pid" ]; then
+        # Background commands can inherit ignored SIGINT. SIGTERM also works during startup.
+        kill -s TERM "$active_pid" 2>/dev/null || :
+    fi
+}
+
 # Return 1 when no certificate was saved and 2 for a group that never reached lego.
-run_group() (
+run_group() {
     target=$(certgen-core output-path "$CERTGEN_ACTION" "$CERTGEN_OUTPUT" "$group") || return 2
     # certgen-core estimates the longest normal run, adds 50% and caps it at two hours.
     time_limit=$(certgen-core time-limit "$#" "$VALIDATED_PROPAGATION") || return 2
@@ -63,17 +74,39 @@ run_group() (
         '*.'*) base="_${first_name#\*}" ;;
         *) base=$first_name ;;
     esac
-    if certgen-core supervise --log "$target/lego.log" --view "$view_names" \
+    [ "$cancel_status" -eq 0 ] || exit "$cancel_status"
+    certgen-core supervise --log "$target/lego.log" --view "$view_names" \
         --certificate "$target/certificates/$base" --group "$group" "$time_limit" \
         lego --accept-tos --email "$VALIDATED_EMAIL" --dns cloudflare --server "$ACME_SERVER" \
-            --path "$target" "$@" run; then
+            --path "$target" "$@" run &
+    active_pid=$!
+    if [ "$cancel_status" -ne 0 ]; then
+        stop_issuance "$cancel_status"
+    fi
+    while :; do
+        supervised_status=0
+        wait "$active_pid" || supervised_status=$?
+        # A signal can interrupt wait before the supervisor has finished cleanup.
+        if [ "$cancel_status" -eq 0 ] || ! kill -0 "$active_pid" 2>/dev/null; then
+            break
+        fi
+    done
+    active_pid=
+    if [ "$cancel_status" -ne 0 ]; then
+        log_warn "Certificate issuance cancelled. See $target/lego.log for details." >&2
+        exit "$cancel_status"
+    fi
+    case "$supervised_status" in
+        129|130|143) exit "$supervised_status" ;;
+    esac
+    if [ "$supervised_status" -eq 0 ]; then
         log_ok "Certificates: $target/certificates/"
         log_ok "Account data: $target/accounts/"
         return 0
     fi
     log_info "Full lego output: $target/lego.log"
     return 1
-)
+}
 
 prepare_issuance() {
     credential_status=0
@@ -94,6 +127,9 @@ prepare_issuance() {
 }
 
 if [ "$CERTGEN_ACTION" = issue ]; then
+    trap 'stop_issuance 129' HUP
+    trap 'stop_issuance 130' INT
+    trap 'stop_issuance 143' TERM
     groups=$(certgen-core domains --issue "$CERTGEN_CONFIG" "$@")
 else
     groups=$(certgen-core domains "$CERTGEN_CONFIG" "$@")
@@ -143,6 +179,7 @@ tab=$(printf '\t')
 report=
 exit_status=$setup_status
 while IFS="$tab" read -r group domains oversized_count <&3; do
+    [ "$cancel_status" -eq 0 ] || exit "$cancel_status"
     saved_ifs=$IFS
     IFS=,
     # No expansion beyond splitting on commas. DNS names are validated by C++.
@@ -172,6 +209,7 @@ done 3<<GROUPS
 $groups
 GROUPS
 
+[ "$cancel_status" -eq 0 ] || exit "$cancel_status"
 if [ "$CERTGEN_ACTION" = issue ]; then
     log_section "📋 Certificate request summary (DNS names per certificate)"
     printf '%s' "$report" | certgen-core summary

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG ALPINE_VERSION=3.24.4
-ARG APP_VERSION=5.2.1
+ARG APP_VERSION=5.2.2
 ARG LEGO_VERSION=v4.34.0
 
 # Download and verify the official binary on the builder's native architecture.
@@ -21,7 +21,7 @@ ARG LEGO_VERSION
 RUN apk add --no-cache build-base yaml-dev yaml-static dash
 COPY src/ /src/
 RUN mkdir -p /runtime/usr/local/bin \
- && c++ -std=c++17 -Os -Wall -Wextra -Wpedantic \
+ && c++ -std=c++17 -O2 -Wall -Wextra -Wpedantic \
        -ffunction-sections -fdata-sections -Wl,--gc-sections -static -s \
        /src/*.cpp -lyaml -o /runtime/usr/local/bin/certgen-core
 
