@@ -388,7 +388,7 @@ cli_offline_test_mode() {
     [ ! -s "$TEST_LEGO_LOG" ]
     [ -z "$(ls -A -- "$output")" ]
     TEST_LEGO_VERSION_FAIL=1 expect_status 1 cli --test
-    assert_contains 'Could not check the lego executable.' "$stderr"
+    assert_contains 'Could not check the lego executable (exit 7).' "$stderr"
     expect_status 2 cli --test --list
     expect_status 2 cli --test --only missing
     DNS_RESOLVERS='[:::]:53' expect_status 2 cli --test
