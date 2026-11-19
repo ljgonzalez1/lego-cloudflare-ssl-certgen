@@ -176,6 +176,7 @@ int supervise(int argc, char* argv[]) {
         setpgid(0, 0);
         for (const auto signal_number : forwarded) {
             signal(signal_number, SIG_DFL);
+            sigdelset(&previous, signal_number);
         }
         sigprocmask(SIG_SETMASK, &previous, nullptr);
         // lego logs to stderr and prints advice to stdout; both go to the log file.

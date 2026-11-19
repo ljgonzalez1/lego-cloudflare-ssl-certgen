@@ -284,7 +284,7 @@ class MenuTests(unittest.TestCase):
     def test_wrong_container_user_is_reported_before_prompting(self):
         with TemporaryDirectory() as temp:
             command, env, output, orders = self.fixture(Path(temp))
-            env["TEST_CALLER_UID"] = "2000"
+            env["UID"] = str(os.geteuid() + 1)
             process = subprocess.run(command, env=os.environ | env, input=b"", capture_output=True, timeout=5)
             self.assertEqual(process.returncode, 1, process.stderr)
             self.assertIn(b"The container user must match the configured UID/GID", process.stderr)
@@ -292,7 +292,7 @@ class MenuTests(unittest.TestCase):
             self.assertFalse(list(output.iterdir()))
 
     def test_interrupted_issuance_stops_the_group_and_never_starts_another(self):
-        for interruption in (signal.SIGINT, signal.SIGTERM):
+        for interruption in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
             with self.subTest(interruption=interruption), TemporaryDirectory() as temp:
                 root = Path(temp)
                 command, env, _, orders = self.fixture(root)
@@ -346,11 +346,10 @@ class MenuTests(unittest.TestCase):
         # A legacy deployment setting cannot pick a server.
         orders = root / "orders"
         env = {
-            "TEST_REAL_ISSUANCE_MENU": "1",
             "TEST_LEGO_LOG": str(orders),
             "PRODUCTION": "true",
         }
-        return ["/bin/sh", ENTRY, "--config", str(config), "--output", str(output)], env, output, orders
+        return [ENTRY, "--config", str(config), "--output", str(output)], env, output, orders
 
 
 if __name__ == "__main__":
