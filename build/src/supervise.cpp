@@ -1,28 +1,30 @@
 #include "core.hpp"
+#include "lego_log.hpp"
 #include "lego_view.hpp"
 
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
 
-// Run one lego request under a deadline. lego never gives up on its own in some
-// cases: a 429 response makes it sleep for the whole Retry-After delay, which
-// can be a day. The wrapper kills lego with SIGKILL when Let's Encrypt reports
-// a rate limit or when the deadline passes, so the next certificate can run.
+// Run one certificate request under its own deadline. A confirmed failure
+// shortens the deadline so a long retry or a stalled exit cannot block later groups.
 namespace certgen {
 namespace {
 // Time lego may need besides DNS propagation: account registration, the new
@@ -32,7 +34,8 @@ constexpr std::uint64_t order_seconds = 120;
 // let Let's Encrypt check it. lego then waits up to PROPAGATION_SECONDS.
 constexpr std::uint64_t name_seconds = 60;
 constexpr std::uint64_t maximum_seconds = 2 * 60 * 60;
-constexpr std::string_view rate_limit_marker = "urn:ietf:params:acme:error:rateLimited";
+constexpr double final_log_grace = 0.25;
+constexpr std::size_t max_log_line = 16384;
 volatile sig_atomic_t forwarded_signal = 0;
 
 void remember_signal(int signal_number) {
@@ -71,10 +74,15 @@ void signal_lego(pid_t child, int signal_number) {
         kill(child, signal_number);
     }
 }
+
+bool nonempty_file(const std::string& path) {
+    struct stat info {};
+    return stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode) && info.st_size > 0;
+}
 }
 
 std::uint64_t time_limit(std::uint64_t names, std::uint64_t propagation) {
-    if (names < 1 || names > 100) {
+    if (names < 1 || names > max_certificate_names) {
         throw std::runtime_error("name count must be between 1 and 100");
     }
     if (propagation > 2147483647) {
@@ -90,16 +98,25 @@ void write_time_limit(const char* names, const char* propagation) {
     std::cout << time_limit(read_number(names), read_number(propagation)) << '\n';
 }
 
-// certgen-core supervise [--log FILE] [--view NAME,...] SECONDS COMMAND...
+// certgen-core supervise [--log FILE] [--view NAME,...] [--certificate STEM]
+//                       [--group GROUP] SECONDS COMMAND...
 // --log appends everything lego prints to FILE.
 // --view shows the live view on stdout instead of lego's own output.
+// --certificate requires STEM.crt and STEM.key before reporting success.
 int supervise(int argc, char* argv[]) {
     const char* log_path = nullptr;
     const char* view_names = nullptr;
+    const char* certificate = nullptr;
+    const char* group = nullptr;
     int argument = 0;
-    while (argument + 1 < argc && (std::string_view(argv[argument]) == "--log" ||
-                                   std::string_view(argv[argument]) == "--view")) {
-        (std::string_view(argv[argument]) == "--log" ? log_path : view_names) = argv[argument + 1];
+    constexpr std::string_view options[] = {"--log", "--view", "--certificate", "--group"};
+    const char** values[] = {&log_path, &view_names, &certificate, &group};
+    while (argument + 1 < argc) {
+        const auto option = std::find(std::begin(options), std::end(options), argv[argument]);
+        if (option == std::end(options)) {
+            break;
+        }
+        *values[option - std::begin(options)] = argv[argument + 1];
         argument += 2;
     }
     if (argc - argument < 2) {
@@ -186,14 +203,27 @@ int supervise(int argc, char* argv[]) {
         view->start(now());
     }
     bool timed_out = false;
-    bool rate_limited = false;
     bool killed = false;
     bool pipe_open = true;
-    std::string line;
+    double stop_at = deadline;
+    LegoLog log;
+    std::string pending;
     char buffer[4096];
 
-    // Copy lego's stderr through unchanged and look for a rate-limit error.
-    // Returns false when no data is waiting or the pipe has closed.
+    const auto observe = [&](std::string_view text) {
+        const LegoLine line(text);
+        const bool was_failed = log.failed();
+        log.observe(line);
+        if (!was_failed && log.failed()) {
+            // Give lego a moment to print the remainder of a multiline error and exit normally.
+            stop_at = std::min(deadline, now() + final_log_grace);
+        }
+        if (view) {
+            view->feed(line);
+        }
+    };
+
+    // Keep the original output and parse complete lines even when writes span several reads.
     const auto relay = [&]() {
         const auto count = read(stderr_pipe[0], buffer, sizeof(buffer));
         if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
@@ -207,20 +237,19 @@ int supervise(int argc, char* argv[]) {
         if (log_fd >= 0) {
             write_all(log_fd, buffer, static_cast<std::size_t>(count));
         }
-        if (view) {
-            view->feed(std::string_view(buffer, static_cast<std::size_t>(count)), now());
-        } else {
+        if (!view) {
             write_all(STDERR_FILENO, buffer, static_cast<std::size_t>(count));
         }
-        line.append(buffer, static_cast<std::size_t>(count));
-        if (line.find(rate_limit_marker) != std::string::npos) {
-            rate_limited = true;
-        }
-        const auto newline = line.rfind('\n');
-        if (newline != std::string::npos) {
-            line.erase(0, newline + 1);
-        } else if (line.size() > 65536) {
-            line.erase(0, line.size() - rate_limit_marker.size());
+        std::string_view chunk(buffer, static_cast<std::size_t>(count));
+        while (!chunk.empty()) {
+            const auto newline = chunk.find('\n');
+            pending.append(chunk.substr(0, std::min(newline, max_log_line - pending.size())));
+            if (newline == chunk.npos) {
+                break;
+            }
+            observe(pending);
+            pending.clear();
+            chunk.remove_prefix(newline + 1);
         }
         return true;
     };
@@ -238,13 +267,40 @@ int supervise(int argc, char* argv[]) {
             if (log_fd >= 0) {
                 close(log_fd);
             }
+            if (!pending.empty()) {
+                observe(pending);
+            }
             // 124 matches timeout(1). 75 is EX_TEMPFAIL: retry after the limit resets.
-            const int result = timed_out      ? 124
-                               : rate_limited ? 75
-                               : WIFEXITED(status) ? WEXITSTATUS(status)
-                                                   : 128 + WTERMSIG(status);
+            int result = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+            std::string failure;
+            if (timed_out && !log.failed()) {
+                result = 124;
+                failure = "lego did not finish within " + std::to_string(limit) + "s and was stopped with SIGKILL.";
+            } else if (log.failed() || result != 0) {
+                if (log.rate_limited()) {
+                    result = 75;
+                } else if (result == 0) {
+                    result = 1;
+                }
+                failure = log.diagnostic(result);
+                if (killed) {
+                    failure += " (lego stopped)";
+                }
+            } else if (certificate && (!nonempty_file(std::string(certificate) + ".crt") ||
+                                       !nonempty_file(std::string(certificate) + ".key"))) {
+                result = 1;
+                failure = "lego finished, but no certificate and key pair was saved.";
+            }
+            if (!failure.empty() && group) {
+                failure.insert(0, std::string(group) + ": ");
+            }
             if (view) {
-                view->finish(result, timed_out ? 124 : rate_limited ? 75 : 0, now());
+                view->finish(failure, now());
+            } else if (!failure.empty()) {
+                const bool color = isatty(STDERR_FILENO);
+                const std::string error = (color ? "\033[1;31m" : "") + std::string("❌ ") + failure +
+                                          (color ? "\033[0m\n" : "\n");
+                write_all(STDERR_FILENO, error.data(), error.size());
             }
             return result;
         }
@@ -253,11 +309,9 @@ int supervise(int argc, char* argv[]) {
             signal_lego(child, forwarded_signal);
             forwarded_signal = 0;
         }
-        const double remaining = deadline - now();
+        const double remaining = stop_at - now();
         if (!killed && remaining <= 0) {
-            timed_out = true;
-        }
-        if (!killed && (timed_out || rate_limited)) {
+            timed_out = !log.failed();
             signal_lego(child, SIGKILL);
             killed = true;
         }

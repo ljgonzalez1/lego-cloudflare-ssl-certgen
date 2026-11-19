@@ -20,9 +20,10 @@ std::size_t read_number(std::string_view text) {
 int main(int argc, char* argv[]) {
     const std::string_view command = argc > 1 ? argv[1] : "";
     const bool domains = command == "domains" && argc >= 3;
+    const int config = domains && argc >= 4 && std::string_view(argv[2]) == "--issue" ? 3 : 2;
     try {
         if (domains) {
-            certgen::write_domains(argc - 2, argv + 2);
+            certgen::write_domains(argc - config, argv + config, config == 3);
         } else if (command == "summary" && argc == 2) {
             certgen::write_summary();
         } else if (command == "identity" && argc == 2) {
@@ -37,10 +38,11 @@ int main(int argc, char* argv[]) {
         } else if (command == "output-path" && argc == 5) {
             certgen::write_output_path(argv[2], argv[3], argv[4]);
         } else {
-            std::cerr << "Usage: certgen-core domains FILE [GROUP...] | summary | identity"
+            std::cerr << "Usage: certgen-core domains [--issue] FILE [GROUP...] | summary | identity"
                          " | own-output PATH UID GID | output-path ACTION DIRECTORY GROUP"
                          " | time-limit NAMES PROPAGATION_SECONDS"
-                         " | supervise [--log FILE] [--view NAME,...] SECONDS COMMAND...\n";
+                         " | supervise [--log FILE] [--view NAME,...] [--certificate STEM]"
+                         " [--group GROUP] SECONDS COMMAND...\n";
             return 2;
         }
         std::cout.flush();
@@ -49,7 +51,7 @@ int main(int argc, char* argv[]) {
         }
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "Error in " << (domains ? std::string_view(argv[2]) : command)
+        std::cerr << "Error in " << (domains ? std::string_view(argv[config]) : command)
                   << ": " << error.what() << '\n';
         return 2;
     }

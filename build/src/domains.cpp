@@ -277,9 +277,6 @@ private:
             anchor = yaml_string(parser_.event().data.sequence_start.anchor);
             parser_.next();
             while (parser_.event().type != YAML_SEQUENCE_END_EVENT) {
-                if (values.size() == 100) {
-                    throw std::runtime_error(group + ": identifiers exceed the 100-name limit");
-                }
                 values.push_back(scalar(group + ": invalid DNS name: expected a string"));
             }
             parser_.next();
@@ -311,13 +308,20 @@ bool valid_group(std::string_view name) {
            });
 }
 
-void write_domains(int argc, char* argv[]) {
+void write_domains(int argc, char* argv[], bool for_issuance) {
     const auto close_file = [](FILE* handle) { std::fclose(handle); };
     const std::unique_ptr<FILE, decltype(close_file)> file(std::fopen(argv[0], "rb"), close_file);
     if (!file) {
         throw std::runtime_error("could not open configuration");
     }
     auto groups = Configuration(file.get()).read();
+    if (!for_issuance) {
+        for (const auto& group : groups) {
+            if (group.domains.size() > max_certificate_names) {
+                throw std::runtime_error(group.name + ": identifiers exceed the 100-name limit");
+            }
+        }
+    }
     const std::set<std::string_view> selected(argv + 1, argv + argc);
     std::string unknown;
     std::set<std::string_view> reported;
@@ -338,6 +342,11 @@ void write_domains(int argc, char* argv[]) {
     for (const auto& group : groups) {
         if (selected.empty() || selected.count(group.name)) {
             std::cout << group.name << '\t';
+            if (group.domains.size() > max_certificate_names) {
+                // Report the rejected group's size without forwarding the names to lego.
+                std::cout << "-\t" << group.domains.size() << '\n';
+                continue;
+            }
             const char* separator = "";
             for (const auto& domain : group.domains) {
                 std::cout << separator << lowercase(domain.value);
