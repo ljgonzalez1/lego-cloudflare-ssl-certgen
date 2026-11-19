@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG ALPINE_VERSION=3.24.4
-ARG APP_VERSION=5.1.3
+ARG APP_VERSION=5.1.4
 ARG LEGO_VERSION=v4.34.0
 
 # Download and verify the official binary on the builder's native architecture.
@@ -82,7 +82,7 @@ COPY --chmod=755 entrypoint.sh validate_env.sh run_lego.sh /usr/local/bin/
 WORKDIR /app
 
 # Fail the build if the shell or either executable cannot run on this platform.
-RUN --mount=type=tmpfs,target=/tmp set -eu \
+RUN --network=none --mount=type=tmpfs,target=/tmp set -eu \
  && test -L /bin/sh && test /bin/sh -ef /usr/bin/dash \
  && for tool in busybox ash bash python python3 cpp c++ curl apk; do \
         if command -v "$tool" >/dev/null; then printf 'Unexpected runtime program: %s\n' "$tool" >&2; exit 1; fi; \
@@ -95,11 +95,24 @@ RUN --mount=type=tmpfs,target=/tmp set -eu \
  && lego_version="$(su-exec 1000:1000 lego --version)" \
  && printf '%s (%s/%s)\n' "$lego_version" "$TARGETARCH" "$TARGETVARIANT" \
  && test "$lego_version" = "lego version ${LEGO_VERSION#v} linux/${TARGETARCH}" \
+ && test "$(su-exec 1000:1000 certgen-core identity)" = '1000:1000' \
  && smoke_config=/tmp/smoke-domains.yaml \
  && umask 022 \
  && printf 'smoke:\n  - ipv4.example.test\n  - ipv6.example.test\n  - alias.example.test\n  - "*.alias.example.test"\n  - planned.example.test\n' > "$smoke_config" \
- && plan="$(TZ=America/Santiago entrypoint.sh --config "$smoke_config" --test)" \
+ && plan="$(TZ=America/Santiago entrypoint.sh --config "$smoke_config" --output /tmp/no-orders --test)" \
  && case "$plan" in *'Offline test passed.'*) ;; *) printf '%s\n' "$plan" >&2; exit 1 ;; esac \
+ && test ! -e /tmp/no-orders \
+ && expect_rejection() { \
+        if message=$("$@" </dev/null 2>&1); then \
+            printf 'Unexpected success: %s\n' "$*" >&2; return 1; \
+        else \
+            status=$?; \
+            if [ "$status" -ne 2 ]; then printf '%s\n' "$message" >&2; return 1; fi; \
+        fi; \
+    } \
+ && expect_rejection entrypoint.sh --config "$smoke_config" \
+ && printf 'bad: ["not a DNS name"]\n' > /tmp/invalid-domains.yaml \
+ && expect_rejection entrypoint.sh --config /tmp/invalid-domains.yaml --test \
  && printf 'smoke\t5\t0\n' | certgen-core summary >/dev/null
 
 VOLUME ["/ssl-certs"]

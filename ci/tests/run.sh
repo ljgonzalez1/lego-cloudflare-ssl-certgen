@@ -145,6 +145,7 @@ set -eu
 while [ "$#" -gt 1 ]; do
     case "$1" in
         -o) output=$2; shift ;;
+        --connect-timeout|--max-time) shift ;;
         -fsSL|--retry|3) ;;
         *) exit 90 ;;
     esac
@@ -1041,6 +1042,23 @@ archive_override() {
     [ "$(wc -l < "$TEST_CURL_LOG")" -eq 1 ]
 }
 
+archive_unsafe_payload() {
+    TARGETARCH=amd64 LEGO_TARBALL=../lego.tar.gz expect_status 2 /bin/sh "$download" "$work/downloaded"
+    assert_contains 'LEGO_TARBALL must be a release archive filename' "$stderr"
+    [ ! -s "$TEST_CURL_LOG" ]
+
+    mkdir "$work/unsafe"
+    printf 'fixture license\n' > "$work/unsafe/LICENSE"
+    ln -s LICENSE "$work/unsafe/lego"
+    name=unsafe.tar.gz
+    tar -czf "$TEST_FIXTURES/$name" -C "$work/unsafe" lego LICENSE
+    sha=$(sha256sum -- "$TEST_FIXTURES/$name")
+    TARGETARCH=amd64 LEGO_SHA256="${sha%% *}" LEGO_URL="https://example.test/$name" \
+        expect_status 1 /bin/sh "$download" "$work/downloaded"
+    assert_contains 'nonempty regular lego file' "$stderr"
+    [ ! -e "$work/downloaded" ]
+}
+
 count=0
 failed=0
 skipped=0
@@ -1127,6 +1145,7 @@ check 'Official ARM64 release asset' test_download arm64 v8 arm64
 check 'Unsupported architectures fail before network requests' unsupported_targets
 check 'Malformed, missing and mismatching checksums' archive_checksum_failures
 check 'Explicit checksum and custom archive URL' archive_override
+check 'Downloader rejects unsafe filenames and symlink payloads' archive_unsafe_payload
 check 'Third-party license texts and NOTICE for the image' core_license_notices
 printf '%s passed, %s failed, %s skipped\n' "$((count - failed))" "$failed" "$skipped"
 [ "$failed" -eq 0 ]
