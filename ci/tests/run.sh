@@ -286,11 +286,12 @@ yaml_bad_groups() {
 
 yaml_bad_names() {
     for name in 'www.*.example.com' '*.*.example.com' 'single' '127.0.0.1' \
-        'a.-example.com' 'a..com' 'a.example.com.' 'exa_mple.com' '-a.com' \
+        'a.-example.com' 'a..com' 'a.example.com..' 'exa_mple.com' '-a.com' \
         'a.example.com/path' 'café.example.com' 'a.example.com,extra' 'a.example.com --debug'; do
         invalid_yaml "first: ['$name']" 'invalid DNS name'
     done
     invalid_yaml 'first: [example.com, EXAMPLE.COM]' 'duplicate DNS name'
+    invalid_yaml 'first: [example.com, EXAMPLE.COM.]' 'duplicate DNS name'
     invalid_yaml 'first: [true]' 'invalid DNS name'
     invalid_yaml 'first: [1.0e-2]' 'invalid DNS name'
     invalid_yaml 'first: [!!int 111]' 'unexpected YAML type'
@@ -372,6 +373,25 @@ cli_mode_overrides() {
     assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
     PRODUCTION=invalid expect_status 0 cli --dry-run --production
     assert_contains 'https://acme-v02.api.letsencrypt.org/directory' "$stdout"
+}
+
+cli_configuration_edges() {
+    printf "multi: [Example.COM., example.net, '*.Example.ORG.']\n" > "$file"
+    EMAIL=ops+cert@example.org DNS_RESOLVERS=' 1.1.1.1:53 , [::1]:53 ' expect_status 0 cli
+    assert_line 'example.com' "$TEST_LEGO_LOG"
+    assert_line 'example.net' "$TEST_LEGO_LOG"
+    assert_line '*.example.org' "$TEST_LEGO_LOG"
+    assert_line '[::1]:53' "$TEST_LEGO_LOG"
+    [ "$(grep -c '^order$' "$TEST_LEGO_LOG")" -eq 1 ]
+
+    for resolver in '1.1. 1.1:53' '[:::]:53' '1.1.1.256:53' '1.1.1.1:53, ' ',1.1.1.1:53'; do
+        DNS_RESOLVERS="$resolver" expect_status 2 cli --dry-run
+        assert_contains 'DNS_RESOLVERS:' "$stderr"
+    done
+    for email in 'ops@a..org' 'ops@example.org/' 'ops@-example.org'; do
+        EMAIL="$email" expect_status 2 cli --dry-run
+        assert_contains 'EMAIL:' "$stderr"
+    done
 }
 
 cli_identities() {
@@ -1036,6 +1056,7 @@ check 'Help works before environment validation' cli_help
 check 'Conflicting and missing CLI arguments' cli_argument_errors
 check 'List and dry-run preview without credentials' cli_listing_and_preview
 check 'CLI staging/production overrides' cli_mode_overrides
+check 'Cross-zone names, DNS root dots and malformed contact or resolver input' cli_configuration_edges
 check 'Identity validation and privilege-drop command' cli_identities
 check 'Validate all YAML before any issue request' cli_yaml_before_issue
 check 'A, AAAA, CNAME, wildcard and planned names all use DNS-01' cli_dns_types

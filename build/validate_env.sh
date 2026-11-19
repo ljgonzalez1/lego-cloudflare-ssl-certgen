@@ -45,9 +45,12 @@ validate_identity() {
 
 valid_email() {
     case "$1" in
-        *[[:space:]]*|@*|*@*@*) return 1 ;;
-        *@?*.?*) return 0 ;;
+        *[[:space:][:cntrl:]]*|@*|*@*@*) return 1 ;;
+        *@?*.?*) ;;
         *) return 1 ;;
+    esac
+    case "${1#*@}" in
+        .*|*.|*..*|*-.*|*.-*|-*|*-|*[!a-zA-Z0-9.-]*) return 1 ;;
     esac
 }
 
@@ -60,11 +63,11 @@ valid_resolver() (
         \[*\])
             address=${host#\[}
             address=${address%\]}
-            case "$address" in
-                ''|*[!0123456789abcdefABCDEF:.]*) return 1 ;;
-            esac
+            certgen-core resolver-address 6 "$address" || return 1
             ;;
         ''|*[!a-zA-Z0-9_.-]*) return 1 ;;
+        *[!0123456789.]*) ;;
+        *.*) certgen-core resolver-address 4 "$host" || return 1 ;;
     esac
     port=$(parse_uint "$port" 5 65535) && [ "$port" -gt 0 ]
 )
@@ -132,26 +135,20 @@ validate_env() {
 
     resolvers=${DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53,1.0.0.1:53}
     VALIDATED_DNS_RESOLVERS=
-    while [ "${resolvers#* }" != "$resolvers" ]; do
-        VALIDATED_DNS_RESOLVERS=$VALIDATED_DNS_RESOLVERS${resolvers%% *}
-        resolvers=${resolvers#* }
+    while :; do
+        resolver=${resolvers%%,*}
+        resolver=${resolver#"${resolver%%[![:space:]]*}"}
+        resolver=${resolver%"${resolver##*[![:space:]]}"}
+        if ! valid_resolver "$resolver"; then
+            invalid_setting "DNS_RESOLVERS: expected comma-separated host:port entries (use brackets for IPv6)."
+            break
+        fi
+        VALIDATED_DNS_RESOLVERS=${VALIDATED_DNS_RESOLVERS:+$VALIDATED_DNS_RESOLVERS,}$resolver
+        case "$resolvers" in
+            *,*) resolvers=${resolvers#*,} ;;
+            *) break ;;
+        esac
     done
-    VALIDATED_DNS_RESOLVERS=$VALIDATED_DNS_RESOLVERS$resolvers
-    case "$VALIDATED_DNS_RESOLVERS" in
-        ''|,*|*,|*,,*|*[[:space:]]*)
-            invalid_setting "DNS_RESOLVERS: expected comma-separated host:port entries."
-            ;;
-        *)
-            saved_ifs=$IFS
-            IFS=,
-            for resolver in $VALIDATED_DNS_RESOLVERS; do
-                if ! valid_resolver "$resolver"; then
-                    invalid_setting "DNS_RESOLVERS: invalid resolver '$resolver'."
-                fi
-            done
-            IFS=$saved_ifs
-            ;;
-    esac
     return "$settings_status"
 }
 
