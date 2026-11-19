@@ -134,11 +134,11 @@ void grid(const std::vector<Row>& rows, std::size_t columns, bool color) {
 }
 }
 
-void write_summary() {
+void write_summary(std::istream& input) {
     std::vector<Row> rows;
     std::array<std::size_t, 3> certificates{};
     Counts totals{};
-    for (std::string line; std::getline(std::cin, line);) {
+    for (std::string line; std::getline(input, line);) {
         const std::string_view fields(line);
         const auto first = fields.find('\t');
         const auto second = fields.find('\t', first == fields.npos ? first : first + 1);
@@ -160,7 +160,7 @@ void write_summary() {
         }
         rows.push_back(std::move(row));
     }
-    if (std::cin.bad()) {
+    if (input.bad()) {
         throw std::runtime_error("could not read report input");
     }
     rows.push_back({"TOTAL", std::to_string(totals[0]), std::to_string(totals[1]),

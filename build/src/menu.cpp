@@ -364,7 +364,7 @@ std::string_view select_mode(bool ansi) {
 }
 }
 
-int issuance_menu() {
+int issuance_menu(std::ostream& output) {
     if (!isatty(STDIN_FILENO) || !isatty(STDERR_FILENO)) {
         std::cerr << "The issuance menu needs a terminal. Use docker run -it, --test for offline checks, "
                      "or an explicit mode for unattended issuance.\n";
@@ -380,7 +380,7 @@ int issuance_menu() {
         std::cerr << "Certificate issuance cancelled.\n";
         return 128 + interrupted;
     }
-    std::cout << result << '\n';
-    return std::cout ? 0 : 2;
+    output << result << '\n';
+    return output ? 0 : 2;
 }
 }

@@ -77,7 +77,7 @@ void set_output_owner(const char* path, const char* uid, const char* gid) {
     }
 }
 
-void write_output_path(const char* mode, const char* root, const char* group) {
+std::string make_output_path(const char* mode, const char* root, const char* group) {
     const std::string_view action(mode);
     if ((action != "issue" && action != "dry-run") || !valid_group(group)) {
         throw std::runtime_error("invalid output path request");
@@ -94,6 +94,10 @@ void write_output_path(const char* mode, const char* root, const char* group) {
     if (action == "issue" && mkdir(target.c_str(), 0700) != 0) {
         os_error("Cannot create certificate folder: " + target.string());
     }
-    std::cout << target.string() << '\n';
+    return target.string();
+}
+
+void write_output_path(const char* mode, const char* root, const char* group) {
+    std::cout << make_output_path(mode, root, group) << '\n';
 }
 }
