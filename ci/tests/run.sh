@@ -1075,7 +1075,7 @@ check 'Help works before environment validation' cli_help
 check 'Conflicting and missing CLI arguments' cli_argument_errors
 check 'List and dry-run preview without credentials' cli_listing_and_preview
 menu_in_terminal() {
-    python3 "$root/ci/tests/menu.py" "$CERTGEN_TEST_CORE"
+    python3 "$root/ci/tests/menu.py" "$CERTGEN_TEST_CORE" "$entry"
 }
 
 check 'Interactive issuance menu in a pseudo-terminal' menu_in_terminal
