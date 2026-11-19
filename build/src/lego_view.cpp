@@ -1,4 +1,5 @@
 #include "lego_view.hpp"
+#include "lego_log.hpp"
 
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -105,22 +106,6 @@ std::string duration(double seconds) {
     const auto total = static_cast<unsigned long>(seconds < 0 ? 0 : seconds + 0.5);
     return total < 60 ? std::to_string(total) + "s"
                       : std::to_string(total / 60) + "m" + std::to_string(total % 60) + "s";
-}
-
-bool starts_with(std::string_view text, std::string_view prefix) {
-    return text.substr(0, prefix.size()) == prefix;
-}
-
-bool timestamped(std::string_view line) {
-    if (line.size() < 20) {
-        return false;
-    }
-    for (const auto position : {4, 7}) {
-        if (line[position] != '/') {
-            return false;
-        }
-    }
-    return line[10] == ' ' && line[13] == ':' && line[16] == ':' && line[19] == ' ';
 }
 
 void add_once(std::vector<std::string>& list, std::string text) {
@@ -257,7 +242,7 @@ void LegoView::tick(double now) {
 
 void LegoView::set(std::size_t index, State state, std::string label, double now) {
     auto& name = names_[index];
-    if (name.state == State::verified || (name.state == State::failed && state != State::failed)) {
+    if ((name.state == State::verified || name.state == State::failed) && state != State::failed) {
         return;
     }
     if (state == State::active && name.state != State::active) {
@@ -282,64 +267,39 @@ void LegoView::set(std::size_t index, State state, std::string label, double now
     }
 }
 
-void LegoView::feed(std::string_view text, double now) {
-    pending_.append(text);
-    std::size_t newline;
-    while ((newline = pending_.find('\n')) != std::string::npos) {
-        const auto current = pending_.substr(0, newline);
-        pending_.erase(0, newline + 1);
-        line(current, now);
+void LegoView::feed(const LegoLine& line) {
+    if (!line.timestamp.empty()) {
+        // Durations come from lego's timestamps, which stay exact when output is delayed.
+        const auto text = line.timestamp;
+        const auto digits = [&](std::size_t at) { return (text[at] - '0') * 10 + (text[at + 1] - '0'); };
+        const double raw = digits(11) * 3600.0 + digits(14) * 60.0 + digits(17);
+        // Only a jump back of more than 12 hours is midnight. Small steps back are clock noise.
+        if (last_raw_stamp_ >= 0 && raw + 43200 < last_raw_stamp_) {
+            day_offset_ += 86400;
+        }
+        last_raw_stamp_ = raw;
+        stamp_ = raw + day_offset_;
+        if (first_stamp_ < 0) {
+            first_stamp_ = stamp_;
+        }
     }
-    draw_footer(now);
-}
-
-void LegoView::line(std::string_view text, double now) {
-    if (!text.empty() && text.back() == '\r') {
-        text.remove_suffix(1);
+    if (line.fatal_header()) {
+        in_error_ = true;
+        activity_ = "certificate request failed";
+        return;
     }
-    if (!timestamped(text)) {
+    if (line.domain_failure() || line.timestamp.empty()) {
         // Continuation lines of a fatal error. Anything else without a
         // timestamp is lego's advice text on stdout, kept in the log file only.
-        if (in_error_) {
-            error_line(text);
+        if (in_error_ || line.domain_failure()) {
+            error_line(line.message);
         }
         return;
     }
-    // Durations come from lego's timestamps, which stay exact when output is delayed.
-    const auto digits = [&](std::size_t at) { return (text[at] - '0') * 10 + (text[at + 1] - '0'); };
-    const double raw = digits(11) * 3600.0 + digits(14) * 60.0 + digits(17);
-    // Only a jump back of more than 12 hours is midnight; small steps back are clock noise.
-    if (last_raw_stamp_ >= 0 && raw + 43200 < last_raw_stamp_) {
-        day_offset_ += 86400;
-    }
-    last_raw_stamp_ = raw;
-    stamp_ = raw + day_offset_;
-    if (first_stamp_ < 0) {
-        first_stamp_ = stamp_;
-    }
-    now = stamp_;
-
-    auto message = text.substr(20);
-    bool warning = false;
-    if (starts_with(message, "[INFO] ")) {
-        message.remove_prefix(7);
-    } else if (starts_with(message, "[WARN] ")) {
-        message.remove_prefix(7);
-        warning = true;
-    }
-
-    if (starts_with(message, "Could not ")) {
-        in_error_ = true;
-        const auto colon = message.find(':');
-        if (colon != std::string_view::npos && colon + 1 < message.size()) {
-            add_once(errors_, std::string(message));
-        }
-        return;
-    }
+    const auto now = stamp_;
+    const auto message = line.message;
     if (starts_with(message, "retry: ")) {
-        add_once(errors_, std::string(message.substr(7)));
-        activity_ = message.find("rateLimited") != std::string_view::npos ? "Let's Encrypt rate limit reached"
-                                                                            : "retrying a request";
+        activity_ = "retrying an ACME request";
         return;
     }
     // Messages about the whole order. lego names every domain in brackets.
@@ -352,8 +312,7 @@ void LegoView::line(std::string_view text, double now) {
         return;
     }
     if (message.find("Server responded with a certificate") != std::string_view::npos) {
-        issued_ = true;
-        activity_ = "certificate received";
+        activity_ = "saving the certificate";
         return;
     }
     if (starts_with(message, "[")) {
@@ -382,20 +341,16 @@ void LegoView::line(std::string_view text, double now) {
             set(current_, State::active, "waiting for DNS propagation (up to " + std::string(limit) + ")", now);
         }
     } else if (starts_with(message, "Deactivating auth: ")) {
-        const auto found = authorizations_.find(std::string(message.substr(19)));
-        if (found != authorizations_.end() && names_[found->second].state != State::verified) {
-            set(found->second, State::failed, "not verified", now);
-        }
+        activity_ = "closing ACME authorizations";
     } else if (starts_with(message, "sequence: wait for")) {
         activity_ = "waiting before the next challenge";
-    } else if (warning || starts_with(message, "cloudflare: failed")) {
-        add_once(warnings_, std::string(message));
+    } else if (line.level == LegoLine::Level::warning || starts_with(message, "cloudflare: failed")) {
+        add_once(warnings_, short_log_text(message));
     }
 }
 
 void LegoView::domain_event(std::size_t index, std::string_view message, double now) {
     if (starts_with(message, "AuthURL: ")) {
-        authorizations_[std::string(message.substr(9))] = index;
         activity_ = "loading authorizations";
     } else if (starts_with(message, "acme: authorization already valid")) {
         set(index, State::verified, "already verified", now);
@@ -415,17 +370,11 @@ void LegoView::domain_event(std::size_t index, std::string_view message, double 
     } else if (starts_with(message, "acme: Cleaning DNS-01 challenge")) {
         activity_ = "removing TXT records";
     } else if (starts_with(message, "acme: cleaning up failed: ")) {
-        names_[index].cleanup = std::string(message.substr(26));
-        while (!names_[index].cleanup.empty() && names_[index].cleanup.back() == ' ') {
-            names_[index].cleanup.pop_back();
-        }
+        names_[index].cleanup = short_log_text(message.substr(26));
     }
 }
 
 void LegoView::error_line(std::string_view text) {
-    while (!text.empty() && (text.front() == '\t' || text.front() == ' ')) {
-        text.remove_prefix(1);
-    }
     if (text.empty() || starts_with(text, "error: one or more domains had a problem")) {
         return;
     }
@@ -454,92 +403,86 @@ void LegoView::error_line(std::string_view text) {
         }
     }
     if (index == npos) {
-        add_once(errors_, std::string(text));
         return;
     }
-    names_[index].reason = std::string(text);
+    names_[index].reason = short_log_text(text);
     if (starts_with(text, "acme: ")) {
         text.remove_prefix(6);
     }
-    set(index, State::failed, std::string(text), stamp_);
+    set(index, State::failed, short_log_text(text), stamp_);
 }
 
-void LegoView::finish(int status, int reason, double now) {
-    if (!pending_.empty()) {
-        const auto rest = pending_;
-        pending_.clear();
-        line(rest, now);
-    }
-    const bool success = status == 0 && reason == 0;
+void LegoView::finish(std::string_view failure, double now) {
+    const bool success = failure.empty();
+    const auto verified_names = verified();
     std::size_t rows = 0;
     std::size_t columns = 0;
     terminal_size(fd_, rows, columns);
 
-    // No certificate covers a name that did not finish, so it counts as failed.
+    // Cleanup warnings for verified names remain relevant even if the order failed.
+    for (const auto& name : names_) {
+        if (!name.cleanup.empty() && name.state == State::verified) {
+            add_once(warnings_, name.value + ": TXT record not removed: " + name.cleanup);
+        }
+    }
+
+    // DNS validation can succeed for individual names, but the certificate covers the whole order.
     if (!success) {
-        const std::string label = reason == 124  ? "stopped by the time limit"
-                                  : reason == 75 ? "stopped by the rate limit"
-                                                 : "not verified";
         for (std::size_t index = 0; index < names_.size(); ++index) {
-            const auto state = names_[index].state;
-            if (state == State::waiting || state == State::active) {
-                set(index, State::failed, label, now);
+            const auto& name = names_[index];
+            if (name.state == State::verified) {
+                set(index, State::failed, "DNS " + name.label + ", certificate failed", now);
+            } else if (name.reason.empty()) {
+                set(index, State::failed, "certificate failed", now);
             }
         }
     }
-    std::vector<std::size_t> failed;
-    for (std::size_t index = 0; index < names_.size(); ++index) {
-        if (names_[index].state == State::failed) {
-            failed.push_back(index);
-        }
-    }
-    if (!list_) {
+    if (!success && !list_) {
         // Compact view: failed names appear once, here. Long runs of names
         // stopped for the same reason collapse into one line.
         std::string text;
         std::size_t collapsed = 0;
-        std::string collapsed_label;
-        for (const auto index : failed) {
-            if (failed.size() > 10 && names_[index].reason.empty()) {
+        for (const auto& name : names_) {
+            if (names_.size() > 10 && name.label == "certificate failed") {
                 ++collapsed;
-                collapsed_label = names_[index].label;
             } else {
-                text += clear_line + render(names_[index], columns) + '\n';
+                text += clear_line + render(name, columns) + '\n';
             }
         }
         if (collapsed > 0) {
-            text += clear_line + fit(std::string(red) + "❌ " + std::to_string(collapsed) + " names " +
-                                         collapsed_label, columns - 1) + '\n';
+            text += clear_line + fit(std::string(red) + "❌ " + std::to_string(collapsed) +
+                                         " names in the failed certificate", columns - 1) + '\n';
         }
         emit(text);
     }
 
     const auto total = std::to_string(names_.size());
-    const auto ok = std::to_string(verified());
+    const auto ok = std::to_string(verified_names);
     // lego's own timestamps cover the run exactly, even when its output was buffered.
     const double lego_span = first_stamp_ < 0 ? 0 : stamp_ - first_stamp_;
     const auto elapsed = duration(std::max(now - started_, lego_span));
     const std::string result =
         success ? std::string(bold) + green + "✅ Certificate received · " + ok + '/' + total +
                       " names verified · " + elapsed
-                : std::string(bold) + red + "❌ No certificate · " + ok + '/' + total + " names verified · " +
-                      std::to_string(failed.size()) + " failed · " + elapsed;
+                : std::string(bold) + red + "❌ No certificate | " + ok + '/' + total +
+                      " DNS verified | " + total + " failed | " + elapsed;
     std::string text = clear_line + fit(result, columns - 1) + '\n';
+    if (!success) {
+        text += std::string(red) + "   " + std::string(failure) + reset + '\n';
+    }
 
     // Details stay below the live view as normal lines, so they may wrap.
+    std::size_t details = 0;
     for (const auto& name : names_) {
         if (!name.reason.empty()) {
-            text += std::string(red) + "   " + name.value + ": " + name.reason + reset + '\n';
+            if (details < 5) {
+                text += std::string(red) + "   " + name.value + ": " + name.reason + reset + '\n';
+            }
+            ++details;
         }
     }
-    for (const auto& error : errors_) {
-        text += std::string(red) + "   " + error + reset + '\n';
-    }
-    // A failed cleanup matters only for verified names: their TXT record stays in Cloudflare.
-    for (const auto& name : names_) {
-        if (!name.cleanup.empty() && name.state == State::verified) {
-            add_once(warnings_, name.value + ": TXT record not removed: " + name.cleanup);
-        }
+    if (details > 5) {
+        text += "   " + std::to_string(details - 5) + " more DNS errors in lego.log\n";
     }
     for (std::size_t index = 0; index < warnings_.size() && index < 5; ++index) {
         text += std::string(yellow) + "   ⚠️  " + warnings_[index] + reset + '\n';

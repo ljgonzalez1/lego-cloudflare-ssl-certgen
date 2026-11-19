@@ -5,22 +5,8 @@ source ci/versions.sh
 read_versions
 
 repository=ljgonzalez/lego-cloudflare-certgen
-release_image="$repository:v${APP_VERSION}"
-app_minor=${APP_VERSION%.*}
-app_major=${APP_VERSION%%.*}
-lego_minor=${LEGO_VERSION%.*}
-alpine_minor=${ALPINE_VERSION%.*}
-tags=(
-    "$repository:alpine${ALPINE_VERSION}-lego${LEGO_VERSION}-v${APP_VERSION}"
-    "$repository:alpine${alpine_minor}-lego${lego_minor}-v${APP_VERSION}"
-    "$repository:alpine${alpine_minor}-lego${lego_minor}-v${app_minor}"
-    "$repository:lego${LEGO_VERSION}-v${APP_VERSION}"
-    "$repository:lego${lego_minor}-v${APP_VERSION}"
-    "$release_image"
-    "$repository:v${app_minor}"
-    "$repository:v${app_major}"
-    "$repository:latest"
-)
+tags=()
+for tag in "${release_tags[@]}"; do tags+=("$repository:$tag"); done
 
 if [[ ${1:-} == --print-tags ]]; then
     printf '%s\n' "${tags[@]}"
@@ -66,22 +52,24 @@ builder_created=true
 docker buildx inspect "$builder" --bootstrap
 
 platforms=linux/arm/v6,linux/arm/v7,linux/arm64,linux/386,linux/amd64
+printf 'Building release %s for %s\n' "$APP_TAG" "$platforms"
 docker buildx build --builder "$builder" --platform "$platforms" --progress=plain \
-    "${version_build_args[@]}" --metadata-file "$work/image.json" --tag "${tags[0]}" --push ./build
+    "${version_build_args[@]}" --metadata-file "$work/build-metadata.json" --tag "${tags[0]}" --push ./build
 
-digest=$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$work/image.json")
+digest=$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$work/build-metadata.json")
 image="$repository@$digest"
-docker buildx imagetools inspect --raw "$image" | jq -e '[.manifests[] | .platform]' |
-    jq -e -f ci/image-platforms.jq >/dev/null
+printf 'Reading platform hashes from immutable build index %s\n' "$image"
+docker buildx imagetools inspect --raw "$image" > "$work/build-index.json"
+python3 -B ci/publish_result.py collect "$work/build-metadata.json" "$work/build-index.json" "$work/result.json"
 
 # Attach each alias to the same immutable index. The last registry write is latest.
 for tag in "${tags[@]:1}"; do
+    printf 'Publishing alias %s at %s\n' "$tag" "$digest"
     docker buildx imagetools create --tag "$tag" "$image"
 done
 
 if [[ -n ${PUBLISH_RESULT_FILE:-} ]]; then
-    jq -n --arg image "$release_image" --arg digest "$digest" \
-        '{image: $image, digest: $digest}' > "$PUBLISH_RESULT_FILE"
+    cp -- "$work/result.json" "$PUBLISH_RESULT_FILE"
 fi
 
 printf 'Published image index %s\n' "$image"
