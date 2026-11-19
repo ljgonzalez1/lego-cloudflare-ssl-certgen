@@ -30,6 +30,8 @@ int main(int argc, char* argv[]) {
             certgen::write_summary();
         } else if (command == "identity" && argc == 2) {
             certgen::write_identity();
+        } else if (command == "issuance-menu" && argc == 2) {
+            return certgen::issuance_menu();
         } else if (command == "resolver-address" && argc == 4) {
             const std::string_view family(argv[2]);
             if (family != "4" && family != "6") {
