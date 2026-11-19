@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG ALPINE_VERSION=3.24.4
-ARG APP_VERSION=5.0.1
+ARG APP_VERSION=5.1.0
 ARG LEGO_VERSION=v4.34.0
 
 # Download and verify the official binary on the builder's native architecture.
@@ -68,7 +68,6 @@ LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
 
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=Etc/UTC \
-    PRODUCTION=false \
     PROPAGATION_SECONDS=360 \
     DNS_RESOLVERS="1.1.1.1:53,8.8.8.8:53,1.0.0.1:53" \
     ACCEPT_LEGO_TOS=false \
@@ -99,9 +98,8 @@ RUN --mount=type=tmpfs,target=/tmp set -eu \
  && smoke_config=/tmp/smoke-domains.yaml \
  && umask 022 \
  && printf 'smoke:\n  - ipv4.example.test\n  - ipv6.example.test\n  - alias.example.test\n  - "*.alias.example.test"\n  - planned.example.test\n' > "$smoke_config" \
- && groups="$(entrypoint.sh --config "$smoke_config" --list)" \
- && test "$groups" = "smoke: 5 domains" \
- && TZ=America/Santiago entrypoint.sh --config "$smoke_config" --dry-run >/dev/null \
+ && plan="$(TZ=America/Santiago entrypoint.sh --config "$smoke_config" --test)" \
+ && case "$plan" in *'Offline test passed.'*) ;; *) printf '%s\n' "$plan" >&2; exit 1 ;; esac \
  && printf 'smoke\t5\t0\n' | certgen-core summary >/dev/null
 
 VOLUME ["/ssl-certs"]

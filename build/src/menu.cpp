@@ -249,14 +249,14 @@ int confirm(bool ansi, bool production) {
 
 std::string_view select_mode(bool ansi) {
     for (;;) {
-        const auto selected = choose(ansi, "Issue production certificates?",
+        const auto selected = choose(ansi, "Choose an issuance environment",
                                      {"Production issues browser-trusted certificates and has rate limits.",
                                       "Staging tests DNS and issuance with untrusted certificates."},
-                                     {"Yes", "No", "Cancel"}, 1);
+                                     {"Staging", "Production", "Cancel"}, 0);
         if (selected < 0 || selected == 2) {
             return "cancel";
         }
-        const bool production = selected == 0;
+        const bool production = selected == 1;
         const auto accepted = confirm(ansi, production);
         if (accepted == cancel) {
             return "cancel";

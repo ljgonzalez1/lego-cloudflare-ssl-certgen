@@ -33,6 +33,10 @@ if [ "$1" = identity ]; then
     printf '%s:%s\n' "${TEST_CALLER_UID:-1000}" "${TEST_CALLER_GID:-1000}"
     exit 0
 fi
+if [ "$1" = issuance-menu ] && [ "${TEST_REAL_ISSUANCE_MENU:-0}" -eq 0 ]; then
+    printf '%s\n' staging
+    exit 0
+fi
 exec "$CERTGEN_TEST_CORE" "$@"
 SH
 cat > "$work/bin/su-exec" <<'SH'
@@ -163,7 +167,7 @@ unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAM
     CERT_UID CERT_GID PROPAGATION_SECONDS DNS_RESOLVERS TEST_CALLER_UID TEST_CALLER_GID \
     LEGO_TARBALL LEGO_URL LEGO_SHA256 TARGETARCH TARGETVARIANT
 export UID=1000 GID=1000 EMAIL=test@example.com CLOUDFLARE_API_TOKEN=fixture-token \
-    ACCEPT_LEGO_TOS=true PRODUCTION=false TZ=Etc/UTC LEGO_VERSION=v4.34.0
+    ACCEPT_LEGO_TOS=true TZ=Etc/UTC LEGO_VERSION=v4.34.0
 
 file="$work/domains.yaml"
 output="$work/output"
@@ -352,9 +356,9 @@ cli_argument_errors() {
     expect_status 2 cli --list --dry-run
     assert_contains 'mutually exclusive' "$stderr"
     expect_status 2 cli --staging --production
-    assert_contains 'Set PRODUCTION=false or PRODUCTION=true' "$stderr"
+    assert_contains 'Choose Staging or Production from the issuance menu' "$stderr"
     expect_status 2 cli --production
-    assert_contains 'Set PRODUCTION=false or PRODUCTION=true' "$stderr"
+    assert_contains 'Choose Staging or Production from the issuance menu' "$stderr"
     expect_status 2 cli --invalid
     assert_contains 'Unknown argument' "$stderr"
     expect_status 2 cli --only second --config
@@ -367,23 +371,16 @@ cli_listing_and_preview() {
     EMAIL= ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN= expect_status 0 cli --only second --list --only first
     printf 'first: 5 domains\nsecond: 2 domains\n' > "$work/expected"
     diff -u "$work/expected" "$stdout"
-    EMAIL= CLOUDFLARE_API_TOKEN= TZ=America/Santiago PRODUCTION=true expect_status 0 cli --only first --dry-run
-    assert_contains 'https://acme-v02.api.letsencrypt.org/directory' "$stdout"
+    EMAIL= CLOUDFLARE_API_TOKEN= TZ=America/Santiago expect_status 0 cli --only first --dry-run
+    assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
     assert_contains '_GMT-' "$stdout"
     assert_contains '*.nested.example.com' "$stdout"
     [ ! -s "$TEST_LEGO_LOG" ]
     [ -z "$(ls -A -- "$output")" ]
 }
 
-cli_environment_mode() {
-    PRODUCTION=false expect_status 0 cli --dry-run
-    assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
-    PRODUCTION=true expect_status 0 cli --dry-run
-    assert_contains 'https://acme-v02.api.letsencrypt.org/directory' "$stdout"
-}
-
 cli_offline_test_mode() {
-    PRODUCTION=true ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN= expect_status 0 cli --test --only first
+    ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN= expect_status 0 cli --test --only first
     assert_contains '🧪 TEST MODE (offline)' "$stdout"
     assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
     assert_contains 'Offline test passed.' "$stdout"
@@ -474,9 +471,9 @@ cli_delegation_and_resolvers() {
 }
 
 cli_bad_settings() {
-    EMAIL=broken ACCEPT_LEGO_TOS=false PRODUCTION=maybe PROPAGATION_SECONDS=2147483648 \
+    EMAIL=broken ACCEPT_LEGO_TOS=false PROPAGATION_SECONDS=2147483648 \
         TZ=../Etc/UTC DNS_RESOLVERS='1.1.1.1:0,1.0.0.1:65536' expect_status 2 cli
-    for setting in EMAIL ACCEPT_LEGO_TOS PRODUCTION PROPAGATION_SECONDS TZ DNS_RESOLVERS; do
+    for setting in EMAIL ACCEPT_LEGO_TOS PROPAGATION_SECONDS TZ DNS_RESOLVERS; do
         assert_contains "$setting:" "$stderr"
     done
     assert_contains '0 attempted, 0 issued, 0 failed, 2 skipped' "$stdout"
@@ -1077,7 +1074,6 @@ check 'Distinct missing selections' yaml_unknown_selection
 check 'Help works before environment validation' cli_help
 check 'Conflicting and missing CLI arguments' cli_argument_errors
 check 'List and dry-run preview without credentials' cli_listing_and_preview
-check 'Environment selects staging or production' cli_environment_mode
 menu_in_terminal() {
     python3 "$root/ci/tests/menu.py" "$CERTGEN_TEST_CORE"
 }
