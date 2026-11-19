@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG ALPINE_VERSION=3.24.4
-ARG APP_VERSION=5.2.0
+ARG APP_VERSION=5.2.1
 ARG LEGO_VERSION=v4.34.0
 
 # Download and verify the official binary on the builder's native architecture.
@@ -111,6 +111,7 @@ RUN --network=none --mount=type=tmpfs,target=/tmp set -eu \
         fi; \
     } \
  && expect_rejection entrypoint.sh --config "$smoke_config" \
+ && expect_rejection entrypoint.sh --config "$smoke_config" --test --production \
  && printf 'bad: ["not a DNS name"]\n' > /tmp/invalid-domains.yaml \
  && expect_rejection entrypoint.sh --config /tmp/invalid-domains.yaml --test \
  && printf 'smoke\t5\t0\n' | certgen-core summary >/dev/null

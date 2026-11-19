@@ -92,6 +92,12 @@ if [ "$CERTGEN_ACTION" != issue ] && [ -n "$requested_mode" ]; then
 fi
 
 validate_identity
+identity=$(certgen-core identity)
+current_uid=${identity%:*}
+if [ "$current_uid" -ne 0 ] && [ "$identity" != "$CERT_UID:$CERT_GID" ]; then
+    log_err "The container user must match the configured UID/GID ($CERT_UID:$CERT_GID)."
+    exit 1
+fi
 
 issuance_mode=staging
 if [ "$CERTGEN_ACTION" = issue ]; then
@@ -111,8 +117,6 @@ if [ "$CERTGEN_ACTION" = issue ]; then
 fi
 
 export CERTGEN_ACTION CERTGEN_CONFIG CERTGEN_OUTPUT
-identity=$(certgen-core identity)
-current_uid=${identity%:*}
 
 # A custom output directory must already be writable by the target identity.
 if [ "$current_uid" -eq 0 ]; then
@@ -125,8 +129,4 @@ if [ "$current_uid" -eq 0 ]; then
     exec su-exec "$CERT_UID:$CERT_GID" "${script_dir}/run_lego.sh" "$issuance_mode" "$@"
 fi
 
-if [ "$identity" != "$CERT_UID:$CERT_GID" ]; then
-    log_err "The container user must match the configured UID/GID ($CERT_UID:$CERT_GID)."
-    exit 1
-fi
 exec "${script_dir}/run_lego.sh" "$issuance_mode" "$@"
