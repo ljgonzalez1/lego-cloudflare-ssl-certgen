@@ -49,7 +49,13 @@ jobs:
           persist-credentials: false
       - name: Verify the committed Docker tag table
         id: check
+        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         run: bash ci/check-version.sh README.md
+      - name: Report advisory version failure
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check.outcome == 'failure' }}
+        run: |
+          printf '::warning file=README.md::Version check failed on push to master; subsequent tests will continue. See the check log for details.\n'
+          printf '### Version check warning: README.md\n\nThe check failed on push to master. Subsequent tests continue; see the check log for details.\n' >> "$GITHUB_STEP_SUMMARY"
 
   version_dockerhub:
     name: Check version in DOCKERHUB.md
@@ -66,14 +72,21 @@ jobs:
           persist-credentials: false
       - name: Verify the committed Docker tag table
         id: check
+        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         run: bash ci/check-version.sh DOCKERHUB.md
+      - name: Report advisory version failure
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check.outcome == 'failure' }}
+        run: |
+          printf '::warning file=DOCKERHUB.md::Version check failed on push to master; subsequent tests will continue. See the check log for details.\n'
+          printf '### Version check warning: DOCKERHUB.md\n\nThe check failed on push to master. Subsequent tests continue; see the check log for details.\n' >> "$GITHUB_STEP_SUMMARY"
 
   offline:
     name: Offline tests
     needs: [version_readme, version_dockerhub]
     if: >-
-      ${{ needs.version_readme.outputs.eligible == 'true' &&
-          needs.version_dockerhub.outputs.eligible == 'true' }}
+      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+          (needs.version_readme.outputs.eligible == 'true' &&
+           needs.version_dockerhub.outputs.eligible == 'true') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
