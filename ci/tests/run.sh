@@ -2,7 +2,7 @@
 # Offline regression tests for the C++ program, POSIX scripts and downloader.
 set -eu
 
-root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' 0
 mkdir "$work/bin"

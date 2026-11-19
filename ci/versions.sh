@@ -1,7 +1,7 @@
 # Source this file with Bash, then call read_versions from the repository root.
 read_versions() {
     local configuration key value
-    configuration=$(python3 -B versions/release_config.py) || return 1
+    configuration=$(python3 -B ci/versions/release_config.py) || return 1
     release_tags=()
     while IFS=$'\t' read -r key value; do
         case "$key" in
