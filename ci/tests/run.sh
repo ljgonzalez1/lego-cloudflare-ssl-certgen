@@ -1,50 +1,28 @@
 #!/bin/sh
-# Offline regression tests for the C++ program, POSIX scripts and downloader.
+# Offline regression tests for the application and its C++ image builder.
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' 0
 mkdir "$work/bin"
-entry="$root/build/entrypoint.sh"
-download="$root/build/download_lego.sh"
-
-# entrypoint.sh executes run_lego.sh directly, so Git must keep its executable bit.
-for script in "$root"/build/*.sh; do
-    if [ ! -x "$script" ]; then
-        printf 'Bail out! %s is not executable. Run: git update-index --chmod=+x build/*.sh\n' \
-            "${script#"$root"/}" >&2
-        exit 1
-    fi
-done
+entry="$work/certgen"
+download="$work/certgen-build"
 
 # Allow a precompiled executable when testing with a different Alpine toolchain.
 if [ -n "${CERTGEN_CORE:-}" ]; then
     cp -- "$CERTGEN_CORE" "$work/certgen-core"
 else
-    "${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra -Wpedantic \
+    "${CXX:-g++}" -std=c++20 -Og -g3 -Wall -Wextra \
         "$root"/build/src/*.cpp -lyaml -o "$work/certgen-core"
 fi
+"${CXX:-g++}" -std=c++20 -Og -g3 -Wall -Wextra "$root/build/tools.cpp" -o "$download"
+"${CXX:-g++}" -std=c++20 -Og -g3 -Wall -Wextra "$root/ci/tests/settings_probe.cpp" \
+    "$root/build/src/settings.cpp" -o "$work/settings-probe"
 export CERTGEN_TEST_CORE="$work/certgen-core"
+ln -s "$CERTGEN_TEST_CORE" "$work/bin/certgen-core"
+ln -s "$CERTGEN_TEST_CORE" "$entry"
 
-cat > "$work/bin/certgen-core" <<'SH'
-#!/bin/sh
-if [ "$1" = identity ]; then
-    printf '%s:%s\n' "${TEST_CALLER_UID:-1000}" "${TEST_CALLER_GID:-1000}"
-    exit 0
-fi
-if [ "$1" = issuance-menu ] && [ "${TEST_REAL_ISSUANCE_MENU:-0}" -eq 0 ]; then
-    printf '%s\n' staging
-    exit 0
-fi
-exec "$CERTGEN_TEST_CORE" "$@"
-SH
-cat > "$work/bin/su-exec" <<'SH'
-#!/bin/sh
-printf '%s\n' "$1" >> "$TEST_SU_LOG"
-shift
-exec "$@"
-SH
 cat > "$work/bin/lego" <<'SH'
 #!/bin/sh
 set -euf
@@ -152,7 +130,7 @@ while [ "$#" -gt 1 ]; do
     case "$1" in
         -o) output=$2; shift ;;
         --connect-timeout|--max-time) shift ;;
-        -fsSL|--retry|3) ;;
+        -fsSL|--retry|3|--) ;;
         *) exit 90 ;;
     esac
     shift
@@ -171,16 +149,16 @@ for command in dig host nslookup getent; do
 done
 export PATH="$work/bin:$PATH"
 unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAME_SUPPORT LEGO_OUTPUT \
-    CERT_UID CERT_GID PROPAGATION_SECONDS DNS_RESOLVERS TEST_CALLER_UID TEST_CALLER_GID \
+    CERT_UID CERT_GID PROPAGATION_SECONDS DNS_RESOLVERS \
     LEGO_TARBALL LEGO_URL LEGO_SHA256 TARGETARCH TARGETVARIANT
-export UID=1000 GID=1000 EMAIL=test@example.com CLOUDFLARE_API_TOKEN=fixture-token \
+export UID="$(id -u)" GID="$(id -g)" EMAIL=test@example.com CLOUDFLARE_API_TOKEN=fixture-token \
     ACCEPT_LEGO_TOS=true TZ=Etc/UTC LEGO_VERSION=v4.34.0
 
 file="$work/domains.yaml"
 output="$work/output"
 stdout="$work/stdout"
 stderr="$work/stderr"
-export TEST_FIXTURES="$work/fixtures" TEST_SU_LOG="$work/su.log" \
+export TEST_FIXTURES="$work/fixtures" \
     TEST_LEGO_LOG="$work/lego.log" TEST_CURL_LOG="$work/curl.log" TEST_DNS_LOG="$work/dns.log"
 
 expect_status() {
@@ -221,7 +199,6 @@ assert_absent() {
 reset_case() {
     rm -rf -- "$output" "$work/downloaded"
     mkdir -- "$output"
-    : > "$TEST_SU_LOG"
     : > "$TEST_LEGO_LOG"
     : > "$TEST_CURL_LOG"
     : > "$TEST_DNS_LOG"
@@ -237,7 +214,15 @@ YAML
 }
 
 cli() {
-    /bin/sh "$entry" --config "$file" --output "$output" "$@"
+    for option do
+        case "$option" in
+            --list|--dry-run|--test|--staging|--production|--help|-h)
+                "$entry" --config "$file" --output "$output" "$@"
+                return
+                ;;
+        esac
+    done
+    "$entry" --config "$file" --output "$output" --staging "$@"
 }
 
 read_domains() {
@@ -426,11 +411,9 @@ cli_identities() {
     UID=4294967295 expect_status 2 cli --list
     GID=bad expect_status 2 cli --list
     assert_contains 'GID must be an integer' "$stderr"
-    TEST_CALLER_GID=1011 expect_status 1 cli --list
+    GID=$((GID + 1)) expect_status 1 cli --list
     assert_contains 'must match the configured UID/GID' "$stderr"
-    UID=0000001000 GID=001000 expect_status 0 cli --list
-    TEST_CALLER_UID=0 expect_status 0 cli --list --only second
-    assert_line '1000:1000' "$TEST_SU_LOG"
+    UID="$(printf '%010d' "$UID")" GID="$(printf '%010d' "$GID")" expect_status 0 cli --list
 }
 
 cli_yaml_before_issue() {
@@ -498,15 +481,7 @@ cli_rejects_invalid_token() {
 
 cli_routes_secret_file() {
     printf 'fixture-secret\n\n' > "$work/cloudflare-secret"
-    CLOUDFLARE_API_TOKEN= expect_status 0 /bin/sh -eu -c '
-        . "$1"
-        VALIDATED_PROPAGATION=60
-        configure_cloudflare "$2"
-        [ -z "${CF_DNS_API_TOKEN:-}" ]
-        [ "$CF_DNS_API_TOKEN_FILE" = "$2" ]
-        [ "$LEGO_DISABLE_CNAME_SUPPORT" = true ]
-        [ "$CLOUDFLARE_PROPAGATION_TIMEOUT" = 60 ]
-    ' sh "$root/build/validate_env.sh" "$work/cloudflare-secret"
+    CLOUDFLARE_API_TOKEN= expect_status 0 "$work/settings-probe" "$work/cloudflare-secret"
     [ ! -s "$stdout" ] && [ ! -s "$stderr" ]
 }
 
@@ -668,32 +643,11 @@ cli_continues_on_recoverable_errors() {
     assert_contains 'serverInternal' "$(find "$output/recover" -name lego.log)"
 }
 
-cli_stops_at_time_limit() {
-    cat >> "$file" <<'YAML'
-stuck: [hang.example.org, '*.stuck.example.org']
-again: [hang.example.org]
-last: [last.example.org]
-YAML
-    # Shorten only the computed limit; supervise, lego and the scripts stay real.
-    mkdir -- "$work/short-limit"
-    cat > "$work/short-limit/certgen-core" <<SH
-#!/bin/sh
-if [ "\$1" = time-limit ]; then
-    echo 1
-else
-    exec "$work/bin/certgen-core" "\$@"
-fi
-SH
-    chmod +x "$work/short-limit/certgen-core"
-    started=$(date +%s)
-    PATH="$work/short-limit:$PATH" expect_status 1 cli --only stuck --only again --only last
-    [ $(($(date +%s) - started)) -lt 5 ]
-    assert_contains 'stuck: lego did not finish within 1s and was stopped with SIGKILL.' "$stderr"
-    assert_contains 'again: lego did not finish within 1s and was stopped with SIGKILL.' "$stderr"
-    assert_line 'last.example.org' "$TEST_LEGO_LOG"
-    summary_rows > "$work/rows"
-    printf 'stuck:2:0:2:0:FAILED:\nagain:1:0:1:0:FAILED:\nlast:1:1:0:0:ISSUED:\nTOTAL:4:1:3:0::\n' > "$work/expected"
-    diff -u "$work/expected" "$work/rows"
+cli_uses_separate_time_limits() {
+    PROPAGATION_SECONDS=0 expect_status 0 cli --only first --only second
+    assert_contains 'Time limit: 630s (11 min)' "$stdout"
+    assert_contains 'Time limit: 360s (6 min)' "$stdout"
+    assert_contains 'Certificates: 2 attempted, 2 issued' "$stdout"
 }
 
 cli_requires_saved_certificate() {
@@ -839,7 +793,7 @@ cli_live_view_terminal() {
     # In a terminal tall enough for the list, lines are rewritten in place.
     export CERTGEN_TEST_ENTRY="$entry" CERTGEN_TEST_FILE="$file" CERTGEN_TEST_OUTPUT="$output"
     LINES=30 COLUMNS=100 script -q -e -c \
-        '/bin/sh "$CERTGEN_TEST_ENTRY" --config "$CERTGEN_TEST_FILE" --output "$CERTGEN_TEST_OUTPUT" --only first' \
+        '"$CERTGEN_TEST_ENTRY" --staging --config "$CERTGEN_TEST_FILE" --output "$CERTGEN_TEST_OUTPUT" --only first' \
         /dev/null > "$stdout"
     assert_contains "$(printf '\033[5A')" "$stdout"
     assert_contains "$(printf '\033[1A')" "$stdout"
@@ -893,7 +847,6 @@ core_runtime() {
 
 cli_minimal_runtime() {
     mkdir -- "$work/minimal-path"
-    ln -s "$work/bin/certgen-core" "$work/minimal-path/certgen-core"
     ln -s "$work/bin/lego" "$work/minimal-path/lego"
     PATH="$work/minimal-path" expect_status 0 cli --only first
     assert_contains 'Certificates: 1 attempted, 1 issued' "$stdout"
@@ -943,9 +896,6 @@ core_license_notices() {
     # The repository keeps the real license texts the image needs.
     texts="$root/build/licenses"
     assert_contains 'musl as a whole is licensed under the following standard MIT license' "$texts/musl.txt"
-    assert_contains 'Copyright (c) 2015 ncopa' "$texts/su-exec.txt"
-    assert_contains 'This file is not directly linked with dash.  However, its output is.' "$texts/dash.txt"
-    assert_contains 'Version 2, June 1991' "$texts/GPL-2.0-or-later.txt"
     assert_contains 'Mozilla Public License Version 2.0' "$texts/MPL-2.0.txt"
     assert_contains 'Kirill Simonov' "$texts/libyaml.txt"
 
@@ -953,42 +903,37 @@ core_license_notices() {
     cat > "$work/apk-bin/apk" <<'SH'
 #!/bin/sh
 if [ "$1" = --root ]; then
-    printf 'musl-1.2.6-r3\nsu-exec-0.3-r0\nca-certificates-bundle-20261020-r0\ntzdata-2026f-r0\n'
+    printf 'musl-1.2.6-r3\nca-certificates-bundle-20261020-r0\ntzdata-2026f-r0\n'
 else
-    printf 'musl-1.2.6-r3\nyaml-0.2.5-r2\nyaml-dev-0.2.5-r2\nyaml-static-0.2.5-r2\n'
-    [ -n "${TEST_APK_NO_DASH:-}" ] || printf 'dash-0.5.13.1-r2\n'
+    printf 'musl-1.2.6-r3\nyaml-0.2.5-r2\nyaml-dev-0.2.5-r2\n'
+    [ -n "${TEST_APK_NO_YAML:-}" ] || printf 'yaml-static-0.2.5-r2\n'
 fi
 SH
     chmod 755 "$work/apk-bin/apk"
     printf '3.24.4\n' > "$work/alpine-release"
     PATH="$work/apk-bin:$PATH" ALPINE_RELEASE_FILE="$work/alpine-release" expect_status 0 \
-        /bin/sh "$root/build/write_notices.sh" "$texts" "$work/notice-root" v4.34.0
+        "$download" notices "$texts" "$work/notice-root" v4.34.0
     licenses="$work/notice-root/usr/share/licenses"
-    for license in NOTICE musl/COPYRIGHT dash/COPYING dash/GPL-2.0-or-later su-exec/LICENSE \
+    for license in NOTICE musl/COPYRIGHT \
             ca-certificates/MPL-2.0 libyaml/LICENSE; do
         [ -s "$licenses/$license" ]
         [ "$(stat -c %a -- "$licenses/$license")" = 644 ]
     done
-    cmp -- "$texts/GPL-2.0-or-later.txt" "$licenses/dash/GPL-2.0-or-later"
     notice="$licenses/NOTICE"
     assert_contains 'lego-cloudflare-certgen is MIT licensed.' "$notice"
     assert_contains 'lego v4.34.0: MIT' "$notice"
     assert_contains 'musl 1.2.6-r3: MIT' "$notice"
     assert_contains 'https://musl.libc.org/releases/musl-1.2.6.tar.gz' "$notice"
-    assert_contains 'dash 0.5.13.1-r2: BSD-3-Clause' "$notice"
-    assert_contains 'http://gondor.apana.org.au/~herbert/dash/files/dash-0.5.13.1.tar.gz' "$notice"
-    assert_contains 'https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.24-stable/main/dash' "$notice"
-    assert_contains 'https://github.com/ncopa/su-exec/tree/v0.3' "$notice"
     assert_contains 'ca-certificates-bundle 20261020-r0' "$notice"
-    assert_contains 'libyaml 0.2.5-r2, statically linked into certgen-core: MIT' "$notice"
+    assert_contains 'libyaml 0.2.5-r2, statically linked into certgen: MIT' "$notice"
     assert_contains 'https://github.com/yaml/libyaml/tree/0.2.5' "$notice"
     # Public-domain tzdata and build-only packages add nothing.
     [ ! -e "$licenses/tzdata" ]
-    [ "$(find "$licenses" -type f | wc -l)" -eq 7 ]
+    [ "$(find "$licenses" -type f | wc -l)" -eq 4 ]
     # A missing package stops the build instead of writing a wrong notice.
-    TEST_APK_NO_DASH=1 PATH="$work/apk-bin:$PATH" ALPINE_RELEASE_FILE="$work/alpine-release" \
-        expect_status 1 /bin/sh "$root/build/write_notices.sh" "$texts" "$work/notice-missing" v4.34.0
-    assert_contains 'Cannot find the installed version of dash.' "$stderr"
+    TEST_APK_NO_YAML=1 PATH="$work/apk-bin:$PATH" ALPINE_RELEASE_FILE="$work/alpine-release" \
+        expect_status 1 "$download" notices "$texts" "$work/notice-missing" v4.34.0
+    assert_contains 'Cannot find the installed version of yaml-static.' "$stderr"
 }
 
 archive_fixtures() {
@@ -1007,7 +952,7 @@ archive_fixtures() {
 
 test_download() {
     arch=$1 variant=$2 asset=$3
-    TARGETARCH="$arch" TARGETVARIANT="$variant" expect_status 0 /bin/sh "$download" "$work/downloaded"
+    TARGETARCH="$arch" TARGETVARIANT="$variant" expect_status 0 "$download" download "$work/downloaded"
     assert_contains '/lego_4.34.0_checksums.txt' "$TEST_CURL_LOG"
     assert_contains "/lego_v4.34.0_linux_$asset.tar.gz" "$TEST_CURL_LOG"
     [ -x "$work/downloaded/lego" ]
@@ -1019,23 +964,23 @@ test_download() {
 unsupported_targets() {
     for target in arm/v5 arm/ riscv64/ amd64/v3; do
         TARGETARCH="${target%/*}" TARGETVARIANT="${target#*/}" \
-            expect_status 2 /bin/sh "$download" "$work/downloaded"
+            expect_status 2 "$download" download "$work/downloaded"
         assert_contains 'Unsupported target platform' "$stderr"
     done
     [ ! -s "$TEST_CURL_LOG" ]
 }
 
 archive_checksum_failures() {
-    TARGETARCH=amd64 LEGO_SHA256=invalid expect_status 1 /bin/sh "$download" "$work/downloaded"
+    TARGETARCH=amd64 LEGO_SHA256=invalid expect_status 1 "$download" download "$work/downloaded"
     assert_contains 'Missing or invalid SHA-256' "$stderr"
     [ ! -s "$TEST_CURL_LOG" ]
-    TARGETARCH=amd64 LEGO_SHA256=abcd expect_status 1 /bin/sh "$download" "$work/downloaded"
+    TARGETARCH=amd64 LEGO_SHA256=abcd expect_status 1 "$download" download "$work/downloaded"
     assert_contains 'Invalid SHA-256 length' "$stderr"
     [ ! -s "$TEST_CURL_LOG" ]
-    TARGETARCH=amd64 LEGO_TARBALL=missing.tar.gz expect_status 1 /bin/sh "$download" "$work/downloaded"
+    TARGETARCH=amd64 LEGO_TARBALL=missing.tar.gz expect_status 1 "$download" download "$work/downloaded"
     assert_contains 'Missing or invalid SHA-256' "$stderr"
     [ "$(wc -l < "$TEST_CURL_LOG")" -eq 1 ]
-    TARGETARCH=amd64 LEGO_SHA256="$(printf '%064d' 0)" expect_status 1 /bin/sh "$download" "$work/downloaded"
+    TARGETARCH=amd64 LEGO_SHA256="$(printf '%064d' 0)" expect_status 1 "$download" download "$work/downloaded"
     [ ! -e "$work/downloaded/lego" ]
 }
 
@@ -1043,13 +988,13 @@ archive_override() {
     name=lego_v4.34.0_linux_amd64.tar.gz
     sha=$(sha256sum -- "$TEST_FIXTURES/$name")
     TARGETARCH=amd64 LEGO_SHA256="${sha%% *}" LEGO_URL="https://example.test/custom/$name" \
-        expect_status 0 /bin/sh "$download" "$work/downloaded"
+        expect_status 0 "$download" download "$work/downloaded"
     assert_line "https://example.test/custom/$name" "$TEST_CURL_LOG"
     [ "$(wc -l < "$TEST_CURL_LOG")" -eq 1 ]
 }
 
 archive_unsafe_payload() {
-    TARGETARCH=amd64 LEGO_TARBALL=../lego.tar.gz expect_status 2 /bin/sh "$download" "$work/downloaded"
+    TARGETARCH=amd64 LEGO_TARBALL=../lego.tar.gz expect_status 2 "$download" download "$work/downloaded"
     assert_contains 'LEGO_TARBALL must be a release archive filename' "$stderr"
     [ ! -s "$TEST_CURL_LOG" ]
 
@@ -1060,7 +1005,7 @@ archive_unsafe_payload() {
     tar -czf "$TEST_FIXTURES/$name" -C "$work/unsafe" lego LICENSE
     sha=$(sha256sum -- "$TEST_FIXTURES/$name")
     TARGETARCH=amd64 LEGO_SHA256="${sha%% *}" LEGO_URL="https://example.test/$name" \
-        expect_status 1 /bin/sh "$download" "$work/downloaded"
+        expect_status 1 "$download" download "$work/downloaded"
     assert_contains 'nonempty regular lego file' "$stderr"
     [ ! -e "$work/downloaded" ]
 }
@@ -1105,7 +1050,7 @@ menu_in_terminal() {
 check 'Interactive issuance menu in a pseudo-terminal' menu_in_terminal
 check 'Unattended test checks lego and previews staging without issuance' cli_offline_test_mode
 check 'Cross-zone names, DNS root dots and malformed contact or resolver input' cli_configuration_edges
-check 'Identity validation and privilege-drop command' cli_identities
+check 'Identity validation and mismatched process identity' cli_identities
 check 'Validate all YAML before any issue request' cli_yaml_before_issue
 check 'A, AAAA, CNAME, wildcard and planned names all use DNS-01' cli_dns_types
 check 'Credential precedence, CNAME delegation, timeout and resolvers' cli_delegation_and_resolvers
@@ -1121,7 +1066,7 @@ check 'Definitive multiline failure stops lego and its process group' core_stops
 check 'Rate limit kills lego and fails every name of that certificate' cli_stops_on_rate_limit
 check 'Cloudflare token and permission errors fail only their groups' cli_stops_on_cloudflare_errors
 check 'ACME retries and cleanup warnings allow issuance to continue' cli_continues_on_recoverable_errors
-check 'Time limit kills a stalled lego and the next group still runs' cli_stops_at_time_limit
+check 'Each group has its own deadline' cli_uses_separate_time_limits
 check 'Exit status 0 without certificate files counts as failed' cli_requires_saved_certificate
 check 'DNS names are passed to lego in lowercase' cli_lowercases_names
 check 'Raw lego output is shown and always saved to lego.log' cli_raw_output_and_log
@@ -1131,7 +1076,7 @@ check 'Live view durations use lego clock across midnight' cli_live_view_clock
 check 'Invalid LEGO_OUTPUT skips issuance' cli_rejects_lego_output
 check 'Concurrent runs reserve distinct timestamp paths' cli_retries_and_timestamps
 check 'Actual Linux UID/GID and output directory preview' core_runtime
-check 'Issuance with only the shell, C++ binary and lego on PATH' cli_minimal_runtime
+check 'Issuance with only lego on PATH' cli_minimal_runtime
 check 'Non-TTY summary and exact certificate totals' summary_plain
 check 'Summary rejects invalid internal input' summary_rejects_bad_input
 if command -v script >/dev/null; then

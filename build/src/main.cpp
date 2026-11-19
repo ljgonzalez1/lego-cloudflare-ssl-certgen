@@ -24,14 +24,21 @@ int main(int argc, char* argv[]) {
     const bool domains = command == "domains" && argc >= 3;
     const int config = domains && argc >= 4 && std::string_view(argv[2]) == "--issue" ? 3 : 2;
     try {
+        const std::string_view program(argv[0]);
+        if (command == "image-self-test" && argc == 2) {
+            return certgen::run_image_self_test();
+        }
+        if (program == "certgen" || program.ends_with("/certgen")) {
+            return certgen::run_app(argc, argv);
+        }
         if (domains) {
             certgen::write_domains(argc - config, argv + config, config == 3);
         } else if (command == "summary" && argc == 2) {
-            certgen::write_summary();
+            certgen::write_summary(std::cin);
         } else if (command == "identity" && argc == 2) {
             certgen::write_identity();
         } else if (command == "issuance-menu" && argc == 2) {
-            return certgen::issuance_menu();
+            return certgen::issuance_menu(std::cout);
         } else if (command == "resolver-address" && argc == 4) {
             const std::string_view family(argv[2]);
             if (family != "4" && family != "6") {

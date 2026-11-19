@@ -312,9 +312,10 @@ bool valid_group(std::string_view name) {
            });
 }
 
-void write_domains(int argc, char* argv[], bool for_issuance) {
+std::vector<DomainGroup> load_domains(const char* path, const std::vector<std::string_view>& requested,
+                                     bool for_issuance) {
     const auto close_file = [](FILE* handle) { std::fclose(handle); };
-    const std::unique_ptr<FILE, decltype(close_file)> file(std::fopen(argv[0], "rb"), close_file);
+    const std::unique_ptr<FILE, decltype(close_file)> file(std::fopen(path, "rb"), close_file);
     if (!file) {
         throw std::runtime_error("could not open configuration");
     }
@@ -326,11 +327,10 @@ void write_domains(int argc, char* argv[], bool for_issuance) {
             }
         }
     }
-    const std::set<std::string_view> selected(argv + 1, argv + argc);
+    const std::set<std::string_view> selected(requested.begin(), requested.end());
     std::string unknown;
     std::set<std::string_view> reported;
-    for (int index = 1; index < argc; ++index) {
-        const std::string_view name = argv[index];
+    for (const auto name : requested) {
         if (std::none_of(groups.begin(), groups.end(), [name](const Group& group) {
                 return group.name == name;
             }) && reported.insert(name).second) {
@@ -343,21 +343,36 @@ void write_domains(int argc, char* argv[], bool for_issuance) {
     if (!unknown.empty()) {
         throw std::runtime_error("unknown certificate folder(s): " + unknown);
     }
+    std::vector<DomainGroup> result;
     for (const auto& group : groups) {
-        if (selected.empty() || selected.count(group.name)) {
-            std::cout << group.name << '\t';
-            if (group.domains.size() > max_certificate_names) {
-                // Report the rejected group's size without forwarding the names to lego.
-                std::cout << "-\t" << group.domains.size() << '\n';
-                continue;
-            }
-            const char* separator = "";
-            for (const auto& domain : group.domains) {
-                std::cout << separator << lowercase(domain.value);
-                separator = ",";
-            }
-            std::cout << '\n';
+        if (!selected.empty() && !selected.contains(group.name)) {
+            continue;
         }
+        DomainGroup entry{group.name, {}, group.domains.size()};
+        if (entry.count <= max_certificate_names) {
+            for (const auto& domain : group.domains) {
+                entry.names.push_back(lowercase(domain.value));
+            }
+        }
+        result.push_back(std::move(entry));
+    }
+    return result;
+}
+
+void write_domains(int argc, char* argv[], bool for_issuance) {
+    const std::vector<std::string_view> requested(argv + 1, argv + argc);
+    for (const auto& group : load_domains(argv[0], requested, for_issuance)) {
+        std::cout << group.name << '\t';
+        if (group.names.empty()) {
+            std::cout << "-\t" << group.count << '\n';
+            continue;
+        }
+        const char* separator = "";
+        for (const auto& name : group.names) {
+            std::cout << separator << name;
+            separator = ",";
+        }
+        std::cout << '\n';
     }
 }
 }
