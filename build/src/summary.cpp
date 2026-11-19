@@ -147,7 +147,7 @@ void write_summary() {
         }
         const auto count = read_number(fields.substr(first + 1, second - first - 1));
         const auto result = read_number(fields.substr(second + 1));
-        if (count == 0 || count > 100 || result >= certificates.size()) {
+        if (count == 0 || (count > max_certificate_names && result == 0) || result >= certificates.size()) {
             throw std::runtime_error("invalid domain count or certificate result");
         }
         const Counts amounts{result == 2 ? 0 : count, result == 0 ? count : 0,

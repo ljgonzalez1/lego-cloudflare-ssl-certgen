@@ -9,15 +9,6 @@ case "$0" in
 esac
 . "${script_dir}/validate_env.sh"
 
-# lego saves <first name>.crt and .key, with a leading "*" replaced by "_".
-certificate_saved() {
-    case "$2" in
-        '*.'*) base="_${2#\*}" ;;
-        *) base=$2 ;;
-    esac
-    [ -s "$1/certificates/$base.crt" ] && [ -s "$1/certificates/$base.key" ]
-}
-
 # Return 1 when no certificate was saved and 2 for a group that never reached lego.
 run_group() (
     target=$(certgen-core output-path "$CERTGEN_ACTION" "$CERTGEN_OUTPUT" "$group") || return 2
@@ -61,29 +52,31 @@ run_group() (
         set -- "$@" --domains "$domain"
         remaining=$((remaining - 1))
     done
-    lego_status=0
-    certgen-core supervise --log "$target/lego.log" --view "$view_names" "$time_limit" \
-        lego --accept-tos --email "$VALIDATED_EMAIL" --dns cloudflare --server "$ACME_SERVER" \
-            --path "$target" "$@" run || lego_status=$?
-    case "$lego_status" in
-        0)
-            if certificate_saved "$target" "$first_name"; then
-                log_ok "Certificates: $target/certificates/"
-                log_ok "Account data: $target/accounts/"
-                return 0
-            fi
-            log_err "$group: lego finished, but no certificate was saved in $target/certificates/."
-            ;;
-        75) log_err "$group: Let's Encrypt rate limit reached. lego was stopped. Retry after the time shown above." ;;
-        124) log_err "$group: lego did not finish within ${time_limit}s and was stopped with SIGKILL." ;;
-        *) log_err "$group: lego exited with code $lego_status." ;;
+    # lego replaces the leading "*" in a wildcard file name with "_".
+    case "$first_name" in
+        '*.'*) base="_${first_name#\*}" ;;
+        *) base=$first_name ;;
     esac
+    if certgen-core supervise --log "$target/lego.log" --view "$view_names" \
+        --certificate "$target/certificates/$base" --group "$group" "$time_limit" \
+        lego --accept-tos --email "$VALIDATED_EMAIL" --dns cloudflare --server "$ACME_SERVER" \
+            --path "$target" "$@" run; then
+        log_ok "Certificates: $target/certificates/"
+        log_ok "Account data: $target/accounts/"
+        return 0
+    fi
     log_info "Full lego output: $target/lego.log"
     return 1
 )
 
 prepare_issuance() {
-    configure_cloudflare /run/secrets/cloudflare_api_token || return
+    credential_status=0
+    configure_cloudflare /run/secrets/cloudflare_api_token || credential_status=$?
+    case "$credential_status" in
+        0) ;;
+        3) setup_result=1; return 2 ;; # The configured token was rejected locally.
+        *) return "$credential_status" ;;
+    esac
     if [ ! -d "$CERTGEN_OUTPUT" ] || [ ! -w "$CERTGEN_OUTPUT" ] || [ ! -x "$CERTGEN_OUTPUT" ]; then
         log_err "Output directory must be writable by UID $CERT_UID and GID $CERT_GID: $CERTGEN_OUTPUT"
         return 1
@@ -94,8 +87,13 @@ prepare_issuance() {
     fi
 }
 
-groups=$(certgen-core domains "$CERTGEN_CONFIG" "$@")
+if [ "$CERTGEN_ACTION" = issue ]; then
+    groups=$(certgen-core domains --issue "$CERTGEN_CONFIG" "$@")
+else
+    groups=$(certgen-core domains "$CERTGEN_CONFIG" "$@")
+fi
 setup_status=0
+setup_result=2
 case "$CERTGEN_ACTION" in
     list) ;;
     dry-run) validate_env || setup_status=$? ;;
@@ -118,7 +116,7 @@ fi
 tab=$(printf '\t')
 report=
 exit_status=$setup_status
-while IFS="$tab" read -r group domains <&3; do
+while IFS="$tab" read -r group domains oversized_count <&3; do
     saved_ifs=$IFS
     IFS=,
     # No expansion beyond splitting on commas. DNS names are validated by C++.
@@ -129,15 +127,20 @@ while IFS="$tab" read -r group domains <&3; do
         continue
     fi
 
-    result=2
-    if [ "$setup_status" -eq 0 ]; then
+    count=$#
+    result=$setup_result
+    if [ -n "$oversized_count" ]; then
+        count=$oversized_count
+        result=1
+        log_err "$group: $count DNS names exceed the 100-name limit. Split them into smaller certificate groups."
+    elif [ "$setup_status" -eq 0 ]; then
         result=0
         run_group "$@" 3<&- || result=$?
-        if [ "$result" -ne 0 ]; then
-            exit_status=1
-        fi
     fi
-    report="$report$group$tab$#$tab$result
+    if [ "$result" -ne 0 ] && [ "$exit_status" -eq 0 ]; then
+        exit_status=1
+    fi
+    report="$report$group$tab$count$tab$result
 "
 done 3<<GROUPS
 $groups

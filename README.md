@@ -4,7 +4,7 @@
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-ljgonzalez%2Flego--cloudflare--certgen-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen)
 [![Docker pulls](https://img.shields.io/docker/pulls/ljgonzalez/lego-cloudflare-certgen?logo=docker&logoColor=white)](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags)
-[![Image](https://img.shields.io/badge/image-v4.2.16-blue)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16)
+[![Image](https://img.shields.io/badge/image-v4.3.0-blue)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0)
 [![lego](https://img.shields.io/badge/lego-v4.34.0-informational)](https://github.com/go-acme/lego/releases/tag/v4.34.0)
 [![Tests](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/actions/workflows/tests.yml/badge.svg)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -69,7 +69,7 @@ Limit the token to the zones you plan to issue certificates for. lego uses it to
 
 ## :rocket: Quick start
 
-The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). You don't need to clone or build anything. Pin the image to **`v4.2.16`** so that every run uses the same image.
+The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). You don't need to clone or build anything. Pin the image to **`v4.3.0`** so that every run uses the same image.
 
 ### :one: Prepare a working directory
 
@@ -78,8 +78,8 @@ Download the two configuration files into a new directory.
 ```bash
 mkdir lego-certgen
 cd lego-certgen
-wget -O .env https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.16/example.env
-wget -O domains.yaml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.16/template.domains.yaml
+wget -O .env https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.3.0/example.env
+wget -O domains.yaml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.3.0/template.domains.yaml
 chmod 600 .env
 mkdir -p ssl-certs
 ```
@@ -128,23 +128,23 @@ Preview the configuration, then issue the certificates:
 ```bash
 # Check the YAML and list the groups
 docker run --rm -t -v ./domains.yaml:/app/domains.yaml:ro \
-  ljgonzalez/lego-cloudflare-certgen:v4.2.16 --list
+  ljgonzalez/lego-cloudflare-certgen:v4.3.0 --list
 
 # Show the names, ACME server, output paths and time limits without contacting Let's Encrypt
 docker run --rm -t --env-file .env -v ./domains.yaml:/app/domains.yaml:ro \
-  ljgonzalez/lego-cloudflare-certgen:v4.2.16 --dry-run
+  ljgonzalez/lego-cloudflare-certgen:v4.3.0 --dry-run
 
 # Issue staging (untrusted) certificates
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.2.16
+  ljgonzalez/lego-cloudflare-certgen:v4.3.0
 
 # Issue real, browser-trusted certificates
 docker run --rm -t --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.2.16 --production
+  ljgonzalez/lego-cloudflare-certgen:v4.3.0 --production
 ```
 
 Add any [command option](#command-options) after the image name, for example `--only certificateA`. `-t` enables the colored output.
@@ -159,7 +159,7 @@ Add any [command option](#command-options) after the image name, for example `--
     -v ./domains.yaml:/app/domains.yaml:ro \
     -v ./ssl-certs:/ssl-certs \
     -v ./cloudflare_api_token:/run/secrets/cloudflare_api_token:ro \
-    ljgonzalez/lego-cloudflare-certgen:v4.2.16
+    ljgonzalez/lego-cloudflare-certgen:v4.3.0
   ```
 
   `-e CLOUDFLARE_API_TOKEN=` overrides any token left in `.env`, so the container reads the file. The configured `UID` must be able to read the file.
@@ -170,7 +170,7 @@ Add any [command option](#command-options) after the image name, for example `--
 Download the Compose file into the same directory to reuse `.env` and `domains.yaml`.
 
 ```bash
-wget -O compose.yml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.2.16/compose.yml
+wget -O compose.yml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v4.3.0/compose.yml
 ```
 
 List the groups and preview the request.
@@ -244,7 +244,7 @@ These variables are read by Compose on the host, not by the container:
 | Variable | Default | Description |
 |---|---|---|
 | `DOMAINS_FILE` | `./domains.yaml` | Host YAML file mounted at `/app/domains.yaml` |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:v4.2.16` | Image used by the Compose service |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:v4.3.0` | Image used by the Compose service |
 | `CERTGEN_ENV_FILE` | `./.env` | Settings file passed to the container |
 
 ### Command options
@@ -278,7 +278,7 @@ certificateB:
 
 - **Quote wildcards** (`"*.example.com"`) so YAML reads them as strings.
 - **Group names** become folder names. Use letters, numbers, hyphens or underscores, starting with a letter or number.
-- **Up to 100 distinct names** per certificate. The same name can appear in several groups.
+- **Up to 100 distinct names** per certificate. Issuance marks an oversized group as failed before contacting Let's Encrypt and continues with the other groups. The same name can appear in several groups.
 - **The first name** in a group sets lego's certificate file name.
 - A wildcard covers exactly one extra label. `*.example.com` covers `www.example.com` but not `example.com` or `a.b.example.com`.
 
@@ -296,16 +296,16 @@ When the run ends, a table shows the DNS names of each selected certificate, fol
 
 | Column | Meaning |
 |---|---|
-| Attempted | Names passed to lego in the certificate request |
+| Attempted | Names submitted for issuance, including groups rejected by local credential or name-count checks |
 | Issued | Names covered by the certificate that was issued |
-| Failed | Names in a request that failed |
-| Skipped | Names in a group that never reached lego, for example because the output directory was not writable |
+| Failed | Names in a group that could not issue a certificate |
+| Skipped | Names in a group blocked by setup, for example because the output directory was not writable |
 
-Each request issues one certificate for all its names. A group counts as issued only when lego exits successfully **and** the certificate and key files exist. Otherwise every name in it counts as failed, even if some DNS challenges passed. That includes a lego process stopped by the time limit or a rate limit. If any group fails or is skipped, the run still finishes the other groups, then exits with a nonzero status. The lego or setup error above the table gives the cause.
+Each request issues one certificate for all its names. A group counts as issued when lego exits successfully and saves both the certificate and its key. The live view keeps each completed DNS validation time. If the certificate fails, the view marks every name in that group as failed and shows how many passed DNS validation. Successful groups still count as issued. The run finishes the other groups and exits with a nonzero status if any group failed or was skipped.
 
 ### :stopwatch: Time limit per certificate
 
-lego can wait for many hours, for example when Let's Encrypt answers with a rate limit and a long `Retry-After`. To keep a run from hanging, `certgen-core` computes a time limit for each certificate from its name count and `PROPAGATION_SECONDS`:
+`certgen-core` gives each certificate its own time limit based on its name count and `PROPAGATION_SECONDS`:
 
 ```text
 estimate = 120 s + names × (PROPAGATION_SECONDS + 60 s)
@@ -321,7 +321,7 @@ The 120 s cover the ACME account, the order, finalization and the download. The 
 | 30 | 5580 s (93 min) | 7200 s (2 h) |
 | 100 | 7200 s (2 h) | 7200 s (2 h) |
 
-When the limit passes, lego and every process it started get `SIGKILL`. The group is marked as failed and the next group starts. A rate-limit error from Let's Encrypt (`rateLimited`) stops lego the same way at once, without waiting for the limit. lego cannot clean up after `SIGKILL`, so a stopped request can leave `_acme-challenge` TXT records in Cloudflare. They do not affect later runs. You can delete them by hand.
+The supervisor recognizes definitive errors such as an ACME `rateLimited` response, a rejected Cloudflare token, missing zone access and fatal order errors. It captures the diagnostic, gives lego a moment to exit, then sends `SIGKILL` to that process group if it is still running. DNS propagation waits, ordinary retries and cleanup warnings continue within the per-certificate limit. The supervisor also stops lego if that group reaches its deadline. A forced stop can leave temporary `_acme-challenge` TXT records behind. Full output for each attempt is available in `lego.log`.
 
 In a terminal the table is colored and adapts to the terminal width. It uses ASCII borders and keeps emojis outside the grid.
 
@@ -353,12 +353,12 @@ The first order succeeds. The second hits a TXT propagation timeout. The report 
 
 | Tag | Use it when |
 |---|---|
-| `v4.2.16` | You want a fixed image. **Recommended.** |
+| `v4.3.0` | You want a fixed image. **Recommended.** |
 | `v4.2`, `v4` | You want future patch or minor releases of version 4 |
 | `latest` | You always want the newest release |
-| `alpine3.24.4-lego4.34.0-v4.2.16` | You want the base and lego versions in the tag name |
+| `alpine3.24.4-lego4.34.0-v4.3.0` | You want the base and lego versions in the tag name |
 
-The `v4.2.16` image supports `linux/amd64`, `linux/386`, `linux/arm/v6`, `linux/arm/v7` and `linux/arm64`. Docker pulls the right variant automatically. Older releases (v1 to v3) are still available. See [all tags on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags).
+The `v4.3.0` image supports `linux/amd64`, `linux/386`, `linux/arm/v6`, `linux/arm/v7` and `linux/arm64`. Docker pulls the right variant automatically. Older releases (v1 to v3) are still available. See [all tags on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags).
 
 ---
 
@@ -467,19 +467,14 @@ docker buildx build --builder lego-multiarch \
 
 ## :test_tube: Tests
 
-`tests/run.sh` covers YAML and CLI validation, credential handling, the DNS-01 arguments for A, AAAA, CNAME, wildcard and planned names, the computed time limit, `SIGKILL` on time and rate limits, missing certificate files, concurrent output paths, mixed certificate results, ANSI alignment and the release checksums. Local stand-ins replace lego and curl, so nothing touches the network. GitHub Actions runs the suite once both documentation checks pass on pushes and pull requests targeting `master` or a valid version branch, and on published releases.
+`tests/run.sh` covers YAML and CLI validation, credential handling, DNS-01 arguments, per-certificate deadlines, fatal errors, recoverable retries, missing certificate files, mixed issuance results, ANSI alignment and release checksums. Local stand-ins replace lego and curl, so the suite runs offline. GitHub Actions runs it on pushes and pull requests targeting `master` or a valid version branch, and on published releases.
 
 On Debian or Ubuntu:
 
 ```sh
-sudo apt-get install -y g++ libyaml-dev python3 python3-yaml jq
+sudo apt-get install -y g++ libyaml-dev
 sh tests/run.sh
-bash ci/test-dockerhub.sh
-python3 -B ci/test_publish.py
-python3 -B ci/test_workflows.py
 ```
-
-On pushes to `master`, documentation version failures produce warnings and a job summary while offline and smoke tests continue. Pull requests (including those targeting `master`) and releases keep blocking documentation checks. Release verification waits for both documentation checks, the offline suites and all five smoke tests. After Buildx publishes, independent paths verify the Docker Hub overview and discover the exact release tag before comparing the five architecture hashes in parallel. See [the release pipeline](docs/release-pipeline.md) for metadata outputs, tag suffixes and failure diagnostics.
 
 Or inside a throwaway Alpine container, without installing anything on the host:
 
@@ -529,7 +524,7 @@ dns-smoke:
 docker run --rm -t --env-file .env \
   -v ./dns-smoke.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v4.2.16 --staging --only dns-smoke
+  ljgonzalez/lego-cloudflare-certgen:v4.3.0 --staging --only dns-smoke
 
 # Or with Compose
 DOMAINS_FILE=./dns-smoke.yaml docker compose run --rm certgen --staging --only dns-smoke
@@ -592,7 +587,7 @@ This release stays on lego `v4.34.0` for simplicity. The plan is to move to lego
 | `build/run_lego.sh` | One lego request per selected certificate |
 | `build/src/` | C++ YAML validator, runtime helpers, lego watchdog and ANSI report |
 | `tests/run.sh` | Offline regression tests |
-| `.github/workflows/tests.yml` | GitHub Actions tests and Docker Hub publishing for releases |
+| `.github/workflows/tests.yml` | Runs the tests on GitHub Actions |
 | `versions/versions.csv` | Source for the Docker tag tables |
 | `versions/tags_table.py` | Updates the tag tables in this README and `DOCKERHUB.md` |
 
@@ -605,7 +600,7 @@ This release stays on lego `v4.34.0` for simplicity. The plan is to move to lego
 - **Fresh output every time.** Each run creates a new timestamped folder per group. Nothing is overwritten.
 - **Renewal.** The container issues new certificates and exits. Schedule it, for example with cron or a systemd timer, to renew before expiry.
 - **Rate limits.** Production limits apply per registered domain and per identical set of names. Every run requests new certificates, so repeated production runs for the same group use up the limit of 5 per week quickly. Test with staging first. See [Let's Encrypt rate limits](https://letsencrypt.org/docs/rate-limits/).
-- **Never stuck.** Each certificate has a [time limit](#stopwatch-time-limit-per-certificate) of at most two hours, and a rate-limit error stops lego at once. The lego output above the summary shows when to retry.
+- **Each group has its own deadline.** The [per-certificate limit](#stopwatch-time-limit-per-certificate) is at most two hours. A definitive failure ends that group's request early. For rate limits, see the ACME response for any retry time.
 - **Lowercase names.** Names are passed to lego in lowercase, so the certificate files always match the names in the summary.
 
 ---
@@ -616,18 +611,14 @@ Rolling aliases such as `latest` and `v4` appear with the release they point to.
 
 Maintainers append the upcoming release to the CSV and run `python3 versions/tags_table.py` before committing the two Markdown files. [Release pipeline](docs/release-pipeline.md)
 
+CI version checks are advisory only for pushes and merges to `master`; failures produce warnings and a job summary while offline and smoke tests continue. PRs to `master` and releases retain blocking checks. Release publication exports Buildx SHA-256 hashes and verifies the five Docker Hub architecture digests in parallel after exact-tag discovery.
+
 <!-- BEGIN DOCKER TAG TABLE -->
 
 | tag | runtime | lego | other aliases |
 |---|---|---|---|
-| [`latest`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16), [`v4.2.16`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16), [`v4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16), [`lego4.34-v4.2.16`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16), [`lego4.34.0-v4.2.16`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16), [`alpine3.24-lego4.34-v4.2.16`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16), [`alpine3.24-lego4.34-v4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16), [`alpine3.24.4-lego4.34.0-v4.2.16`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.16) |
-| [`v4.2.15`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.15) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.15`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.15), [`lego4.34.0-v4.2.15`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.15), [`alpine3.24-lego4.34-v4.2.15`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.15), [`alpine3.24.4-lego4.34.0-v4.2.15`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.15) |
-| [`v4.2.14`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.14) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.14`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.14), [`lego4.34.0-v4.2.14`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.14), [`alpine3.24-lego4.34-v4.2.14`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.14), [`alpine3.24.4-lego4.34.0-v4.2.14`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.14) |
-| [`v4.2.13`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.13) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.13`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.13), [`lego4.34.0-v4.2.13`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.13), [`alpine3.24-lego4.34-v4.2.13`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.13), [`alpine3.24.4-lego4.34.0-v4.2.13`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.13) |
-| [`v4.2.12`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.12) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.12`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.12), [`lego4.34.0-v4.2.12`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.12), [`alpine3.24-lego4.34-v4.2.12`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.12), [`alpine3.24.4-lego4.34.0-v4.2.12`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.12) |
-| [`v4.2.11`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.11) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.11`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.11), [`lego4.34.0-v4.2.11`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.11), [`alpine3.24-lego4.34-v4.2.11`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.11), [`alpine3.24.4-lego4.34.0-v4.2.11`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.11) |
-| [`v4.2.10`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.10) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.10`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.10), [`lego4.34.0-v4.2.10`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.10), [`alpine3.24-lego4.34-v4.2.10`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.10), [`alpine3.24.4-lego4.34.0-v4.2.10`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.10) |
-| [`v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9), [`lego4.34.0-v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9), [`alpine3.24-lego4.34-v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9), [`alpine3.24.4-lego4.34.0-v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9) |
+| [`latest`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0), [`v4.3.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0), [`v4.3`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0), [`lego4.34-v4.3.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0), [`lego4.34.0-v4.3.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0), [`alpine3.24-lego4.34-v4.3.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0), [`alpine3.24-lego4.34-v4.3`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0), [`alpine3.24.4-lego4.34.0-v4.3.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.3.0) |
+| [`v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9), [`lego4.34-v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9), [`lego4.34.0-v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9), [`alpine3.24-lego4.34-v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9), [`alpine3.24-lego4.34-v4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9), [`alpine3.24.4-lego4.34.0-v4.2.9`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.9) |
 | [`v4.2.8`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.8) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.8`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.8), [`lego4.34.0-v4.2.8`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.8), [`alpine3.24-lego4.34-v4.2.8`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.8), [`alpine3.24.4-lego4.34.0-v4.2.8`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.8) |
 | [`v4.2.7`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.7) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.7`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.7), [`lego4.34.0-v4.2.7`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.7), [`alpine3.24-lego4.34-v4.2.7`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.7), [`alpine3.24.4-lego4.34.0-v4.2.7`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.7) |
 | [`v4.2.6`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.6) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.2.6`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.6), [`lego4.34.0-v4.2.6`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.6), [`alpine3.24-lego4.34-v4.2.6`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.6), [`alpine3.24.4-lego4.34.0-v4.2.6`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.2.6) |

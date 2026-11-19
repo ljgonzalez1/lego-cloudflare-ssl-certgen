@@ -182,7 +182,8 @@ configure_cloudflare() {
     case "$token" in
         ''|*[!a-zA-Z0-9_-]*)
             log_err "Provide a valid Cloudflare DNS API token through the Compose secret or CLOUDFLARE_API_TOKEN."
-            return 2
+            # The caller reports credential failures separately from other setup errors.
+            return 3
             ;;
     esac
 

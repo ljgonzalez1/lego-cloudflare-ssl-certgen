@@ -1,8 +1,6 @@
 # Release pipeline
 
-The [CI/CD workflow](../.github/workflows/tests.yml) validates branch changes and publishes releases. It uses `ci/publish-image.sh` to publish five platforms and nine tags to Docker Hub.
-
-When applying this workflow over v4.2.9, remove `.github/workflows/release.yml`. The release trigger now lives in `tests.yml`.
+GitHub Actions runs the release tests and uses `ci/publish-image.sh` to publish five platforms and nine tags to Docker Hub.
 
 ## What runs
 
@@ -17,7 +15,7 @@ For a pull request, the relevant branch is its target. Merging updates the desti
 | PR, push or merge to `master` | Yes | Yes | Five in parallel | — | — |
 | Publish a GitHub Release | Yes | Yes | Five in parallel | After all checks pass | After the image and all aliases are published |
 
-The two document checks run in parallel. Offline regression starts when both pass. In v4.2.16, only `push` events on `refs/heads/master` tolerate failures of the version-check steps: warnings and job summaries identify the failed document, and offline tests proceed even if the failed check did not export `eligible`. Merges into master use this same push policy. PRs targeting master, releases, and pushes to version branches remain blocking. Checkout failures and failures of later tests remain blocking. On qualifying pull requests, pushes to `master`, and releases, ARMv6, ARMv7, ARM64, i386 and AMD64 smoke tests then run in parallel. A merge to `master` runs through the push event. GitHub Actions runs ARM64 and AMD64 natively. The other platforms use QEMU and a dedicated Buildx builder. The smoke containers run with no network and use the locally built images.
+The two document checks run in parallel. Only pushes to `master`, including merges, treat their version failures as advisory: warnings and job summaries identify the failed file, and offline and smoke tests continue. Pull requests (including PRs to `master`), releases and other version branches retain blocking checks. Checkout failures and later test failures remain blocking. On qualifying pull requests, pushes to `master`, and releases, ARMv6, ARMv7, ARM64, i386 and AMD64 smoke tests then run in parallel. A merge to `master` runs through the push event. GitHub Actions runs ARM64 and AMD64 natively. The other platforms use QEMU and a dedicated Buildx builder. The smoke containers run with no network and use the locally built images.
 
 ```mermaid
 flowchart TD
@@ -45,13 +43,13 @@ flowchart TD
     WaitDescription --> Verify["Check published overview"]
 ```
 
-Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.2.15/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `versions/versions.txt`.
+Version branches allow an optional `v` or `V` followed by two to four dot-separated numeric components. They can end in `build`, `audit`, `review`, `beta`, `alpha`, or `alfa`, preceded by a dot or hyphen. An optional dot or hyphen followed by one to five dot-separated numbers can follow that suffix. Version prefixes also work with subpaths such as `v4.3.0/docs/tags`. For a PR into `master`, the source branch supplies the version hint. For a version branch or numeric release tag, the first two or three components must agree with `APP_VERSION` in `versions/versions.txt`.
 
 The publishing workflow subscribes to GitHub's `release.published` activity, including prereleases. The Git release tag selects the source commit. `versions/versions.txt` from that commit supplies the version numbers used in Docker Hub. A published prerelease follows the same sequence and updates `latest`.
 
 ## Update the Markdown tables
 
-1. Update `versions/versions.txt` for the upcoming image and append its row to `versions/versions.csv`. Keep the upcoming release as the final CSV row. The CSV controls the application tag's optional `v`/`V` prefix and suffix, including a suffix in `App Version` or the separate `App Suffix` column.
+1. Update `versions/versions.txt` for the upcoming image and append its row to `versions/versions.csv`. Keep the upcoming release as the final CSV row.
 2. From the repository root, regenerate the short table in `DOCKERHUB.md` and the full history in `README.md`.
 
    ```bash
@@ -86,8 +84,8 @@ The publishing workflow subscribes to GitHub's `release.published` activity, inc
    bash ci/publish-image.sh --print-tags
    ```
 
-4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.2.16` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
-5. Select **Publish release**, then open the release run under **Actions → CI/CD**. After the document, offline, and five smoke jobs pass, the publisher prepares the final builder.
+4. In GitHub open **Releases → Draft a new release**. Select a tag that points to the prepared commit or create `v4.3.0` with `master` as its target. If the tag already exists, its commit supplies the workflows, source, versions, and Markdown.
+5. Select **Publish release**, then open **Actions → CI/CD**. After the document, offline, and smoke jobs pass, the publisher prepares the final builder.
 6. The publisher runs Buildx with `--metadata-file build-metadata.json` in its temporary build directory. It reads `containerimage.digest`, fetches that immutable index by `repository@sha256:...`, verifies its bytes against the metadata digest, and extracts exactly one manifest digest for each of the five platforms. The image config digest is not used. It assigns every alias to the same index, publishing `latest` last. After all writes succeed, it exports `digest`, `digest_armv6`, `digest_armv7`, `digest_arm64`, `digest_i386` and `digest_amd64` through `$GITHUB_OUTPUT` and the publisher job's outputs.
 7. Two independent paths now start. The overview path immediately updates Docker Hub, waits 20 seconds if the update succeeds, and compares the returned Markdown with `DOCKERHUB.md`. It tolerates CRLF and trailing whitespace at the end. A content mismatch prints a unified diff with `-` lines from the committed file and `+` lines from Docker Hub.
 8. The image path waits 20 seconds, then queries the Docker Hub tag API for an exact full version with no prefix, `v`, or `V`, preserving the optional suffix. It also accepts the four fully versioned OS/lego aliases generated from the final CSV row. Rolling aliases such as `latest`, `v4` and `v4.2` cannot satisfy this check. The detected tag is exported separately, without a repository name.
@@ -103,7 +101,7 @@ All builds for an event use the source commit from that event. Where tag names a
 
 The workflow has no `create` subscription. A push that only creates a version reference, with `created: true` and an empty `commits` array, skips both document jobs and every dependent test. An initial push carrying commits still runs the version checks and offline suite. Later pushes and merges to an existing version branch run the same checks. Pull requests and releases keep their existing behavior. GitHub may show an entirely skipped workflow run for a creation-only push.
 
-## CI verification v4.2.15
+## CI verification inherited from v4.2.16
 
 The repository name is derived locally in downstream jobs. It is not exported as a job output: `DOCKERHUB_USERNAME` is a GitHub secret and a full image name containing that value can be suppressed by the runner. This avoids a successful push followed by an empty `IMAGE` input. Only hashes and the detected tag cross job boundaries. `ci/read-publish-result.sh` validates the entire result before emitting any outputs, including the full application identity and all five platform hashes.
 

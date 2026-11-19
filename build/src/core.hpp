@@ -5,9 +5,11 @@
 #include <string_view>
 
 namespace certgen {
+inline constexpr std::size_t max_certificate_names = 100;
+
 bool valid_group(std::string_view name);
 std::size_t read_number(std::string_view text);
-void write_domains(int argc, char* argv[]);
+void write_domains(int argc, char* argv[], bool for_issuance);
 void write_summary();
 void write_identity();
 void set_output_owner(const char* path, const char* uid, const char* gid);

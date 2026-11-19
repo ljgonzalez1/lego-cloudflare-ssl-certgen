@@ -53,6 +53,9 @@ PATH=/usr/local/bin:/usr/bin:/bin
 } >> "$TEST_LEGO_LOG"
 if [ -n "${TEST_LEGO_REPLAY:-}" ]; then
     cat -- "$TEST_LEGO_REPLAY" >&2
+    if [ "${TEST_LEGO_REPLAY_HANG:-0}" -eq 1 ]; then
+        exec sleep 30
+    fi
     exit "${TEST_LEGO_REPLAY_STATUS:-1}"
 fi
 path=
@@ -63,6 +66,16 @@ for argument do
     case "$argument" in
         fail.example.org) exit 17 ;;
         nocert.example.org) exit 0 ;;
+        badtoken.example.org|nopermission.example.org)
+            case "$argument" in
+                badtoken.*) error='[status code 400] 6003: Invalid request headers; 6111: Invalid format for Authorization header' ;;
+                *) error='[status code 403] 10000: Authentication error' ;;
+            esac
+            printf '2026/11/17 06:53:55 Could not obtain certificates:\n\terror: one or more domains had a problem:\n' >&2
+            printf '[%s] [%s] acme: error presenting token: cloudflare: failed to find zone example.org.: %s\n' \
+                "$argument" "$argument" "$error" >&2
+            exec sleep 30
+            ;;
         ratelimited.example.org)
             # Ignore SIGTERM so only SIGKILL can stop this stand-in.
             trap '' TERM
@@ -91,6 +104,13 @@ info() {
 joined=$(printf '%s' "$names" | paste -sd, - | sed 's/,/, /g')
 printf '!!!! HEADS UP !!!!\n\nYour account credentials have been saved.\n'
 info 'acme: Registering account for test@example.com'
+if [ "$first" = recover.example.org ]; then
+    time=$(date '+%Y/%m/%d %H:%M:%S')
+    printf '%s\n' "$time [WARN] retry: acme: error: 503 :: urn:ietf:params:acme:error:serverInternal :: service unavailable" \
+        "$time [INFO] retry due to: acme: error: 400 :: urn:ietf:params:acme:error:badNonce :: retrying nonce" \
+        "$time [WARN] [recover.example.org] acme: cleaning up failed: cloudflare: failed to find zone example.org.: zone could not be found" >&2
+    sleep 1
+fi
 info "[$joined] acme: Obtaining bundled SAN certificate"
 printf '%s' "$names" | while IFS= read -r name; do
     info "[$name] acme: Preparing to solve DNS-01"
@@ -300,6 +320,15 @@ yaml_name_limit() {
     printf '  - n101.example.com\n' >> "$file"
     expect_status 2 read_domains
     assert_contains '100-name limit' "$stderr"
+
+    printf 'last: [last.example.org]\n' >> "$file"
+    expect_status 1 cli
+    assert_contains 'limit: 101 DNS names exceed the 100-name limit' "$stderr"
+    assert_line 'last.example.org' "$TEST_LEGO_LOG"
+    assert_absent 'n101.example.com' "$TEST_LEGO_LOG"
+    summary_rows > "$work/rows"
+    printf 'limit:101:0:101:0:FAILED:\nlast:1:1:0:0:ISSUED:\nTOTAL:102:1:101:0::\n' > "$work/expected"
+    diff -u "$work/expected" "$work/rows"
 }
 
 yaml_unknown_selection() {
@@ -417,7 +446,7 @@ cli_rejects_invalid_token() {
     assert_contains 'Provide a valid Cloudflare DNS API token' "$stderr"
     assert_absent 'sensitive.invalid.token' "$stderr"
     assert_absent 'sensitive.invalid.token' "$stdout"
-    assert_contains '2 skipped' "$stdout"
+    assert_contains 'Certificates: 2 attempted, 0 issued, 2 failed, 0 skipped.' "$stdout"
     [ ! -s "$TEST_LEGO_LOG" ]
 }
 
@@ -523,21 +552,82 @@ core_supervise() {
     assert_line before "$stderr"
 }
 
+core_stops_on_failed_order() {
+    started=$(date +%s)
+    # The fatal message spans different reads and its detail follows the header.
+    expect_status 137 certgen-core supervise --log "$work/lego.log" 10 /bin/sh -c '
+        sleep 30 & echo $! > "$1"
+        printf "2026/11/17 06:53:55 Could not com" >&2
+        sleep 0.1
+        printf "plete registration\n\tACME directory unavailable\n" >&2
+        wait
+    ' sh "$work/failed-order.pid"
+    [ $(($(date +%s) - started)) -lt 5 ]
+    process_gone "$(cat -- "$work/failed-order.pid")"
+    assert_contains 'Could not complete registration ACME directory unavailable (lego stopped)' "$stderr"
+    assert_contains 'ACME directory unavailable' "$work/lego.log"
+
+    # A fatal error is still a failure when the last line has no newline.
+    expect_status 1 certgen-core supervise 5 /bin/sh -c \
+        'printf "2026/11/17 06:53:55 Could not obtain certificates:\n\ttoo many identifiers requested" >&2'
+    assert_contains "Let's Encrypt rejected the number of DNS names. Use at most 100 per certificate." "$stderr"
+
+    expect_status 1 certgen-core supervise 5 /bin/sh -c '
+        printf "2026/11/17 06:53:55 Could not obtain certificates:\n\terror: one or more domains had a problem:\n" >&2
+        printf "[dns.example.org] propagation: time limit exceeded: last error: TXT record not found\n" >&2
+        exit 1
+    '
+    assert_contains 'DNS propagation timed out.' "$stderr"
+}
+
 cli_stops_on_rate_limit() {
     printf "limited: [ratelimited.example.org, www.limited.example.org, '*.limited.example.org']\n" >> "$file"
     started=$(date +%s)
     expect_status 1 cli --only limited --only first
     [ $(($(date +%s) - started)) -lt 5 ]
     assert_contains 'urn:ietf:params:acme:error:rateLimited' "$stderr"
-    assert_contains "limited: Let's Encrypt rate limit reached. lego was stopped." "$stderr"
+    assert_contains "limited: Let's Encrypt rate limit reached. ACME response: too many certificates (lego stopped)" "$stderr"
     assert_contains 'Certificates: 2 attempted, 1 issued, 1 failed, 0 skipped.' "$stdout"
     summary_rows > "$work/rows"
     printf 'first:5:5:0:0:ISSUED:\nlimited:3:0:3:0:FAILED:\nTOTAL:8:5:3:0::\n' > "$work/expected"
     diff -u "$work/expected" "$work/rows"
 }
 
+cli_stops_on_cloudflare_errors() {
+    cat > "$file" <<'YAML'
+bad: [badtoken.example.org, www.example.org]
+blocked: [nopermission.example.org, '*.example.net']
+last: [last.example.org]
+YAML
+    started=$(date +%s)
+    expect_status 1 cli
+    [ $(($(date +%s) - started)) -lt 5 ]
+    assert_contains 'bad: Cloudflare rejected the API token.' "$stderr"
+    assert_contains 'blocked: Cloudflare denied API access.' "$stderr"
+    assert_contains '(lego stopped)' "$stderr"
+    assert_line 'last.example.org' "$TEST_LEGO_LOG"
+    assert_contains '6111:' "$(find "$output/bad" -name lego.log)"
+    summary_rows > "$work/rows"
+    printf 'bad:2:0:2:0:FAILED:\nblocked:2:0:2:0:FAILED:\nlast:1:1:0:0:ISSUED:\nTOTAL:5:1:4:0::\n' > "$work/expected"
+    diff -u "$work/expected" "$work/rows"
+}
+
+cli_continues_on_recoverable_errors() {
+    printf 'recover: [recover.example.org]\n' >> "$file"
+    LEGO_OUTPUT=pretty expect_status 0 cli --only recover
+    plain_view "$stdout" > "$work/view"
+    assert_contains '✅ Certificate received · 1/1 names verified' "$work/view"
+    assert_contains 'TXT record not removed' "$work/view"
+    assert_absent '❌' "$work/view"
+    assert_contains 'serverInternal' "$(find "$output/recover" -name lego.log)"
+}
+
 cli_stops_at_time_limit() {
-    printf "stuck: [hang.example.org, '*.stuck.example.org']\nlast: [last.example.org]\n" >> "$file"
+    cat >> "$file" <<'YAML'
+stuck: [hang.example.org, '*.stuck.example.org']
+again: [hang.example.org]
+last: [last.example.org]
+YAML
     # Shorten only the computed limit; supervise, lego and the scripts stay real.
     mkdir -- "$work/short-limit"
     cat > "$work/short-limit/certgen-core" <<SH
@@ -550,19 +640,20 @@ fi
 SH
     chmod +x "$work/short-limit/certgen-core"
     started=$(date +%s)
-    PATH="$work/short-limit:$PATH" expect_status 1 cli --only stuck --only last
+    PATH="$work/short-limit:$PATH" expect_status 1 cli --only stuck --only again --only last
     [ $(($(date +%s) - started)) -lt 5 ]
     assert_contains 'stuck: lego did not finish within 1s and was stopped with SIGKILL.' "$stderr"
+    assert_contains 'again: lego did not finish within 1s and was stopped with SIGKILL.' "$stderr"
     assert_line 'last.example.org' "$TEST_LEGO_LOG"
     summary_rows > "$work/rows"
-    printf 'stuck:2:0:2:0:FAILED:\nlast:1:1:0:0:ISSUED:\nTOTAL:3:1:2:0::\n' > "$work/expected"
+    printf 'stuck:2:0:2:0:FAILED:\nagain:1:0:1:0:FAILED:\nlast:1:1:0:0:ISSUED:\nTOTAL:4:1:3:0::\n' > "$work/expected"
     diff -u "$work/expected" "$work/rows"
 }
 
 cli_requires_saved_certificate() {
     printf "missing: [nocert.example.org, '*.nocert.example.org']\nwild: ['*.wild.example.org', wild.example.org]\n" >> "$file"
     expect_status 1 cli --only missing --only wild
-    assert_contains 'missing: lego finished, but no certificate was saved' "$stderr"
+    assert_contains 'missing: lego finished, but no certificate and key pair was saved' "$stderr"
     find "$output/wild" -name '_.wild.example.org.crt' | grep -q .
     summary_rows > "$work/rows"
     printf 'missing:2:0:2:0:FAILED:\nwild:2:2:0:0:ISSUED:\nTOTAL:4:2:2:0::\n' > "$work/expected"
@@ -653,18 +744,23 @@ configuration directory at "/ssl-certs/familita/x/accounts".
 [*.mail.familita.com] [*.mail.familita.com] acme: error presenting token: cloudflare: failed to find zone com.: zone could not be found
 LOG
     printf "familita: [familita.cl, '*.familita.cl', '*.drive.familita.cl', '*.cloud.familita.cl', '*.mail.familita.com']\n" >> "$file"
-    COLUMNS=120 TEST_LEGO_REPLAY="$work/familita.log" LEGO_OUTPUT=pretty expect_status 1 cli --only familita
+    started=$(date +%s)
+    COLUMNS=120 TEST_LEGO_REPLAY="$work/familita.log" TEST_LEGO_REPLAY_HANG=1 LEGO_OUTPUT=pretty \
+        expect_status 1 cli --only familita
+    [ $(($(date +%s) - started)) -lt 5 ]
     plain_view "$stdout" > "$work/view"
     # Durations come from lego's timestamps.
     assert_line '✅ familita.cl          verified in 6s' "$work/view"
     assert_line '✅ *.cloud.familita.cl  verified in 7s' "$work/view"
     assert_line '✅ *.drive.familita.cl  verified in 8s' "$work/view"
+    assert_line '❌ familita.cl          DNS verified in 6s, certificate failed' "$work/view"
     grep -q '^❌ \*\.mail\.familita\.com  error presenting token: cloudflare: failed to find zone com\.' "$work/view"
-    grep -q '^❌ No certificate · 4/5 names verified · 1 failed · ' "$work/view"
+    assert_line '❌ No certificate | 4/5 DNS verified | 5 failed | 1m43s' "$work/view"
     assert_contains '   *.mail.familita.com: acme: error presenting token' "$work/view"
     # The cleanup warning repeats that error, so it is not shown again.
     assert_absent 'cleaning up failed' "$work/view"
-    assert_contains 'familita: lego exited with code 1.' "$stderr"
+    assert_contains 'familita: Cloudflare zone lookup failed.' "$work/view"
+    assert_contains '(lego stopped)' "$work/view"
     assert_contains 'Full lego output:' "$stdout"
     summary_rows > "$work/rows"
     printf 'familita:5:0:5:0:FAILED:\nTOTAL:5:0:5:0::\n' > "$work/expected"
@@ -687,9 +783,10 @@ LOG
     plain_view "$stdout" > "$work/view"
     assert_line '✅ a.example.com  verified in 7s' "$work/view"
     assert_line '✅ b.example.com  verified in 0s' "$work/view"
-    assert_line '✅ Certificate received · 2/2 names verified · 15s' "$work/view"
-    # lego claimed success without saving files, so the group still fails.
-    assert_contains 'clock: lego finished, but no certificate was saved' "$stderr"
+    # lego claimed success without saving files, so every name still fails.
+    assert_line '❌ No certificate | 2/2 DNS verified | 2 failed | 15s' "$work/view"
+    assert_contains 'clock: lego finished, but no certificate and key pair was saved' "$work/view"
+    assert_absent 'Certificate received' "$work/view"
 }
 
 cli_live_view_terminal() {
@@ -944,14 +1041,17 @@ check 'Validate all YAML before any issue request' cli_yaml_before_issue
 check 'A, AAAA, CNAME, wildcard and planned names all use DNS-01' cli_dns_types
 check 'Credential precedence, CNAME delegation, timeout and resolvers' cli_delegation_and_resolvers
 check 'Multiple malformed settings abort before issuing' cli_bad_settings
-check 'Invalid token is redacted' cli_rejects_invalid_token
+check 'Malformed token fails selected groups and is redacted' cli_rejects_invalid_token
 check 'Compose secret is passed through lego’s token-file option' cli_routes_secret_file
 check 'Invalid CNAME delegation setting skips issuance' cli_rejects_invalid_delegation
 check 'Missing output path skips issuance' cli_missing_output
 check 'Mixed group outcomes, continuation, order and precise totals' cli_group_results
 check 'Computed time limit: estimate x 1.5, at most two hours' core_time_limit
 check 'Supervisor exit codes, SIGKILL and process group' core_supervise
+check 'Definitive multiline failure stops lego and its process group' core_stops_on_failed_order
 check 'Rate limit kills lego and fails every name of that certificate' cli_stops_on_rate_limit
+check 'Cloudflare token and permission errors fail only their groups' cli_stops_on_cloudflare_errors
+check 'ACME retries and cleanup warnings allow issuance to continue' cli_continues_on_recoverable_errors
 check 'Time limit kills a stalled lego and the next group still runs' cli_stops_at_time_limit
 check 'Exit status 0 without certificate files counts as failed' cli_requires_saved_certificate
 check 'DNS names are passed to lego in lowercase' cli_lowercases_names
