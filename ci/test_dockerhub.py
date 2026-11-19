@@ -12,7 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = "ljgonzalez/lego-cloudflare-certgen"
-sys.path.insert(0, str(ROOT / "versions"))
+sys.path.insert(0, str(ROOT / "ci/versions"))
 from release_config import release_config, tag_candidates
 VALUES, RELEASE_TAGS = release_config()
 CURRENT_TAG = VALUES["APP_TAG"]

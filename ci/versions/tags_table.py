@@ -2,7 +2,7 @@
 """Update the Docker tag tables in the root Markdown files from versions.csv.
 
 Run:
-    python3 versions/tags_table.py
+    python3 ci/versions/tags_table.py
 
 Input:  versions.csv (UTF-8; comma-separated; 11 columns, with/without header)
 Output: the marked blocks in ../README.md (complete) and ../DOCKERHUB.md (short)
@@ -49,7 +49,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 BASE_DIR = Path(__file__).resolve().parent
-REPO_DIR = BASE_DIR.parent
+REPO_DIR = BASE_DIR.parent.parent
 CSV_PATH = BASE_DIR / "versions.csv"
 TABLE_BEGIN = "<!-- BEGIN DOCKER TAG TABLE -->"
 TABLE_END = "<!-- END DOCKER TAG TABLE -->"

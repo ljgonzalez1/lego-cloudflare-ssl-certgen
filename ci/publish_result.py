@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "versions"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ci/versions"))
 from release_config import release_config
 
 PLATFORMS = {

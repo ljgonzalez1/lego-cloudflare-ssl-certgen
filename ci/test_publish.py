@@ -184,19 +184,19 @@ class ReleaseIdentityChecks(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         self.work = Path(temporary.name)
-        for filename in ("versions/release_config.py", "versions/tags_table.py", "versions/versions.txt", "versions/versions.csv",
-                         "versions/check_version.py", "ci/is-version-branch.sh", "README.md", "DOCKERHUB.md",
+        for filename in ("ci/versions/release_config.py", "ci/versions/tags_table.py", "ci/versions/versions.txt", "ci/versions/versions.csv",
+                         "ci/versions/check_version.py", "ci/is-version-branch.sh", "README.md", "DOCKERHUB.md",
                          "ci/versions.sh", "ci/publish-image.sh"):
-            target = self.work / filename; target.parent.mkdir(exist_ok=True)
+            target = self.work / filename; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / filename, target)
-        self.rows = list(csv.reader(io.StringIO((self.work / "versions/versions.csv").read_text())))
+        self.rows = list(csv.reader(io.StringIO((self.work / "ci/versions/versions.csv").read_text())))
 
     def write_csv(self, prefix="v", suffix="", embedded=""):
         rows = copy.deepcopy(self.rows)
         app = publish.release_config()[0]["APP_VERSION"].split("-", 1)[0]
         rows[-1][8] = prefix + app + embedded
         rows[-1][9] = suffix
-        with (self.work / "versions/versions.csv").open("w", newline="") as output:
+        with (self.work / "ci/versions/versions.csv").open("w", newline="") as output:
             csv.writer(output).writerows(rows)
         return app + embedded + ("-" + suffix if suffix else "")
 
@@ -212,7 +212,7 @@ class ReleaseIdentityChecks(unittest.TestCase):
                     self.assertEqual(len(tags), 9)
                     self.assertEqual(tags[5], prefix + app)
                     self.assertTrue(all(tag.endswith(prefix + app) for tag in (tags[0], tags[1], tags[3], tags[4])))
-                    candidates = subprocess.check_output(["python3", "-B", "versions/release_config.py", "--tag-candidates"], cwd=self.work, text=True).splitlines()
+                    candidates = subprocess.check_output(["python3", "-B", "ci/versions/release_config.py", "--tag-candidates"], cwd=self.work, text=True).splitlines()
                     self.assertTrue({app, "v" + app, "V" + app}.issubset(candidates))
                     self.assertNotIn("latest", candidates)
                     self.assertNotIn(tags[6], candidates)
@@ -221,7 +221,7 @@ class ReleaseIdentityChecks(unittest.TestCase):
         for column, value in ((8, "v99.0.0"), (5, "v99.0.0"), (1, "99.0.0")):
             with self.subTest(column=column):
                 rows = copy.deepcopy(self.rows); rows[-1][column] = value
-                with (self.work / "versions/versions.csv").open("w", newline="") as output:
+                with (self.work / "ci/versions/versions.csv").open("w", newline="") as output:
                     csv.writer(output).writerows(rows)
                 result = subprocess.run(["bash", "ci/publish-image.sh", "--print-tags"], cwd=self.work,
                                         text=True, capture_output=True, timeout=5)
@@ -233,11 +233,11 @@ class ReleaseIdentityChecks(unittest.TestCase):
         for prefix, embedded, suffix in (("", "", ""), ("v", "", "beta-1"), ("V", "-alpha.1", "build.42")):
             with self.subTest(prefix=prefix, embedded=embedded, suffix=suffix):
                 app = self.write_csv(prefix, suffix, embedded)
-                generated = subprocess.run(["python3", "-B", "versions/tags_table.py"], cwd=self.work,
+                generated = subprocess.run(["python3", "-B", "ci/versions/tags_table.py"], cwd=self.work,
                                            text=True, capture_output=True, timeout=5)
                 self.assertEqual(generated.returncode, 0, generated.stderr)
                 for document in ("README.md", "DOCKERHUB.md"):
-                    result = subprocess.run(["python3", "-B", "versions/check_version.py", document, "--ref", prefix + app],
+                    result = subprocess.run(["python3", "-B", "ci/versions/check_version.py", document, "--ref", prefix + app],
                                             cwd=self.work, text=True, capture_output=True, timeout=5)
                     self.assertEqual(result.returncode, 0, result.stderr)
 

@@ -95,7 +95,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ libyaml-dev python3 python3-yaml jq
       - name: Run offline tests
-        run: sh tests/run.sh
+        run: sh ci/tests/run.sh
       - name: Test Docker Hub verification logic
         run: bash ci/test-dockerhub.sh
       - name: Test Buildx metadata, platform hashes and release tag configuration

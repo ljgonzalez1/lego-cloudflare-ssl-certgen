@@ -26,7 +26,7 @@ def expected_tags() -> tuple[str, ...]:
         capture_output=True,
     )
     if result.returncode:
-        raise ValueError(result.stderr.strip() or "Cannot read the release tags from versions/versions.txt.")
+        raise ValueError(result.stderr.strip() or "Cannot read the release tags from ci/versions/versions.txt.")
     prefix = f"{DOCKER_IMAGE}:"
     refs = result.stdout.splitlines()
     if len(refs) != 9 or any(not ref.startswith(prefix) for ref in refs):
@@ -45,13 +45,13 @@ def check_ref(ref: str, version: str) -> None:
         capture_output=True,
     )
     if result.returncode == 1:
-        return  # A non-versioned ref uses the full APP_VERSION from versions/versions.txt.
+        return  # A non-versioned ref uses the full APP_VERSION from ci/versions/versions.txt.
     result.check_returncode()
     numbers = (part.lstrip("0") or "0" for part in result.stdout.strip().split(".")[:3])
     branch_version = list(numbers)
     app_version = re.sub(r"^[vV]", "", version).split("-", 1)[0]
     if app_version.split(".")[:len(branch_version)] != branch_version:
-        raise ValueError(f"{ref!r} does not match APP_VERSION={app_version} in versions/versions.txt.")
+        raise ValueError(f"{ref!r} does not match APP_VERSION={app_version} in ci/versions/versions.txt.")
 
 
 def main() -> int:
@@ -69,12 +69,12 @@ def main() -> int:
         latest = releases[-1]
         if latest.app_full != version:
             raise ValueError(
-                f"The final row of versions/versions.csv is {latest.app_full}. "
-                f"Add {version} as the final row and run python3 versions/tags_table.py."
+                f"The final row of ci/versions/versions.csv is {latest.app_full}. "
+                f"Add {version} as the final row and run python3 ci/versions/tags_table.py."
             )
         if latest.tags != tags:
             raise ValueError(
-                f"The Docker tags for {version} in versions/versions.csv differ from versions/versions.txt. "
+                f"The Docker tags for {version} in ci/versions/versions.csv differ from ci/versions/versions.txt. "
                 "Check the Alpine, lego, and application versions and suffixes."
             )
 
@@ -83,7 +83,7 @@ def main() -> int:
         if current != updated:
             raise ValueError(
                 f"{args.document} is missing the current generated table for {version}. "
-                "Run python3 versions/tags_table.py and commit both Markdown files."
+                "Run python3 ci/versions/tags_table.py and commit both Markdown files."
             )
         print(f"{args.document}: {version} and its Docker tag table verified.")
     except (OSError, ValueError, csv.Error, subprocess.CalledProcessError) as exc:
