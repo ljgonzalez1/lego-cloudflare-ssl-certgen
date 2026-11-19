@@ -9,12 +9,14 @@ esac
 . "${script_dir}/validate_env.sh"
 
 usage() {
-    printf '%s\n' "Usage: certgen [--list | --dry-run | --test]
+    printf '%s\n' "Usage: certgen [--list | --dry-run | --test | --staging | --production]
                [--only FOLDER]... [--config FILE] [--output DIRECTORY]
 
   --list          Validate the YAML and list certificate groups
   --dry-run       Show the planned groups, domains and output paths
   --test          Check lego and preview an offline staging run for CI
+  --staging       Issue staging certificates without prompting
+  --production    Issue live certificates without confirmation
   --only FOLDER   Process only this group (repeatable)
   --config FILE   Read this YAML file (default: /app/domains.yaml)
   --output DIR    Write to this directory (default: /ssl-certs)"
@@ -33,6 +35,7 @@ is_output_mounted() {
 CERTGEN_ACTION=issue
 CERTGEN_CONFIG=/app/domains.yaml
 CERTGEN_OUTPUT=/ssl-certs
+requested_mode=
 
 # Queue selected groups behind the CLI arguments that remain to be parsed.
 remaining=$#
@@ -51,8 +54,12 @@ while [ "$remaining" -gt 0 ]; do
             CERTGEN_ACTION=$action
             ;;
         --staging|--production)
-            log_err "Choose Staging or Production from the issuance menu. Use docker run -it."
-            exit 2
+            mode=${option#--}
+            if [ -n "$requested_mode" ] && [ "$requested_mode" != "$mode" ]; then
+                log_err "--staging and --production are mutually exclusive."
+                exit 2
+            fi
+            requested_mode=$mode
             ;;
         --only|--config|--output)
             if [ "$remaining" -eq 0 ]; then
@@ -79,16 +86,28 @@ while [ "$remaining" -gt 0 ]; do
     esac
 done
 
+if [ "$CERTGEN_ACTION" != issue ] && [ -n "$requested_mode" ]; then
+    log_err "--staging and --production cannot be combined with --list, --dry-run or --test."
+    exit 2
+fi
+
 validate_identity
 
 issuance_mode=staging
 if [ "$CERTGEN_ACTION" = issue ]; then
-    issuance_mode=$(certgen-core issuance-menu) || exit $?
-    case "$issuance_mode" in
-        staging|production) ;;
-        cancel) log_info "Certificate issuance cancelled."; exit 0 ;;
-        *) log_err "Invalid response from the issuance menu."; exit 2 ;;
-    esac
+    if [ -z "$requested_mode" ]; then
+        issuance_mode=$(certgen-core issuance-menu) || exit $?
+        case "$issuance_mode" in
+            staging|production) ;;
+            cancel) log_info "Certificate issuance cancelled."; exit 0 ;;
+            *) log_err "Invalid response from the issuance menu."; exit 2 ;;
+        esac
+    else
+        issuance_mode=$requested_mode
+        if [ "$issuance_mode" = production ]; then
+            log_warn "Production requested by --production. This run submits live orders without confirmation." >&2
+        fi
+    fi
 fi
 
 export CERTGEN_ACTION CERTGEN_CONFIG CERTGEN_OUTPUT
