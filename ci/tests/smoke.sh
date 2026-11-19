@@ -12,7 +12,7 @@ trap 'rm -rf -- "$work"' EXIT
 sed -e 's/^EMAIL=.*/EMAIL=ci@example.com/' \
     -e 's/^ACCEPT_LEGO_TOS=.*/ACCEPT_LEGO_TOS=true/' \
     -e 's/^CLOUDFLARE_API_TOKEN=.*/CLOUDFLARE_API_TOKEN=/' \
-    example.env > "$work/.env"
+    template.env > "$work/.env"
 grep -Fxq 'ACCEPT_LEGO_TOS=true' "$work/.env"
 
 cat > "$work/domains.yaml" <<'YAML'
