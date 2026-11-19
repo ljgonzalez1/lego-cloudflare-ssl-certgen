@@ -48,7 +48,7 @@ groups=$(docker run "${args[@]}" "$image" --list)
 printf '%s\n' "$groups"
 [[ "$groups" == 'smoke: 3 domains' ]]
 
-plan=$(docker run "${args[@]}" "$image" --staging --dry-run)
+plan=$(docker run "${args[@]}" "$image" --dry-run)
 printf '%s\n' "$plan"
 grep -Fxq '🧪 STAGING MODE' <<< "$plan"
 grep -Fxq 'ℹ️  ACME server: https://acme-staging-v02.api.letsencrypt.org/directory' <<< "$plan"
