@@ -209,7 +209,7 @@ class ReleaseIdentityChecks(unittest.TestCase):
                                             text=True, capture_output=True, timeout=5)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     tags = [line.split(":", 1)[1] for line in result.stdout.splitlines()]
-                    self.assertEqual(len(tags), 9)
+                    self.assertEqual(len(tags), 8 if (embedded or suffix) else 9)
                     self.assertEqual(tags[5], prefix + app)
                     self.assertTrue(all(tag.endswith(prefix + app) for tag in (tags[0], tags[1], tags[3], tags[4])))
                     candidates = subprocess.check_output(["python3", "-B", "ci/versions/release_config.py", "--tag-candidates"], cwd=self.work, text=True).splitlines()
