@@ -1078,6 +1078,11 @@ check 'Help works before environment validation' cli_help
 check 'Conflicting and missing CLI arguments' cli_argument_errors
 check 'List and dry-run preview without credentials' cli_listing_and_preview
 check 'Environment selects staging or production' cli_environment_mode
+menu_in_terminal() {
+    python3 "$root/ci/tests/menu.py" "$CERTGEN_TEST_CORE"
+}
+
+check 'Interactive issuance menu in a pseudo-terminal' menu_in_terminal
 check 'Unattended test checks lego and previews staging without issuance' cli_offline_test_mode
 check 'Cross-zone names, DNS root dots and malformed contact or resolver input' cli_configuration_edges
 check 'Identity validation and privilege-drop command' cli_identities
