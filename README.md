@@ -4,7 +4,7 @@
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-ljgonzalez%2Flego--cloudflare--certgen-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen)
 [![Docker pulls](https://img.shields.io/docker/pulls/ljgonzalez/lego-cloudflare-certgen?logo=docker&logoColor=white)](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags)
-[![Image](https://img.shields.io/badge/image-v5.0.1-blue)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1)
+[![Image](https://img.shields.io/badge/image-v5.1.0-blue)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0)
 [![lego](https://img.shields.io/badge/lego-v4.34.0-informational)](https://github.com/go-acme/lego/releases/tag/v4.34.0)
 [![Tests](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/actions/workflows/tests.yml/badge.svg)](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -39,7 +39,7 @@
 - **One certificate per group.** Each top-level key in `domains.yaml` is one certificate and one output folder. Its list holds every DNS name on that certificate.
 - **Wildcards and any record type.** DNS-01 works the same for names with A, AAAA or CNAME records, for quoted wildcards such as `"*.example.com"`, and for names that have no record yet.
 - **Token kept out of the environment.** Mount the Cloudflare token as a file, or let Compose pass it as a [Docker secret](https://docs.docker.com/compose/use-secrets/). lego reads that file directly.
-- **Staging first.** Runs use Let's Encrypt staging unless `PRODUCTION=true` in `.env` opens the production confirmation menu.
+- **Confirm before issuing.** The menu describes staging and production and defaults to staging. Both confirmations default to No.
 - **Clear results.** A final table lists attempted, issued, failed and skipped names for every group, with totals.
 - **Small, non-root runtime.** A `scratch` image with a minimal Alpine 3.24 filesystem. The entrypoint drops to your UID/GID before reading the YAML or calling lego.
 - **Five architectures.** `linux/amd64`, `linux/386`, `linux/arm/v6`, `linux/arm/v7` and `linux/arm64`.
@@ -70,7 +70,7 @@ Limit the token to the zones you plan to issue certificates for. lego uses it to
 
 ## :rocket: Quick start
 
-The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). You don't need to clone or build anything. Pin the image to **`v5.0.1`** so that every run uses the same image.
+The image is published on Docker Hub as [`ljgonzalez/lego-cloudflare-certgen`](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen). You don't need to clone or build anything. Pin the image to **`v5.1.0`** so that every run uses the same image.
 
 ### :one: Prepare a working directory
 
@@ -79,8 +79,8 @@ Download the two configuration files into a new directory.
 ```bash
 mkdir lego-certgen
 cd lego-certgen
-wget -O .env https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v5.0.1/example.env
-wget -O domains.yaml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v5.0.1/template.domains.yaml
+wget -O .env https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v5.1.0/example.env
+wget -O domains.yaml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v5.1.0/template.domains.yaml
 chmod 600 .env
 mkdir -p ssl-certs
 ```
@@ -93,7 +93,6 @@ Open `.env` and set at least these values. Read the [Let's Encrypt Terms of Serv
 EMAIL=you@example.com
 CLOUDFLARE_API_TOKEN=your-cloudflare-token
 ACCEPT_LEGO_TOS=true
-PRODUCTION=false
 TZ=Etc/UTC
 UID=1000
 GID=1000
@@ -129,21 +128,21 @@ Preview the configuration, then issue the certificates:
 ```bash
 # Check the YAML and list the groups
 docker run --rm -t -v ./domains.yaml:/app/domains.yaml:ro \
-  ljgonzalez/lego-cloudflare-certgen:v5.0.1 --list
+  ljgonzalez/lego-cloudflare-certgen:v5.1.0 --list
 
 # Show the names, ACME server, output paths and time limits without contacting Let's Encrypt
 docker run --rm -t --env-file .env -v ./domains.yaml:/app/domains.yaml:ro \
-  ljgonzalez/lego-cloudflare-certgen:v5.0.1 --dry-run
+  ljgonzalez/lego-cloudflare-certgen:v5.1.0 --dry-run
 
 # Issue certificates
 docker run --rm -it --env-file .env \
   -v ./domains.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v5.0.1
+  ljgonzalez/lego-cloudflare-certgen:v5.1.0
 
 ```
 
-Set `PRODUCTION=true` in `.env` to open the issuance menu. Run the issue command with `-it` so you can use the arrow keys and Enter. The menu defaults to **No**. Choose **Yes** for a production confirmation, **No** to confirm staging, or **Cancel** to exit. Both confirmations default to **No**.
+Use `-it` to open the issuance menu. Choose **Staging** for a real request to Let's Encrypt staging, **Production** for a browser-trusted certificate, or **Cancel** to exit. Both issuance choices open a confirmation that defaults to **No**.
 
 Add any [command option](#command-options) after the image name, for example `--only certificateA`. `-t` enables the colored output.
 
@@ -157,7 +156,7 @@ Add any [command option](#command-options) after the image name, for example `--
     -v ./domains.yaml:/app/domains.yaml:ro \
     -v ./ssl-certs:/ssl-certs \
     -v ./cloudflare_api_token:/run/secrets/cloudflare_api_token:ro \
-    ljgonzalez/lego-cloudflare-certgen:v5.0.1
+    ljgonzalez/lego-cloudflare-certgen:v5.1.0
   ```
 
   `-e CLOUDFLARE_API_TOKEN=` overrides any token left in `.env`, so the container reads the file. The configured `UID` must be able to read the file.
@@ -168,7 +167,7 @@ Add any [command option](#command-options) after the image name, for example `--
 Download the Compose file into the same directory to reuse `.env` and `domains.yaml`.
 
 ```bash
-wget -O compose.yml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v5.0.1/compose.yml
+wget -O compose.yml https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/v5.1.0/compose.yml
 ```
 
 List the groups and preview the request.
@@ -178,7 +177,7 @@ docker compose run --rm certgen --list
 docker compose run --rm certgen --dry-run
 ```
 
-Set `PRODUCTION=false` in `.env` to start in staging. Set it to `true` when you are ready to open the interactive production confirmation.
+Run from a terminal and choose **Staging** for your first issuance.
 
 ```bash
 docker compose run --rm certgen
@@ -229,7 +228,6 @@ Settings are optional unless marked **required**.
 | `EMAIL` | - | :heavy_check_mark: | Contact e-mail for the Let's Encrypt account |
 | `CLOUDFLARE_API_TOKEN` | - | :heavy_check_mark: | Cloudflare DNS API token. Compose turns it into a secret file. `docker run` also accepts the legacy `CLOUDFLARE_API_KEY` variable. |
 | `ACCEPT_LEGO_TOS` | `false` | :heavy_check_mark: | Set `true` after reading the [Let's Encrypt Terms of Service](https://letsencrypt.org/repository/) |
-| `PRODUCTION` | `false` | :x: | `true` opens the interactive issuance menu. `false` uses staging. |
 | `TZ` | `Etc/UTC` | :x: | IANA timezone used in folder names and log timestamps |
 | `PROPAGATION_SECONDS` | `360` | :x: | Maximum wait for TXT propagation per challenge, in seconds. It also sets the [time limit](#stopwatch-time-limit-per-certificate) of each certificate. |
 | `DNS_RESOLVERS` | `1.1.1.1:53,8.8.8.8:53,1.0.0.1:53` | :x: | Comma-separated `host:port` resolvers used to check TXT visibility |
@@ -241,7 +239,7 @@ These variables are read by Compose on the host, not by the container:
 | Variable | Default | Description |
 |---|---|---|
 | `DOMAINS_FILE` | `./domains.yaml` | Host YAML file mounted at `/app/domains.yaml` |
-| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:v5.0.1` | Image used by the Compose service |
+| `CERTGEN_IMAGE` | `ljgonzalez/lego-cloudflare-certgen:v5.1.0` | Image used by the Compose service |
 | `CERTGEN_ENV_FILE` | `./.env` | Settings file passed to the container |
 
 ### Command options
@@ -351,12 +349,12 @@ The first order succeeds. The second hits a TXT propagation timeout. The report 
 
 | Tag | Use it when |
 |---|---|
-| `v5.0.1` | You want a fixed image. **Recommended.** |
-| `v5.0`, `v5` | You want future patch or minor releases of version 5 |
+| `v5.1.0` | You want a fixed image. **Recommended.** |
+| `v5.1`, `v5` | You want future patch or minor releases of version 5 |
 | `latest` | You always want the newest release |
-| `alpine3.24.4-lego4.34.0-v5.0.1` | You want the base and lego versions in the tag name |
+| `alpine3.24.4-lego4.34.0-v5.1.0` | You want the base and lego versions in the tag name |
 
-The `v5.0.1` image supports `linux/amd64`, `linux/386`, `linux/arm/v6`, `linux/arm/v7` and `linux/arm64`. Docker pulls the right variant automatically. Older releases (v1 to v3) are still available. See [all tags on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags).
+The `v5.1.0` image supports `linux/amd64`, `linux/386`, `linux/arm/v6`, `linux/arm/v7` and `linux/arm64`. Docker pulls the right variant automatically. Older releases (v1 to v3) are still available. See [all tags on Docker Hub](https://hub.docker.com/r/ljgonzalez/lego-cloudflare-certgen/tags).
 
 ---
 
@@ -394,7 +392,7 @@ The build needs BuildKit, the default builder since Docker Engine 23. It also ne
 1. **Downloader stage.** Downloads the official lego `v4.34.0` archive for the target CPU and verifies its SHA-256 checksum.
 2. **Builder stage.** Compiles `certgen-core` (C++17, statically linked with libyaml) and builds a minimal Alpine 3.24.4 filesystem with musl, the CA bundle, timezone data, `su-exec` and Dash as `/bin/sh`.
 3. **Final stage.** Starts from `scratch` and copies in only that filesystem, the scripts, `certgen-core` and lego. BusyBox, Bash, Python, the compiler and curl stay out of the image.
-4. **Self-check.** Runs lego as the non-root user, checks its version and architecture, then runs `--list`, `--dry-run` and the report against a sample file. No certificate is requested.
+4. **Self-check.** Runs lego as the non-root user, checks its version and architecture, then runs `--test` and the report against a sample file. No certificate is requested.
 
 Show the image size in MiB:
 
@@ -465,7 +463,7 @@ docker buildx build --builder lego-multiarch \
 
 ## :test_tube: Tests
 
-For unattended checks of the built image, run `docker run --rm --network none --env-file .env -v "$PWD/domains.yaml:/app/domains.yaml:ro" ljgonzalez/lego-cloudflare-certgen:v5.0.1 --test`. This checks the lego binary and previews staging even if `PRODUCTION=true` is configured. It needs no Cloudflare token or certificate volume.
+For unattended checks of the built image, run `docker run --rm --network none --env-file .env -v "$PWD/domains.yaml:/app/domains.yaml:ro" ljgonzalez/lego-cloudflare-certgen:v5.1.0 --test`. This checks the lego binary and previews staging without opening the issuance menu. It needs no Cloudflare token or certificate volume.
 
 `ci/tests/run.sh` covers YAML and CLI validation, credential handling, DNS-01 arguments, per-certificate deadlines, fatal errors, recoverable retries, missing certificate files, mixed issuance results, ANSI alignment and release checksums. Local stand-ins replace lego and curl, so the suite runs offline. GitHub Actions runs it on pushes and pull requests targeting `master` or a valid version branch, and on published releases.
 
@@ -520,13 +518,13 @@ dns-smoke:
   - planned-check.example.net
 ```
 
-Set `PRODUCTION=false` in `.env` for this staging check.
+Select **Staging**, then **Yes**, for this live staging check.
 
 ```bash
-docker run --rm -t --env-file .env \
+docker run --rm -it --env-file .env \
   -v ./dns-smoke.yaml:/app/domains.yaml:ro \
   -v ./ssl-certs:/ssl-certs \
-  ljgonzalez/lego-cloudflare-certgen:v5.0.1 --only dns-smoke
+  ljgonzalez/lego-cloudflare-certgen:v5.1.0 --only dns-smoke
 
 # Or with Compose
 DOMAINS_FILE=./dns-smoke.yaml docker compose run --rm certgen --only dns-smoke
@@ -633,7 +631,7 @@ This release stays on lego `v4.34.0` for simplicity. The plan is to move to lego
 
 ## :information_source: Notes
 
-- **Staging by default.** With `PRODUCTION=false` or unset, certificates come from Let's Encrypt staging, which browsers do not trust. Test there first.
+- **Staging first.** The menu defaults to staging. Staging issues certificates that browsers do not trust.
 - **One certificate per group.** Groups run in YAML order. If one fails, the rest still run and the exit status is nonzero. Retry a single group with `--only`.
 - **Fresh output every time.** Each run creates a new timestamped folder per group. Nothing is overwritten.
 - **Renewal.** The container issues new certificates and exits. Run it again before expiry. Production requests require interactive confirmation.
@@ -655,7 +653,8 @@ CI version checks are advisory only for pushes and merges to `master`; failures 
 
 | tag | runtime | lego | other aliases |
 |---|---|---|---|
-| [`latest`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v5`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`v5.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`lego4.34-v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`lego4.34.0-v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`alpine3.24-lego4.34-v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`alpine3.24-lego4.34-v5.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`alpine3.24.4-lego4.34.0-v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1) |
+| [`latest`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0), [`v5.1.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v5`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0), [`v5.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0), [`lego4.34-v5.1.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0), [`lego4.34.0-v5.1.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0), [`alpine3.24-lego4.34-v5.1.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0), [`alpine3.24-lego4.34-v5.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0), [`alpine3.24.4-lego4.34.0-v5.1.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.1.0) |
+| [`v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v5.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`lego4.34-v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`lego4.34.0-v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`alpine3.24-lego4.34-v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`alpine3.24-lego4.34-v5.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1), [`alpine3.24.4-lego4.34.0-v5.0.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.1) |
 | [`v5.0.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.0) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v5.0.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.0), [`lego4.34.0-v5.0.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.0), [`alpine3.24-lego4.34-v5.0.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.0), [`alpine3.24.4-lego4.34.0-v5.0.0`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.0.0) |
 | [`v4.4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.2) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.2), [`v4.4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.2), [`lego4.34-v4.4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.2), [`lego4.34.0-v4.4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.2), [`alpine3.24-lego4.34-v4.4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.2), [`alpine3.24-lego4.34-v4.4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.2), [`alpine3.24.4-lego4.34.0-v4.4.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.2) |
 | [`v4.4.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.1) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v4.4.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.1), [`lego4.34.0-v4.4.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.1), [`alpine3.24-lego4.34-v4.4.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.1), [`alpine3.24.4-lego4.34.0-v4.4.1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v4.4.1) |

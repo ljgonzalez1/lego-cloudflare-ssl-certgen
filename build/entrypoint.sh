@@ -51,7 +51,7 @@ while [ "$remaining" -gt 0 ]; do
             CERTGEN_ACTION=$action
             ;;
         --staging|--production)
-            log_err "Set PRODUCTION=false or PRODUCTION=true in .env and pass it using --env-file."
+            log_err "Choose Staging or Production from the issuance menu. Use docker run -it."
             exit 2
             ;;
         --only|--config|--output)
@@ -81,17 +81,15 @@ done
 
 validate_identity
 
-case "$CERTGEN_ACTION:${PRODUCTION:-false}" in
-    issue:[Tt][Rr][Uu][Ee])
-        selected_mode=$(certgen-core issuance-menu) || exit $?
-        case "$selected_mode" in
-            production) export PRODUCTION=true ;;
-            staging) export PRODUCTION=false ;;
-            cancel) log_info "Certificate issuance cancelled."; exit 0 ;;
-            *) log_err "Invalid response from the issuance menu."; exit 2 ;;
-        esac
-        ;;
-esac
+issuance_mode=staging
+if [ "$CERTGEN_ACTION" = issue ]; then
+    issuance_mode=$(certgen-core issuance-menu) || exit $?
+    case "$issuance_mode" in
+        staging|production) ;;
+        cancel) log_info "Certificate issuance cancelled."; exit 0 ;;
+        *) log_err "Invalid response from the issuance menu."; exit 2 ;;
+    esac
+fi
 
 export CERTGEN_ACTION CERTGEN_CONFIG CERTGEN_OUTPUT
 identity=$(certgen-core identity)
@@ -105,11 +103,11 @@ if [ "$current_uid" -eq 0 ]; then
         fi
         certgen-core own-output /ssl-certs "$CERT_UID" "$CERT_GID"
     fi
-    exec su-exec "$CERT_UID:$CERT_GID" "${script_dir}/run_lego.sh" "$@"
+    exec su-exec "$CERT_UID:$CERT_GID" "${script_dir}/run_lego.sh" "$issuance_mode" "$@"
 fi
 
 if [ "$identity" != "$CERT_UID:$CERT_GID" ]; then
     log_err "The container user must match the configured UID/GID ($CERT_UID:$CERT_GID)."
     exit 1
 fi
-exec "${script_dir}/run_lego.sh" "$@"
+exec "${script_dir}/run_lego.sh" "$issuance_mode" "$@"
