@@ -17,10 +17,13 @@ SHA-256 fingerprints, exact Alpine source recipes and source archive provenance.
 Only notice texts and metadata are exported. Downloaded binaries, module ZIPs,
 Go toolchain archives and compiled tools stay outside this directory.
 
-The delivered beta-5 archive contains the exporter and existing project, YAML,
-MIT, Apache and MPL texts, **but not a completed `bundle.json`**: the upstream
-archives could not be fetched in the editing environment. Run the command above
-once before committing the new notice set. Do not substitute guessed notices.
+Beta 6 **includes the completed bundle**: 239 third-party components and 332
+original notice texts for Alpine 3.24.4, Go 1.27.4, lego v4.34.0 and Delve
+v1.27.2. It was produced by this exporter from the same authenticated sources;
+the source bindings and per-component document counts match the beta-5 export
+log. Re-running the command above on unchanged inputs must leave `git status`
+clean. Do not edit these files by hand or substitute guessed notices.
+`.gitattributes` keeps them byte-exact because each text is SHA-256 bound.
 
 If no local bundle exists, an ordinary Docker build prepares it once in a shared
 native BuildKit stage. This fallback is cached by BuildKit but does not write into

@@ -43,7 +43,9 @@ func (s *supervisor) runDelve(probe bool) (int, bool, error) {
 	if !probe {
 		args = append(args, s.options.Arguments...)
 	}
-	process, err := s.start(exec.Command(s.options.Debugger, args...), probe, false)
+	// Delve creates ~/.config/dlv before listening. The runtime account's home is
+	// /nonexistent, so give it a private directory instead of a logged mkdir error.
+	process, err := s.start(exec.Command(s.options.Debugger, args...), probe, false, delveConfigEnvironment(s.work)...)
 	if err != nil {
 		return 1, false, err
 	}

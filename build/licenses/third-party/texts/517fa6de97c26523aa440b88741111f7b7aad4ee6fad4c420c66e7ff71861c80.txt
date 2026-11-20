@@ -1,0 +1,1641 @@
+--- chacha20/chacha_arm64.s ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego
+
+#include "textflag.h"
+
+#define NUM_ROUNDS 10
+
+// func xorKeyStreamVX(dst, src []byte, key *[8]uint32, nonce *[3]uint32, counter *uint32)
+
+--- chacha20poly1305/chacha20poly1305.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package chacha20poly1305 implements the ChaCha20-Poly1305 AEAD and its
+// extended nonce variant XChaCha20-Poly1305, as specified in RFC 8439 and
+// draft-irtf-cfrg-xchacha-01.
+
+--- acme/pebble_test.go ---
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- blake2s/blake2s_ref.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build (!amd64 && !386) || !gc || purego
+
+
+--- hkdf/hkdf_test.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+--- internal/alias/alias.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !purego
+
+// Package alias implements memory aliasing tests.
+
+--- blowfish/const.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// The startup permutation array and substitution boxes.
+// They are the hexadecimal digits of PI; see:
+// https://www.schneier.com/code/constants.txt.
+
+
+--- salsa20/salsa/hsalsa20.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package salsa provides low-level access to functions in the Salsa family.
+//
+// Deprecated: this package exposes unsafe low-level operations. New applications
+// should consider using the AEAD construction in golang.org/x/crypto/chacha20poly1305
+// instead. Existing users should migrate to golang.org/x/crypto/salsa20.
+
+--- ssh/terminal/terminal.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package terminal provides support functions for dealing with terminals, as
+// commonly found on UNIX systems.
+//
+// Deprecated: this package moved to golang.org/x/term.
+
+--- acme/acme_test.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- blake2s/blake2s_386.s ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build 386 && gc && !purego
+
+#include "textflag.h"
+
+
+--- acme/autocert/example_test.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- argon2/argon2.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package argon2 implements the key derivation function Argon2.
+// Argon2 was selected as the winner of the Password Hashing Competition and can
+// be used to derive cryptographic keys from passwords.
+//
+// For a detailed specification of Argon2 see [argon2-specs.pdf].
+//
+// If you aren't sure which function you need, use Argon2id (IDKey) and
+// the parameter recommendations for your scenario.
+//
+// # Argon2i
+//
+// Argon2i (implemented by Key) is the side-channel resistant version of Argon2.
+// It uses data-independent memory access, which is preferred for password
+// hashing and password-based key derivation. Argon2i requires more passes over
+// memory than Argon2id to protect from trade-off attacks. The recommended
+// parameters (taken from [RFC 9106 Section 7.3]) for non-interactive operations are time=3 and to
+// use the maximum available memory.
+//
+// # Argon2id
+//
+// Argon2id (implemented by IDKey) is a hybrid version of Argon2 combining
+// Argon2i and Argon2d. It uses data-independent memory access for the first
+// half of the first iteration over the memory and data-dependent memory access
+// for the rest. Argon2id is side-channel resistant and provides better brute-
+// force cost savings due to time-memory tradeoffs than Argon2i. The recommended
+// parameters for non-interactive operations (taken from [RFC 9106 Section 7.3]) are time=1 and to
+// use the maximum available memory.
+//
+// [argon2-specs.pdf]: https://github.com/P-H-C/phc-winner-argon2/blob/master/argon2-specs.pdf
+// [RFC 9106 Section 7.3]: https://www.rfc-editor.org/rfc/rfc9106.html#section-7.3
+
+--- ssh/test/sshd_test_pw.c ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// sshd_test_pw.c
+// Wrapper to inject test password data for sshd PAM authentication
+//
+// This wrapper implements custom versions of getpwnam, getpwnam_r,
+// getspnam and getspnam_r. These functions first call their real
+// libc versions, then check if the requested user matches test user
+// specified in env variable TEST_USER and if so replace the password
+// with crypted() value of TEST_PASSWD env variable.
+//
+// Compile:
+// gcc -Wall -shared -o sshd_test_pw.so -fPIC sshd_test_pw.c
+//
+// Compile with debug:
+// gcc -DVERBOSE -Wall -shared -o sshd_test_pw.so -fPIC sshd_test_pw.c
+//
+// Run sshd:
+// LD_PRELOAD="sshd_test_pw.so" TEST_USER="..." TEST_PASSWD="..." sshd ...
+
+//go:build ignore
+
+#define _GNU_SOURCE
+#include <string.h>
+#include <pwd.h>
+#include <shadow.h>
+#include <dlfcn.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdio.h>
+
+#ifdef VERBOSE
+#define DEBUG(X...) fprintf(stderr, X)
+#else
+#define DEBUG(X...) while (0) { }
+#endif
+
+/* crypt() password */
+
+--- nacl/sign/sign.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package sign signs small messages using public-key cryptography.
+//
+// This package is interoperable with [libsodium], as well as [TweetNaCl].
+//
+// The sign package is essentially a wrapper for the Ed25519 signature
+// algorithm (implemented by crypto/ed25519). It is [frozen] and is not accepting
+// new features.
+//
+// [libsodium]: https://libsodium.gitbook.io/doc/public-key_cryptography/public-key_signatures
+// [TweetNaCl]: https://tweetnacl.cr.yp.to/
+// [frozen]: https://go.dev/wiki/Frozen
+
+--- acme/autocert/autocert_test.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- internal/poly1305/mac_noasm.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build (!amd64 && !loong64 && !ppc64le && !ppc64 && !s390x) || !gc || purego
+
+
+--- cryptobyte/string.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package cryptobyte contains types that help with parsing and constructing
+// length-prefixed, binary messages, including ASN.1 DER. (The asn1 subpackage
+// contains useful ASN.1 constants.)
+//
+// The String type is for parsing. It wraps a []byte slice and provides helper
+// functions for consuming structures, value by value.
+//
+// The Builder type is for constructing messages. It providers helper functions
+// for appending values and also for appending length-prefixed submessages –
+// without having to worry about calculating the length prefix ahead of time.
+//
+// See the documentation and examples for the Builder and String types to get
+// started.
+
+--- curve25519/curve25519.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package curve25519 provides an implementation of the X25519 function, which
+// performs scalar multiplication on the elliptic curve known as Curve25519
+// according to [RFC 7748].
+//
+// The curve25519 package is a wrapper for the X25519 implementation in the
+// crypto/ecdh package. It is [frozen] and is not accepting new features.
+//
+// [RFC 7748]: https://datatracker.ietf.org/doc/html/rfc7748
+// [frozen]: https://go.dev/wiki/Frozen
+
+--- otr/libotr_test_helper.c ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// This code can be compiled and used to test the otr package against libotr.
+// See otr_test.go.
+
+//go:build ignore
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <proto.h>
+#include <message.h>
+#include <privkey.h>
+
+
+--- cryptobyte/asn1/asn1.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package asn1 contains supporting types for parsing and building ASN.1
+// messages with the cryptobyte package.
+
+--- blowfish/block.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- salsa20/salsa/salsa20_amd64.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build amd64 && !purego && gc
+
+
+--- tea/cipher.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package tea implements the TEA algorithm, as defined in Needham and
+// Wheeler's 1994 technical report, “TEA, a Tiny Encryption Algorithm”. See
+// http://www.cix.co.uk/~klockstone/tea.pdf for details.
+//
+// TEA is a legacy cipher and its short block size makes it vulnerable to
+// birthday bound attacks (see https://sweet32.info). It should only be used
+// where compatibility with legacy systems, not security, is the goal.
+//
+// Deprecated: any new system should use AES (from crypto/aes, if necessary in
+// an AEAD mode like crypto/cipher.NewGCM) or XChaCha20-Poly1305 (from
+// golang.org/x/crypto/chacha20poly1305).
+
+--- ssh/test/dial_unix_test.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !windows && !js && !wasip1
+
+
+--- chacha20/chacha_ppc64x.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego && (ppc64 || ppc64le)
+
+
+--- hkdf/hkdf.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package hkdf implements the HMAC-based Extract-and-Expand Key Derivation
+// Function (HKDF) as defined in RFC 5869.
+//
+// HKDF is a cryptographic key derivation function (KDF) with the goal of
+// expanding limited input keying material into one or more cryptographically
+// strong secret keys.
+
+--- scrypt/scrypt.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package scrypt implements the scrypt key derivation function as defined in
+// Colin Percival's paper "Stronger Key Derivation via Sequential Memory-Hard
+// Functions" (https://www.tarsnap.com/scrypt/scrypt.pdf).
+
+--- blowfish/cipher.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package blowfish implements Bruce Schneier's Blowfish encryption algorithm.
+//
+// Blowfish is a legacy cipher and its short block size makes it vulnerable to
+// birthday bound attacks (see https://sweet32.info). It should only be used
+// where compatibility with legacy systems, not security, is the goal.
+//
+// Deprecated: any new system should use AES (from crypto/aes, if necessary in
+// an AEAD mode like crypto/cipher.NewGCM) or XChaCha20-Poly1305 (from
+// golang.org/x/crypto/chacha20poly1305).
+
+--- sha3/hashes.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package sha3 implements the SHA-3 hash algorithms and the SHAKE extendable
+// output functions defined in FIPS 202.
+//
+// Most of this package is a wrapper around the crypto/sha3 package in the
+// standard library. The only exception is the legacy Keccak hash functions.
+
+--- chacha20/chacha_s390x.s ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego
+
+#include "go_asm.h"
+#include "textflag.h"
+
+// This is an implementation of the ChaCha20 encryption algorithm as
+// specified in RFC 7539. It uses vector instructions to compute
+// 4 keystream blocks in parallel (256 bytes) which are then XORed
+// with the bytes in the input slice.
+
+
+--- internal/testenv/testenv_unix.go ---
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build unix
+
+
+--- internal/testenv/exec.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- chacha20/chacha_ppc64x.s ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Based on CRYPTOGAMS code with the following comment:
+// # ====================================================================
+// # Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+// # project. The module is, however, dual licensed under OpenSSL and
+// # CRYPTOGAMS licenses depending on where you obtain it. For further
+// # details see http://www.openssl.org/~appro/cryptogams/.
+// # ====================================================================
+
+// Code for the perl script that generates the ppc64 assembler
+// can be found in the cryptogams repository at the link below. It is based on
+// the original from openssl.
+
+// https://github.com/dot-asm/cryptogams/commit/a60f5b50ed908e91
+
+// The differences in this and the original implementation are
+// due to the calling conventions and initialization of constants.
+
+//go:build gc && !purego && (ppc64 || ppc64le)
+
+#include "textflag.h"
+
+#define OUT  R3
+#define INP  R4
+#define LEN  R5
+#define KEY  R6
+#define CNT  R7
+#define TMP  R15
+
+#define CONSTBASE  R16
+#define BLOCKS R17
+
+// for VPERMXOR
+#define MASK  R18
+
+
+--- nacl/box/box.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package box authenticates and encrypts small messages using public-key cryptography.
+
+Box uses Curve25519, XSalsa20 and Poly1305 to encrypt and authenticate
+messages. The length of messages is not hidden.
+
+It is the caller's responsibility to ensure the uniqueness of nonces—for
+example, by using nonce 1 for the first message, nonce 2 for the second
+message, etc. Nonces are long enough that randomly generated nonces have
+negligible risk of collision.
+
+Messages should be small because:
+
+1. The whole message needs to be held in memory to be processed.
+
+2. Using large messages pressures implementations on small machines to decrypt
+and process plaintext before authenticating it. This is very dangerous, and
+this API does not allow it, but a protocol that uses excessive message sizes
+might present some implementations with no other choice.
+
+3. Fixed overheads will be sufficiently amortised by messages as small as 8KB.
+
+4. Performance may be improved by working with messages that fit into data caches.
+
+Thus large amounts of data should be chunked so that each message is small.
+(Each message still needs a unique nonce.) If in doubt, 16KB is a reasonable
+chunk size.
+
+This package is interoperable with NaCl: https://nacl.cr.yp.to/box.html.
+Anonymous sealing/opening is an extension of NaCl defined by and interoperable
+with libsodium:
+https://libsodium.gitbook.io/doc/public-key_cryptography/sealed_boxes.
+*/
+
+--- ssh/mlkem.go ---
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- nacl/secretbox/secretbox.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package secretbox encrypts and authenticates small messages.
+
+Secretbox uses XSalsa20 and Poly1305 to encrypt and authenticate messages with
+secret-key cryptography. The length of messages is not hidden.
+
+It is the caller's responsibility to ensure the uniqueness of nonces—for
+example, by using nonce 1 for the first message, nonce 2 for the second
+message, etc. Nonces are long enough that randomly generated nonces have
+negligible risk of collision.
+
+Messages should be small because:
+
+1. The whole message needs to be held in memory to be processed.
+
+2. Using large messages pressures implementations on small machines to decrypt
+and process plaintext before authenticating it. This is very dangerous, and
+this API does not allow it, but a protocol that uses excessive message sizes
+might present some implementations with no other choice.
+
+3. Fixed overheads will be sufficiently amortised by messages as small as 8KB.
+
+4. Performance may be improved by working with messages that fit into data caches.
+
+Thus large amounts of data should be chunked so that each message is small.
+(Each message still needs a unique nonce.) If in doubt, 16KB is a reasonable
+chunk size.
+
+This package is interoperable with NaCl: https://nacl.cr.yp.to/secretbox.html.
+*/
+
+--- internal/wycheproof/ecdh_stdlib_test.go ---
+// Copyright 2022 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- internal/poly1305/sum_loong64.s ---
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego
+
+// func update(state *macState, msg []byte)
+
+--- hkdf/example_test.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- ed25519/ed25519.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package ed25519 implements the Ed25519 signature algorithm.
+//
+// These functions are also compatible with the “Ed25519” function defined in
+// [RFC 8032]. However, unlike RFC 8032's formulation, this package's private key
+// representation includes a public key suffix to make multiple signing
+// operations with the same key more efficient. This package refers to the RFC
+// 8032 private key as the “seed”.
+//
+// The ed25519 package is a wrapper for the Ed25519 implementation in the
+// crypto/ed25519 package. It is [frozen] and is not accepting new features.
+//
+// [RFC 8032]: https://datatracker.ietf.org/doc/html/rfc8032
+// [frozen]: https://go.dev/wiki/Frozen
+
+--- internal/testenv/testenv_notunix.go ---
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build windows || plan9 || (js && wasm) || wasip1
+
+
+--- openpgp/packet/ocfb.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// OpenPGP CFB Mode. http://tools.ietf.org/html/rfc4880#section-13.9
+
+
+--- blake2b/blake2bAVX2_amd64.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build amd64 && gc && !purego
+
+
+--- x509roots/gen_fallback_bundle.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build generate
+
+//go:generate go run gen_fallback_bundle.go
+
+
+--- pkcs12/internal/rc2/rc2.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package rc2 implements the RC2 cipher
+/*
+https://www.ietf.org/rfc/rfc2268.txt
+http://people.csail.mit.edu/rivest/pubs/KRRR98.pdf
+
+This code is licensed under the MIT license.
+*/
+
+--- ocsp/ocsp_test.go ---
+// Copyright 2013 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- pkcs12/pkcs12.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package pkcs12 implements some of PKCS#12.
+//
+// This implementation is distilled from [RFC 7292] and referenced documents.
+// It is intended for decoding P12/PFX-stored certificates and keys for use
+// with the crypto/tls package.
+//
+// The pkcs12 package is [frozen] and is not accepting new features.
+// If it's missing functionality you need, consider an alternative like
+// software.sslmate.com/src/go-pkcs12.
+//
+// [RFC 7292]: https://datatracker.ietf.org/doc/html/rfc7292
+// [frozen]: https://go.dev/wiki/Frozen
+
+--- acme/http.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- ssh/internal/bcrypt_pbkdf/bcrypt_pbkdf.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package bcrypt_pbkdf implements bcrypt_pbkdf(3) from OpenBSD.
+//
+// See https://flak.tedunangst.com/post/bcrypt-pbkdf and
+// https://cvsweb.openbsd.org/cgi-bin/cvsweb/src/lib/libutil/bcrypt_pbkdf.c.
+
+--- blake2b/blake2b_ref.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !amd64 || purego || !gc
+
+
+--- ocsp/ocsp.go ---
+// Copyright 2013 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package ocsp parses OCSP responses as specified in RFC 2560. OCSP responses
+// are signed messages attesting to the validity of a certificate for a small
+// period of time. This is used to manage revocation for X.509 certificates.
+
+--- otr/smp.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// This file implements the Socialist Millionaires Protocol as described in
+// http://www.cypherpunks.ca/otr/Protocol-v2-3.1.0.html. The protocol
+// specification is required in order to understand this code and, where
+// possible, the variable names in the code match up with the spec.
+
+
+--- xts/xts.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package xts implements the XTS cipher mode as specified in IEEE P1619/D16.
+//
+// XTS mode is typically used for disk encryption, which presents a number of
+// novel problems that make more common modes inapplicable. The disk is
+// conceptually an array of sectors and we must be able to encrypt and decrypt
+// a sector in isolation. However, an attacker must not be able to transpose
+// two sectors of plaintext by transposing their ciphertext.
+//
+// XTS wraps a block cipher with Rogaway's XEX mode in order to build a
+// tweakable block cipher. This allows each sector to have a unique tweak and
+// effectively create a unique key for each sector.
+//
+// XTS does not provide any authentication. An attacker can manipulate the
+// ciphertext and randomise a block (16 bytes) of the plaintext. This package
+// does not implement ciphertext-stealing so sectors must be a multiple of 16
+// bytes.
+//
+// Note that XTS is usually not appropriate for any use besides disk encryption.
+// Most users should use an AEAD mode like GCM (from crypto/cipher.NewGCM) instead.
+//
+// The xts package is [frozen] and is not accepting new features.
+//
+// [frozen]: https://go.dev/wiki/Frozen
+
+--- nacl/auth/auth.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package auth authenticates a message using a secret key.
+//
+// This package is interoperable with [NaCl].
+//
+// The auth package is essentially a wrapper for HMAC-SHA-512 (implemented by
+// crypto/hmac and crypto/sha512), truncated to 32 bytes. It is [frozen] and is
+// not accepting new features.
+//
+// [NaCl]: https://nacl.cr.yp.to/auth.html
+// [frozen]: https://go.dev/wiki/Frozen
+
+--- md4/md4.go ---
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package md4 implements the MD4 hash algorithm as defined in RFC 1320.
+//
+// Deprecated: MD4 is cryptographically broken and should only be used
+// where compatibility with legacy systems, not security, is the goal. Instead,
+// use a secure hash like SHA-256 (from crypto/sha256).
+
+--- x509roots/nss/parser.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package nss provides functionality for parsing NSS certdata.txt
+// formatted certificate lists and extracting serverAuth roots. Most
+// users should not use this package themselves, and should instead
+// rely on the golang.org/x/crypto/x509roots/fallback package which
+// calls x509.SetFallbackRoots on a pre-parsed set of roots.
+
+--- blake2b/blake2b.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package blake2b implements the BLAKE2b hash algorithm defined by RFC 7693
+// and the extendable output function (XOF) BLAKE2Xb.
+//
+// BLAKE2b is optimized for 64-bit platforms—including NEON-enabled ARMs—and
+// produces digests of any size between 1 and 64 bytes.
+// For a detailed specification of BLAKE2b see https://blake2.net/blake2.pdf
+// and for BLAKE2Xb see https://blake2.net/blake2x.pdf
+//
+// If you aren't sure which function you need, use BLAKE2b (Sum512 or New512).
+// If you need a secret-key MAC (message authentication code), use the New512
+// function with a non-nil key.
+//
+// BLAKE2X is a construction to compute hash values larger than 64 bytes. It
+// can produce hash values between 0 and 4 GiB.
+
+--- md4/md4_test.go ---
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- salsa20/salsa/salsa20_noasm.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !amd64 || purego || !gc
+
+
+--- xtea/cipher.go ---
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package xtea implements XTEA encryption, as defined in Needham and Wheeler's
+// 1997 technical report, "Tea extensions."
+//
+// XTEA is a legacy cipher and its short block size makes it vulnerable to
+// birthday bound attacks (see https://sweet32.info). It should only be used
+// where compatibility with legacy systems, not security, is the goal.
+//
+// Deprecated: any new system should use AES (from crypto/aes, if necessary in
+// an AEAD mode like crypto/cipher.NewGCM) or XChaCha20-Poly1305 (from
+// golang.org/x/crypto/chacha20poly1305).
+
+--- openpgp/packet/packet.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package packet implements parsing and serialization of OpenPGP packets, as
+// specified in RFC 4880.
+//
+// Deprecated: this package is unmaintained except for security fixes. New
+// applications should consider a more focused, modern alternative to OpenPGP
+// for their specific task. If you are required to interoperate with OpenPGP
+// systems and need a maintained package, consider a community fork.
+// See https://golang.org/issue/44226.
+
+--- pbkdf2/pbkdf2.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package pbkdf2 implements the key derivation function PBKDF2 as defined in RFC
+2898 / PKCS #5 v2.0.
+
+A key derivation function is useful when encrypting data based on a password
+or any other not-fully-random data. It uses a pseudorandom function to derive
+a secure encryption key based on the password.
+
+While v2.0 of the standard defines only one pseudorandom function to use,
+HMAC-SHA1, the drafted v2.1 specification allows use of all five FIPS Approved
+Hash Functions SHA-1, SHA-224, SHA-256, SHA-384 and SHA-512 for HMAC. To
+choose, you can pass the `New` functions from the different SHA packages to
+pbkdf2.Key.
+*/
+
+--- openpgp/elgamal/elgamal.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package elgamal implements ElGamal encryption, suitable for OpenPGP,
+// as specified in "A Public-Key Cryptosystem and a Signature Scheme Based on
+// Discrete Logarithms," IEEE Transactions on Information Theory, v. IT-31,
+// n. 4, 1985, pp. 469-472.
+//
+// This form of ElGamal embeds PKCS#1 v1.5 padding, which may make it
+// unsuitable for other protocols. RSA should be used in preference in any
+// case.
+//
+// Deprecated: this package was only provided to support ElGamal encryption in
+// OpenPGP. The golang.org/x/crypto/openpgp package is now deprecated (see
+// https://golang.org/issue/44226), and ElGamal in the OpenPGP ecosystem has
+// compatibility and security issues (see https://eprint.iacr.org/2021/923).
+// Moreover, this package doesn't protect against side-channel attacks.
+
+--- acme/rfc8555.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- acme/acme.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package acme provides an implementation of the
+// Automatic Certificate Management Environment (ACME) spec,
+// most famously used by Let's Encrypt.
+//
+// The initial implementation of this package was based on an early version
+// of the spec. The current implementation supports only the modern
+// RFC 8555 but some of the old API surface remains for compatibility.
+// While code using the old API will still compile, it will return an error.
+// Note the deprecation comments to update your code.
+//
+// See https://tools.ietf.org/html/rfc8555 for the spec.
+//
+// Most common scenarios will want to use autocert subdirectory instead,
+// which provides automatic access to certificates from Let's Encrypt
+// and any other ACME-based CA.
+
+--- ssh/agent/testdata_test.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// IMPLEMENTATION NOTE: To avoid a package loop, this file is in three places:
+// ssh/, ssh/agent, and ssh/test/. It should be kept in sync across all three
+// instances.
+
+
+--- blake2b/go125.go ---
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.25
+
+
+--- openpgp/errors/errors.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package errors contains common error types for the OpenPGP packages.
+//
+// Deprecated: this package is unmaintained except for security fixes. New
+// applications should consider a more focused, modern alternative to OpenPGP
+// for their specific task. If you are required to interoperate with OpenPGP
+// systems and need a maintained package, consider a community fork.
+// See https://golang.org/issue/44226.
+
+--- bcrypt/bcrypt.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package bcrypt implements Provos and Mazières's bcrypt adaptive hashing
+// algorithm. See http://www.usenix.org/event/usenix99/provos/provos.pdf
+
+--- ssh/test/forward_unix_test.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
+
+
+--- ssh/test/doc.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package test contains integration tests for the
+// golang.org/x/crypto/ssh package.
+//
+// Deprecated: this package is for internal use only.
+
+--- internal/poly1305/sum_ppc64x.s ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego && (ppc64 || ppc64le)
+
+#include "textflag.h"
+
+// This was ported from the amd64 implementation.
+
+#ifdef GOARCH_ppc64le
+#define LE_MOVD MOVD
+#define LE_MOVWZ MOVWZ
+#define LE_MOVHZ MOVHZ
+#else
+#define LE_MOVD MOVDBR
+#define LE_MOVWZ MOVWBR
+#define LE_MOVHZ MOVHBR
+#endif
+
+#define POLY1305_ADD(msg, h0, h1, h2, t0, t1, t2) \
+
+--- argon2/blamka_amd64.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build amd64 && gc && !purego
+
+
+--- ssh/doc.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package ssh implements an SSH client and server.
+
+SSH is a transport security protocol, an authentication protocol and a
+family of application protocols. The most typical application level
+protocol is a remote shell and this is specifically implemented.  However,
+the multiplexed nature of SSH is exposed to users that wish to support
+others.
+
+References:
+
+	[PROTOCOL]: https://cvsweb.openbsd.org/cgi-bin/cvsweb/src/usr.bin/ssh/PROTOCOL?rev=HEAD
+	[PROTOCOL.certkeys]: http://cvsweb.openbsd.org/cgi-bin/cvsweb/src/usr.bin/ssh/PROTOCOL.certkeys?rev=HEAD
+	[SSH-PARAMETERS]:    http://www.iana.org/assignments/ssh-parameters/ssh-parameters.xml#ssh-parameters-1
+	[SSH-CERTS]:	https://datatracker.ietf.org/doc/html/draft-miller-ssh-cert-01
+	[FIPS 140-3 mode]: https://go.dev/doc/security/fips140
+
+This package does not fall under the stability promise of the Go language itself,
+so its API may be changed when pressing needs arise.
+
+# FIPS 140-3 mode
+
+When the program is in [FIPS 140-3 mode], this package behaves as if only SP
+800-140C and SP 800-140D approved cipher suites, signature algorithms,
+certificate public key types and sizes, and key exchange and derivation
+algorithms were implemented. Others are silently ignored and not negotiated, or
+rejected. This set may depend on the algorithms supported by the FIPS 140-3 Go
+Cryptographic Module selected with GOFIPS140, and may change across Go versions.
+*/
+
+--- chacha20poly1305/fips140only_go1.26.go ---
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.26
+
+
+--- bcrypt/base64.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- bn256/bn256_test.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- xtea/block.go ---
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+	Implementation adapted from Needham and Wheeler's paper:
+	http://www.cix.co.uk/~klockstone/xtea.pdf
+
+	A precalculated look up table is used during encryption/decryption for values that are based purely on the key.
+*/
+
+
+--- chacha20/chacha_generic.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package chacha20 implements the ChaCha20 and XChaCha20 encryption algorithms
+// as specified in RFC 8439 and draft-irtf-cfrg-xchacha-01.
+
+--- ripemd160/ripemd160.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package ripemd160 implements the RIPEMD-160 hash algorithm.
+//
+// Deprecated: RIPEMD-160 is a legacy hash and should not be used for new
+// applications. Also, this package does not and will not provide an optimized
+// implementation. Instead, use a modern hash like SHA-256 (from crypto/sha256).
+
+--- acme/autocert/internal/acmetest/ca.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package acmetest provides types for testing acme and autocert packages.
+//
+// TODO: Consider moving this to x/crypto/acme/internal/acmetest for acme tests as well.
+
+--- openpgp/clearsign/clearsign.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package clearsign generates and processes OpenPGP, clear-signed data. See
+// RFC 4880, section 7.
+//
+// Clearsigned messages are cryptographically signed, but the contents of the
+// message are kept in plaintext so that it can be read without special tools.
+//
+// Deprecated: this package is unmaintained except for security fixes. New
+// applications should consider a more focused, modern alternative to OpenPGP
+// for their specific task. If you are required to interoperate with OpenPGP
+// systems and need a maintained package, consider a community fork.
+// See https://golang.org/issue/44226.
+
+--- acme/autocert/autocert.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package autocert provides automatic access to certificates from Let's Encrypt
+// and any other ACME-based CA.
+//
+// This package is a work in progress and makes no API stability promises.
+
+--- internal/wycheproof/notboring.go ---
+// Copyright 2022 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !boringcrypto
+
+
+--- chacha20poly1305/chacha20poly1305_amd64.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego
+
+
+--- openpgp/armor/armor.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package armor implements OpenPGP ASCII Armor, see RFC 4880. OpenPGP Armor is
+// very similar to PEM except that it has an additional CRC checksum.
+//
+// Deprecated: this package is unmaintained except for security fixes. New
+// applications should consider a more focused, modern alternative to OpenPGP
+// for their specific task. If you are required to interoperate with OpenPGP
+// systems and need a maintained package, consider a community fork.
+// See https://golang.org/issue/44226.
+
+--- internal/wycheproof/internal/dsa/dsa.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package dsa provides an internal version of dsa.Verify
+// that is used for the Wycheproof tests.
+
+--- salsa20/salsa/salsa20_amd64_test.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build amd64 && !purego && gc
+
+
+--- chacha20/chacha_arm64.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego
+
+
+--- acme/internal/acmeprobe/prober.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// The acmeprober program runs against an actual ACME CA implementation.
+// It spins up an HTTP server to fulfill authorization challenges
+// or execute a DNS script to provision a response to dns-01 challenge.
+//
+// For http-01 and tls-alpn-01 challenge types this requires the ACME CA
+// to be able to reach the HTTP server.
+//
+// A usage example:
+//
+//	go run prober.go \
+//	  -d https://acme-staging-v02.api.letsencrypt.org/directory \
+//	  -f order \
+//	  -t http-01 \
+//	  -a :8080 \
+//	  -domain some.example.org
+//
+// The above assumes a TCP tunnel from some.example.org:80 to 0.0.0.0:8080
+// in order for the test to be able to fulfill http-01 challenge.
+// To test tls-alpn-01 challenge, 443 port would need to be tunneled
+// to 0.0.0.0:8080.
+// When running with dns-01 challenge type, use -s argument instead of -a.
+
+--- internal/wycheproof/boring.go ---
+// Copyright 2022 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build boringcrypto
+
+
+--- chacha20poly1305/chacha20poly1305_noasm.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !amd64 || !gc || purego
+
+
+--- chacha20/xor.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found src the LICENSE file.
+
+
+--- internal/wycheproof/wycheproof_test.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package wycheproof runs a set of the Wycheproof tests
+// provided by https://github.com/google/wycheproof.
+
+--- argon2/blamka_ref.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !amd64 || purego || !gc
+
+
+--- ssh/knownhosts/knownhosts.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package knownhosts implements a parser for the OpenSSH known_hosts
+// host key database, and provides utility functions for writing
+// OpenSSH compliant known_hosts files.
+
+--- internal/poly1305/sum_asm.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego && (amd64 || loong64 || ppc64 || ppc64le)
+
+
+--- md4/md4block.go ---
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// MD4 block step.
+// In its own file so that a faster assembly or C version
+// can be substituted easily.
+
+
+--- internal/alias/alias_purego.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build purego
+
+// Package alias implements memory aliasing tests.
+
+--- cast5/cast5.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package cast5 implements CAST5, as defined in RFC 2144.
+//
+// CAST5 is a legacy cipher and its short block size makes it vulnerable to
+// birthday bound attacks (see https://sweet32.info). It should only be used
+// where compatibility with legacy systems, not security, is the goal.
+//
+// Deprecated: any new system should use AES (from crypto/aes, if necessary in
+// an AEAD mode like crypto/cipher.NewGCM) or XChaCha20-Poly1305 (from
+// golang.org/x/crypto/chacha20poly1305).
+
+--- bn256/bn256.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package bn256 implements a particular bilinear group.
+//
+// Bilinear groups are the basis of many of the new cryptographic protocols
+// that have been proposed over the past decade. They consist of a triplet of
+// groups (G₁, G₂ and GT) such that there exists a function e(g₁ˣ,g₂ʸ)=gTˣʸ
+// (where gₓ is a generator of the respective group). That function is called
+// a pairing function.
+//
+// This package specifically implements the Optimal Ate pairing over a 256-bit
+// Barreto-Naehrig curve as described in
+// http://cryptojedi.org/papers/dclxvi-20100714.pdf. Its output is compatible
+// with the implementation described in that paper.
+//
+// This package previously claimed to operate at a 128-bit security level.
+// However, recent improvements in attacks mean that is no longer true. See
+// https://moderncrypto.org/mail-archive/curves/2016/000740.html.
+//
+// Deprecated: due to its weakened security, new systems should not rely on this
+// elliptic curve. This package is frozen, and not implemented in constant time.
+// There is a more complete implementation at github.com/cloudflare/bn256, but
+// note that it suffers from the same security issues of the underlying curve.
+
+--- internal/poly1305/sum_generic.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// This file provides the generic implementation of Sum and MAC. Other files
+// might provide optimized assembly implementations of some of this code.
+
+
+--- ssh/test/test_unix_test.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || plan9 || solaris
+
+
+--- internal/wycheproof/aead_test.go ---
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- internal/poly1305/sum_s390x.s ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build gc && !purego
+
+#include "textflag.h"
+
+// This implementation of Poly1305 uses the vector facility (vx)
+// to process up to 2 blocks (32 bytes) per iteration using an
+// algorithm based on the one described in:
+//
+// NEON crypto, Daniel J. Bernstein & Peter Schwabe
+// https://cryptojedi.org/papers/neoncrypto-20120320.pdf
+//
+// This algorithm uses 5 26-bit limbs to represent a 130-bit
+// value. These limbs are, for the most part, zero extended and
+// placed into 64-bit vector register elements. Each vector
+// register is 128-bits wide and so holds 2 of these elements.
+// Using 26-bit limbs allows us plenty of headroom to accommodate
+// accumulations before and after multiplication without
+// overflowing either 32-bits (before multiplication) or 64-bits
+// (after multiplication).
+//
+// In order to parallelise the operations required to calculate
+// the sum we use two separate accumulators and then sum those
+// in an extra final step. For compatibility with the generic
+// implementation we perform this summation at the end of every
+// updateVX call.
+//
+// To use two accumulators we must multiply the message blocks
+// by r² rather than r. Only the final message block should be
+// multiplied by r.
+//
+// Example:
+//
+// We want to calculate the sum (h) for a 64 byte message (m):
+//
+//   h = m[0:16]r⁴ + m[16:32]r³ + m[32:48]r² + m[48:64]r
+//
+// To do this we split the calculation into the even indices
+// and odd indices of the message. These form our SIMD 'lanes':
+//
+//   h = m[ 0:16]r⁴ + m[32:48]r² +   <- lane 0
+//       m[16:32]r³ + m[48:64]r      <- lane 1
+//
+// To calculate this iteratively we refactor so that both lanes
+// are written in terms of r² and r:
+//
+//   h = (m[ 0:16]r² + m[32:48])r² + <- lane 0
+//       (m[16:32]r² + m[48:64])r    <- lane 1
+//                ^             ^
+//                |             coefficients for second iteration
+//                coefficients for first iteration
+//
+// So in this case we would have two iterations. In the first
+// both lanes are multiplied by r². In the second only the
+// first lane is multiplied by r² and the second lane is
+// instead multiplied by r. This gives use the odd and even
+// powers of r that we need from the original equation.
+//
+// Notation:
+//
+//   h - accumulator
+//   r - key
+//   m - message
+//
+//   [a, b]       - SIMD register holding two 64-bit values
+//   [a, b, c, d] - SIMD register holding four 32-bit values
+//   xᵢ[n]        - limb n of variable x with bit width i
+//
+// Limbs are expressed in little endian order, so for 26-bit
+// limbs x₂₆[4] will be the most significant limb and x₂₆[0]
+// will be the least significant limb.
+
+// masking constants
+#define MOD24 V0 // [0x0000000000ffffff, 0x0000000000ffffff] - mask low 24-bits
+#define MOD26 V1 // [0x0000000003ffffff, 0x0000000003ffffff] - mask low 26-bits
+
+// expansion constants (see EXPAND macro)
+#define EX0 V2
+#define EX1 V3
+#define EX2 V4
+
+// key (r², r or 1 depending on context)
+#define R_0 V5
+#define R_1 V6
+#define R_2 V7
+#define R_3 V8
+#define R_4 V9
+
+// precalculated coefficients (5r², 5r or 0 depending on context)
+#define R5_1 V10
+#define R5_2 V11
+#define R5_3 V12
+#define R5_4 V13
+
+// message block (m)
+#define M_0 V14
+#define M_1 V15
+#define M_2 V16
+#define M_3 V17
+#define M_4 V18
+
+// accumulator (h)
+#define H_0 V19
+#define H_1 V20
+#define H_2 V21
+#define H_3 V22
+#define H_4 V23
+
+// temporary registers (for short-lived values)
+#define T_0 V24
+#define T_1 V25
+#define T_2 V26
+#define T_3 V27
+#define T_4 V28
+
+
+--- chacha20/chacha_noasm.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build (!arm64 && !s390x && !ppc64 && !ppc64le) || !gc || purego
+
+
+--- openpgp/read.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package openpgp implements high level operations on OpenPGP messages.
+//
+// Deprecated: this package is unmaintained except for security fixes. New
+// applications should consider a more focused, modern alternative to OpenPGP
+// for their specific task. If you are required to interoperate with OpenPGP
+// systems and need a maintained package, consider a community fork.
+// See https://golang.org/issue/44226.
+
+--- chacha20poly1305/fips140only_compat.go ---
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !go1.26
+
+
+--- poly1305/poly1305_compat.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package poly1305 implements Poly1305 one-time message authentication code as
+// specified in https://cr.yp.to/mac/poly1305-20050329.pdf.
+//
+// Poly1305 is a fast, one-time authentication function. It is infeasible for an
+// attacker to generate an authenticator for a message without the key. However, a
+// key must only be used for a single message. Authenticating two different
+// messages with the same key allows an attacker to forge authenticators for other
+// messages with the same key.
+//
+// Poly1305 was originally coupled with AES in order to make Poly1305-AES. AES was
+// used with a fixed key in order to generate one-time keys from an nonce.
+// However, in this package AES isn't used and the one-time key is specified
+// directly.
+//
+// Deprecated: Poly1305 as implemented by this package is a cryptographic
+// building block that is not safe for general purpose use.
+// For encryption, use the full ChaCha20-Poly1305 construction implemented by
+// golang.org/x/crypto/chacha20poly1305. For authentication, use a general
+// purpose MAC such as HMAC implemented by crypto/hmac.
+
+--- otr/otr.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package otr implements the Off The Record protocol as specified in
+// http://www.cypherpunks.ca/otr/Protocol-v2-3.1.0.html
+//
+// The version of OTR implemented by this package has been deprecated
+// (https://bugs.otr.im/lib/libotr/issues/140). An implementation of OTRv3 is
+// available at https://github.com/coyim/otr3.
+//
+// The otr package is [frozen] and is not accepting new features.
+//
+// [frozen]: https://go.dev/wiki/Frozen
+
+--- twofish/twofish.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package twofish implements Bruce Schneier's Twofish encryption algorithm.
+//
+// Deprecated: Twofish is a legacy cipher and should not be used for new
+// applications. Also, this package does not and will not provide an optimized
+// implementation. Instead, use AES (from crypto/aes, if necessary in an AEAD
+// mode like crypto/cipher.NewGCM) or XChaCha20-Poly1305 (from
+// golang.org/x/crypto/chacha20poly1305).
+
+--- openpgp/s2k/s2k.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package s2k implements the various OpenPGP string-to-key transforms as
+// specified in RFC 4800 section 3.7.1.
+//
+// Deprecated: this package is unmaintained except for security fixes. New
+// applications should consider a more focused, modern alternative to OpenPGP
+// for their specific task. If you are required to interoperate with OpenPGP
+// systems and need a maintained package, consider a community fork.
+// See https://golang.org/issue/44226.
+
+--- ripemd160/ripemd160block.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// RIPEMD-160 block step.
+// In its own file so that a faster assembly or C version
+// can be substituted easily.
+
+
+--- blake2s/blake2s_386.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build 386 && gc && !purego
+
+
+--- ssh/agent/client.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package agent implements the ssh-agent protocol, and provides both
+// a client and a server. The client can talk to a standard ssh-agent
+// that uses UNIX sockets, and one could implement an alternative
+// ssh-agent process using the sample server.
+//
+// References:
+//
+//	[PROTOCOL.agent]: https://tools.ietf.org/html/draft-miller-ssh-agent-00
+
+--- salsa20/salsa20.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package salsa20 implements the Salsa20 stream cipher as specified in https://cr.yp.to/snuffle/spec.pdf.
+
+Salsa20 differs from many other stream ciphers in that it is message orientated
+rather than byte orientated. Keystream blocks are not preserved between calls,
+therefore each side must encrypt/decrypt data with the same segmentation.
+
+Another aspect of this difference is that part of the counter is exposed as
+a nonce in each call. Encrypting two different messages with the same (key,
+nonce) pair leads to trivial plaintext recovery. This is analogous to
+encrypting two different messages with the same key with a traditional stream
+cipher.
+
+This package also implements XSalsa20: a version of Salsa20 with a 24-byte
+nonce as specified in https://cr.yp.to/snuffle/xsalsa-20081128.pdf. Simply
+passing a 24-byte slice as the nonce triggers XSalsa20.
+*/
+
+--- ssh/test/multi_auth_test.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Tests for ssh client multi-auth
+//
+// These tests run a simple go ssh client against OpenSSH server
+// over unix domain sockets. The tests use multiple combinations
+// of password, keyboard-interactive and publickey authentication
+// methods.
+//
+// A wrapper library for making sshd PAM authentication use test
+// passwords is required in ./sshd_test_pw.so. If the library does
+// not exist these tests will be skipped. See compile instructions
+// (for linux) in file ./sshd_test_pw.c.
+
+//go:build linux
+
+
+--- internal/poly1305/poly1305.go ---
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package poly1305 implements Poly1305 one-time message authentication code as
+// specified in https://cr.yp.to/mac/poly1305-20050329.pdf.
+//
+// Poly1305 is a fast, one-time authentication function. It is infeasible for an
+// attacker to generate an authenticator for a message without the key. However, a
+// key must only be used for a single message. Authenticating two different
+// messages with the same key allows an attacker to forge authenticators for other
+// messages with the same key.
+//
+// Poly1305 was originally coupled with AES in order to make Poly1305-AES. AES was
+// used with a fixed key in order to generate one-time keys from an nonce.
+// However, in this package AES isn't used and the one-time key is specified
+// directly.
+
+--- blake2s/blake2s.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package blake2s implements the BLAKE2s hash algorithm defined by RFC 7693
+// and the extendable output function (XOF) BLAKE2Xs.
+//
+// BLAKE2s is optimized for 8- to 32-bit platforms and produces digests of any
+// size between 1 and 32 bytes.
+// For a detailed specification of BLAKE2s see https://blake2.net/blake2.pdf
+// and for BLAKE2Xs see https://blake2.net/blake2x.pdf
+//
+// If you aren't sure which function you need, use BLAKE2s (Sum256 or New256).
+// If you need a secret-key MAC (message authentication code), use the New256
+// function with a non-nil key.
+//
+// BLAKE2X is a construction to compute hash values larger than 32 bytes. It
+// can produce hash values between 0 and 65535 bytes.
+
+--- ssh/test/agent_unix_test.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
+
+

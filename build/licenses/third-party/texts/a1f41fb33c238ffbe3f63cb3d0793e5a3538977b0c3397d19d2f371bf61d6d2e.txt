@@ -1,0 +1,179 @@
+--- jsonpb/json.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package jsonpb provides functionality to marshal and unmarshal between a
+// protocol buffer message and JSON. It follows the specification at
+// https://developers.google.com/protocol-buffers/docs/proto3#json.
+//
+// Do not rely on the default behavior of the standard encoding/json package
+// when called on generated message types as it does not operate correctly.
+//
+// Deprecated: Use the "google.golang.org/protobuf/encoding/protojson"
+// package instead.
+
+--- jsonpb/decode.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- proto/discard_test.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- proto/text_test.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- proto/extensions.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- ptypes/doc.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package ptypes provides functionality for interacting with well-known types.
+//
+// Deprecated: Well-known types have specialized functionality directly
+// injected into the generated packages for each message type.
+// See the deprecation notice for each function for the suggested alternative.
+
+--- descriptor/descriptor.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package descriptor provides functions for obtaining the protocol buffer
+// descriptors of generated Go types.
+//
+// Deprecated: See the "google.golang.org/protobuf/reflect/protoreflect" package
+// for how to obtain an EnumDescriptor or MessageDescriptor in order to
+// programatically interact with the protobuf type system.
+
+--- protoc-gen-go/generator/internal/remap/remap.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package remap handles tracking the locations of Go tokens in a source text
+// across a rewrite by the Go formatter.
+
+--- proto/extensions_test.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- proto/deprecated.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- proto/buffer.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- proto/proto_clone_test.go ---
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- internal/gengogrpc/grpc.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package gengogrpc contains the gRPC code generator.
+
+--- protoc-gen-go/main.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// protoc-gen-go is a plugin for the Google protocol buffer compiler to generate
+// Go code. Install it by building this program and making it accessible within
+// your PATH with the name:
+//
+//	protoc-gen-go
+//
+// The 'go' suffix becomes part of the argument for the protocol compiler,
+// such that it can be invoked as:
+//
+//	protoc --go_out=paths=source_relative:. path/to/file.proto
+//
+// This generates Go bindings for the protocol buffer defined by file.proto.
+// With that input, the output will be written to:
+//
+//	path/to/file.pb.go
+//
+// See the README and documentation for protocol buffers to learn more:
+//
+//	https://developers.google.com/protocol-buffers/
+
+--- descriptor/descriptor_test.go ---
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- protoc-gen-go/generator/generator.go ---
+// Copyright 2010 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package generator is deprecated.
+//
+// This package is excluded from the Go protocol buffer compatibility guarantee
+// and may be deleted at some point in the future.
+//
+// Deprecated: Use the "google.golang.org/protobuf/compiler/protogen" package
+// instead to write protoc plugins in Go.
+
+--- proto/proto.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package proto provides functionality for handling protocol buffer messages.
+// In particular, it provides marshaling and unmarshaling between a protobuf
+// message and the binary wire format.
+//
+// See https://developers.google.com/protocol-buffers/docs/gotutorial for
+// more information.
+//
+// Deprecated: Use the "google.golang.org/protobuf/proto" package instead.
+
+--- internal/cmd/generate-alias/main.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:generate go run . -execute
+
+
+--- protoc-gen-go/grpc/grpc.go ---
+// Copyright 2015 The Go Authors.  All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package grpc is deprecated.
+//
+// This package is excluded from the Go protocol buffer compatibility guarantee
+// and may be deleted at some point in the future.
+//
+// Deprecated: Do not use.
+
