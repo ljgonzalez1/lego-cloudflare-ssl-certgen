@@ -6,12 +6,11 @@ concurrency:
   queue: max
 env:
   TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
-  VERSION_REF: "${{ github.event.release.tag_name ||\n    (github.base_ref == 'master' && github.head_ref) || github.base_ref || github.ref_name\
-    \ }}"
+
 jobs:
   static_go:
     name: Go / Golang static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -35,7 +34,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_python:
     name: Python static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -56,7 +55,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_bash:
     name: Bash static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -75,7 +74,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_posix:
     name: POSIX shell static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -94,7 +93,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_jq:
     name: jq static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -113,7 +112,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_awk:
     name: awk static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -132,7 +131,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_sed:
     name: sed static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -151,7 +150,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_dockerfile:
     name: Dockerfile static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -170,7 +169,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_yaml:
     name: YAML static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -189,7 +188,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_actions:
     name: GitHub Actions expressions static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -208,7 +207,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_csv:
     name: CSV static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -227,7 +226,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_json:
     name: JSON metadata static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -246,7 +245,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_modules:
     name: Go modules static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -270,7 +269,7 @@ jobs:
         printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_formats:
     name: Other formats and source inventory static code analysis
-    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    if: ${{ github.event.deleted != true }}
     continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -304,8 +303,7 @@ jobs:
     - static_json
     - static_modules
     - static_formats
-    if: ${{ !cancelled() && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-      (github.event_name == 'pull_request' && github.base_ref == 'master')) && (needs.static_go.result == 'success' || ((github.event_name
+    if: ${{ !cancelled() && (needs.static_go.result == 'success' || ((github.event_name
       != 'pull_request' || github.base_ref != 'master') && needs.static_go.result == 'failure')) && (needs.static_python.result == 'success'
       || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_python.result == 'failure')) && (needs.static_bash.result
       == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_bash.result == 'failure'))
@@ -333,8 +331,7 @@ jobs:
   version_dockerhub:
     name: Check version in DOCKERHUB.md
     needs: *id001
-    if: ${{ !cancelled() && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-      (github.event_name == 'pull_request' && github.base_ref == 'master')) && (needs.static_go.result == 'success' || ((github.event_name
+    if: ${{ !cancelled() && (needs.static_go.result == 'success' || ((github.event_name
       != 'pull_request' || github.base_ref != 'master') && needs.static_go.result == 'failure')) && (needs.static_python.result == 'success'
       || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_python.result == 'failure')) && (needs.static_bash.result
       == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_bash.result == 'failure'))
@@ -395,11 +392,7 @@ jobs:
       github.base_ref != 'master') && needs.static_json.result == 'failure')) && (needs.static_modules.result == 'success' || ((github.event_name
       != 'pull_request' || github.base_ref != 'master') && needs.static_modules.result == 'failure')) && (needs.static_formats.result
       == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_formats.result == 'failure'))
-      && (((github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
-      == 'pull_request' && github.base_ref == 'master')) && needs.version_readme.result == 'success' && needs.version_dockerhub.result
-      == 'success') || (!(github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
-      == 'pull_request' && github.base_ref == 'master')) && needs.version_readme.result == 'skipped' && needs.version_dockerhub.result
-      == 'skipped')) }}
+      && (needs.version_readme.result == 'success' && needs.version_dockerhub.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -443,11 +436,7 @@ jobs:
       github.base_ref != 'master') && needs.static_json.result == 'failure')) && (needs.static_modules.result == 'success' || ((github.event_name
       != 'pull_request' || github.base_ref != 'master') && needs.static_modules.result == 'failure')) && (needs.static_formats.result
       == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_formats.result == 'failure'))
-      && (((github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
-      == 'pull_request' && github.base_ref == 'master')) && needs.version_readme.result == 'success' && needs.version_dockerhub.result
-      == 'success') || (!(github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
-      == 'pull_request' && github.base_ref == 'master')) && needs.version_readme.result == 'skipped' && needs.version_dockerhub.result
-      == 'skipped')) }}
+      && (needs.version_readme.result == 'success' && needs.version_dockerhub.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -685,21 +674,17 @@ jobs:
         persist-credentials: false
     - name: Compare Docker Hub Markdown
       run: bash ci/check-dockerhub.sh description
-'on':
+"on":
   push:
     branches:
     - master
-    - '[vV][0-9]+.[0-9]*'
-    - '[0-9]+.[0-9]*'
-    - '[vV][0-9]+.[0-9]*/**'
-    - '[0-9]+.[0-9]*/**'
+    - '[vV][0-9]*.[0-9]*'
+    - '[0-9]*.[0-9]*'
   pull_request:
     branches:
     - master
-    - '[vV][0-9]+.[0-9]*'
-    - '[0-9]+.[0-9]*'
-    - '[vV][0-9]+.[0-9]*/**'
-    - '[0-9]+.[0-9]*/**'
+    - '[vV][0-9]*.[0-9]*'
+    - '[0-9]*.[0-9]*'
   release:
     types:
     - published

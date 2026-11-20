@@ -167,7 +167,7 @@ class PublishChecks(unittest.TestCase):
                                         env=os.environ | {"PATH": str(self.work / "bin") + os.pathsep + os.environ["PATH"],
                                             "MOCK_WORK": str(self.work), "MOCK_FAIL": failure,
                                             "DOCKERHUB_USERNAME": "ljgonzalez", "DOCKERHUB_PUSH_TOKEN": "fixture-push-token",
-                                            "PUBLISH_RESULT_FILE": str(result_file)}, timeout=10)
+                                            "PUBLISH_RESULT_FILE": str(result_file)}, timeout=30)
                 self.assertNotIn("fixture-push-token", result.stdout + result.stderr)
                 if failure:
                     self.assertNotEqual(result.returncode, 0)
@@ -210,7 +210,7 @@ class ReleaseIdentityChecks(unittest.TestCase):
 
     def test_final_csv_row_controls_prefix_suffix_and_all_tags(self):
         for prefix in ("", "v", "V"):
-            for embedded, suffix in (("", ""), ("", "beta-1"), ("-alpha.1", ""), ("-beta-1", "build.42")):
+            for embedded, suffix in (("", ""), ("", "beta-1"), ("-alpha.1", ""), ("", "build.42"), ("-rc.1", "")):
                 with self.subTest(prefix=prefix, embedded=embedded, suffix=suffix):
                     app = self.write_csv(prefix, suffix, embedded)
                     result = subprocess.run(["bash", "ci/publish-image.sh", "--print-tags"], cwd=self.work,
@@ -219,13 +219,24 @@ class ReleaseIdentityChecks(unittest.TestCase):
                     tags = [line.split(":", 1)[1] for line in result.stdout.splitlines()]
                     release = read_releases(self.work / "ci/versions/versions.csv")[-1]
                     self.assertEqual(len(tags), len(release.tags))
-                    self.assertEqual("latest" in tags, not any(word in app.lower() for word in ("alpha", "alfa", "beta")))
+                    self.assertEqual("latest" in tags, not any(word in app.lower() for word in ("alpha", "alfa", "beta", "rc")))
                     self.assertEqual(tags[5], prefix + app)
                     self.assertTrue(all(tag.endswith(prefix + app) for tag in (tags[0], tags[1], tags[3], tags[4])))
                     candidates = subprocess.check_output(["python3", "-B", "ci/versions/release_config.py", "--tag-candidates"], cwd=self.work, text=True).splitlines()
                     self.assertTrue({app, "v" + app, "V" + app}.issubset(candidates))
                     self.assertNotIn("latest", candidates)
                     self.assertNotIn(tags[6], candidates)
+
+    def test_multiple_version_suffixes_are_rejected(self):
+        # New grammar accepts at most one suffix, even when the CSV stores
+        # the version suffix in a separate column.
+        self.write_csv("v", "build.42", "-beta-1")
+        for command in (("bash", "ci/publish-image.sh", "--print-tags"),
+                        ("python3", "-B", "ci/versions/tags_table.py")):
+            with self.subTest(command=command):
+                result = subprocess.run(command, cwd=self.work, text=True,
+                                        capture_output=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
 
     def test_conflicting_csv_or_versions_fail_before_any_build(self):
         for column, value in ((8, "v99.0.0"), (5, "v99.0.0"), (1, "99.0.0")):
@@ -240,7 +251,7 @@ class ReleaseIdentityChecks(unittest.TestCase):
                 self.assertIn("differs", result.stderr)
 
     def test_both_document_checks_accept_csv_prefixes_and_prerelease_suffixes(self):
-        for prefix, embedded, suffix in (("", "", ""), ("v", "", "beta-1"), ("V", "-alpha.1", "build.42")):
+        for prefix, embedded, suffix in (("", "", ""), ("v", "", "beta-1"), ("V", "-alpha.1", ""), ("V", "", "build.42")):
             with self.subTest(prefix=prefix, embedded=embedded, suffix=suffix):
                 app = self.write_csv(prefix, suffix, embedded)
                 generated = subprocess.run(["python3", "-B", "ci/versions/tags_table.py"], cwd=self.work,

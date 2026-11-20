@@ -11,13 +11,16 @@ from tags_table import CSV_PATH, REPO_DIR, read_releases
 
 def release_config():
     values = {}
-    numeric = r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}"
+    numeric = r"(?:0|[1-9][0-9]*)"
+    component = numeric + r"(?:\." + numeric + r"){2}"
+    app_core = r"[vV]?" + numeric + r"\." + numeric + r"(?:\." + numeric + r"){0,2}"
+    app_suffix = r"(?:[-.+]?(?:(?:alpha|alfa|beta|audit)(?:[-.]?[1-9][0-9]*)?|(?:rc|build)[-.]?[1-9][0-9]*))?"
     for line in (REPO_DIR / "ci/versions/versions.txt").read_text().splitlines():
         if not line or line.startswith("#"):
             continue
         key, separator, value = line.partition("=")
-        pattern = numeric + (r"(?:-[A-Za-z0-9_][A-Za-z0-9_.-]*)?" if key == "APP_VERSION" else "")
-        if separator != "=" or key not in {"APP_VERSION", "LEGO_VERSION", "ALPINE_VERSION"} or not re.fullmatch(pattern, value):
+        pattern = (app_core + app_suffix) if key == "APP_VERSION" else component
+        if separator != "=" or key not in {"APP_VERSION", "LEGO_VERSION", "ALPINE_VERSION"} or not re.fullmatch(pattern, value, flags=re.IGNORECASE):
             raise ValueError("Invalid entry in ci/versions/versions.txt")
         if key in values:
             raise ValueError(f"Duplicate version key: {key}")
@@ -26,8 +29,10 @@ def release_config():
         raise ValueError("Missing version keys in ci/versions/versions.txt")
 
     latest = read_releases(CSV_PATH)[-1]
+    if not latest.field("App URL"):
+        raise ValueError("The current release must have an App URL; empty URLs identify unpublished branches.")
     app = re.sub(r"^[vV]", "", latest.app_full)
-    configured_app = values["APP_VERSION"]
+    configured_app = re.sub(r"^[vV]", "", values["APP_VERSION"])
     if app != configured_app:
         raise ValueError("The final CSV application version differs from APP_VERSION in ci/versions/versions.txt")
     if latest.field("Docker OS").lower() != "alpine" or latest.field("Docker OS Version") != values["ALPINE_VERSION"]:

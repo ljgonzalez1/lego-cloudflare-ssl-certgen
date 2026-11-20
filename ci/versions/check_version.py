@@ -3,7 +3,6 @@
 
 import argparse
 import csv
-import re
 import subprocess
 import sys
 
@@ -34,36 +33,16 @@ def expected_tags() -> tuple[str, ...]:
     return tuple(ref.removeprefix(prefix) for ref in refs)
 
 
-def check_ref(ref: str, version: str) -> None:
-    if not ref:
-        return
-    short_ref = ref.removeprefix("refs/heads/").removeprefix("refs/tags/")
-    result = subprocess.run(
-        ["bash", "ci/is-version-branch.sh", short_ref, "--print-version"],
-        cwd=REPO_DIR,
-        text=True,
-        capture_output=True,
-    )
-    if result.returncode == 1:
-        return  # A non-versioned ref uses the full APP_VERSION from ci/versions/versions.txt.
-    result.check_returncode()
-    numbers = (part.lstrip("0") or "0" for part in result.stdout.strip().split(".")[:3])
-    branch_version = list(numbers)
-    app_version = re.sub(r"^[vV]", "", version).split("-", 1)[0]
-    if app_version.split(".")[:len(branch_version)] != branch_version:
-        raise ValueError(f"{ref!r} does not match APP_VERSION={app_version} in ci/versions/versions.txt.")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("document", choices=("DOCKERHUB.md", "README.md"))
-    parser.add_argument("--ref", default="", help="Version branch or release tag to check")
+    # Kept for existing callers, but the Git ref never overrides the committed release identity.
+    parser.add_argument("--ref", default="", help="Compatibility argument; ignored")
     args = parser.parse_args()
 
     try:
         tags = expected_tags()
         version = tags[5]  # Full application version, preserving prefix and optional CSV suffix.
-        check_ref(args.ref, version)
 
         releases = read_releases(CSV_PATH)
         latest = releases[-1]

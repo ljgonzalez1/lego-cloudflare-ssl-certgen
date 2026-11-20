@@ -545,3 +545,38 @@ func TestGoTimezoneNoticesMatchActualSDKData(t *testing.T) {
 		t.Fatal("different timezone ZIP attributed to native SDK")
 	}
 }
+
+// A split OCI SDK module inherits its repository-root dual license; unknown
+// modules must still fail closed when their source archive lacks license terms.
+func TestSplitOCIModuleUsesApprovedApacheTerms(t *testing.T) {
+	root := t.TempDir()
+	inputs := filepath.Join(root, "inputs")
+	put(t, filepath.Join(inputs, "Apache-2.0.txt"), "Apache License\nVersion 2.0\nPermission to use, copy\n")
+	source := filepath.Join(root, "source")
+	put(t, filepath.Join(source, "common.go"), "// Copyright (c) Oracle.\npackage common\n")
+	c := &collector{
+		options: Options{Inputs: inputs},
+		blobs:   map[string][]byte{}, aliases: map[string]string{},
+	}
+	allowed := Component{ID: "module:github.com/nrdcg/oci-go-sdk/common/v1065@v1065.111.0"}
+	if err := c.collectTree(&allowed, source, false); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, d := range allowed.Documents {
+		if d.Source == "inherited/Apache-2.0.txt" {
+			found = true
+		}
+	}
+	if !found || allowed.DeclaredLicense != "Apache-2.0 OR UPL-1.0" {
+		t.Fatal("missing inherited OCI license evidence")
+	}
+	denied := Component{ID: "module:example.com/unknown@v1.0.0"}
+	if err := c.collectTree(&denied, source, false); err == nil {
+		t.Fatal("license-free unknown module was accepted")
+	}
+	unreviewed := Component{ID: "module:github.com/nrdcg/oci-go-sdk/common/v1065@v1065.112.0"}
+	if err := c.collectTree(&unreviewed, source, false); err == nil {
+		t.Fatal("unreviewed OCI version was accepted")
+	}
+}
