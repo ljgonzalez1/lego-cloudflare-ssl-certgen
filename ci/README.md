@@ -156,7 +156,7 @@ python3 -B ci/test_go_binary.py
 ```
 
 The workflow contains the exact unit, race and fuzz commands. The
-[v6.0.1-beta-4 validation report](validation-6.0.0-alpha-2.md) distinguishes local
+[v6.0.1-beta-4 validation report](validation-6.0.1-beta-1.md) distinguishes local
 execution from Docker/QEMU and live publishing checks that require GitHub.
 
 License evidence checks: `python3 -B ci/check_licenses.py` checks source notice copies and asset/font metadata. Every image build collects actual binary/module notices in a native builder stage, verifies them with networking disabled, and ships only the resulting evidence. `bash ci/check-image-licenses.sh IMAGE PLATFORM` independently verifies a Docker export of the final image on all five smoke-test targets. Missing source evidence fails the build; it is never replaced with the project's MIT license.
