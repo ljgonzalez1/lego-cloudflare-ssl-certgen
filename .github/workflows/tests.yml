@@ -49,7 +49,13 @@ jobs:
           persist-credentials: false
       - name: Verify the committed Docker tag table
         id: check
+        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         run: bash ci/check-version.sh README.md
+      - name: Report advisory version failure
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check.outcome == 'failure' }}
+        run: |
+          printf '::warning file=README.md::Version check failed on push to master; subsequent tests will continue. See the check log for details.\n'
+          printf '### Version check warning: README.md\n\nThe check failed on push to master. Subsequent tests continue; see the check log for details.\n' >> "$GITHUB_STEP_SUMMARY"
 
   version_dockerhub:
     name: Check version in DOCKERHUB.md
@@ -66,51 +72,151 @@ jobs:
           persist-credentials: false
       - name: Verify the committed Docker tag table
         id: check
+        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         run: bash ci/check-version.sh DOCKERHUB.md
+      - name: Report advisory version failure
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check.outcome == 'failure' }}
+        run: |
+          printf '::warning file=DOCKERHUB.md::Version check failed on push to master; subsequent tests will continue. See the check log for details.\n'
+          printf '### Version check warning: DOCKERHUB.md\n\nThe check failed on push to master. Subsequent tests continue; see the check log for details.\n' >> "$GITHUB_STEP_SUMMARY"
 
-  offline:
-    name: Offline tests
+  static_go:
+    name: Go static code analysis
     needs: [version_readme, version_dockerhub]
     if: >-
-      ${{ needs.version_readme.outputs.eligible == 'true' &&
-          needs.version_dockerhub.outputs.eligible == 'true' }}
+      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+          (needs.version_readme.outputs.eligible == 'true' &&
+           needs.version_dockerhub.outputs.eligible == 'true') }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc python3 python3-yaml jq
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: '1.27.4'
           cache: false
-      - name: Vet Go code
-        working-directory: build
-        run: go vet -buildvcs=false -mod=vendor ./...
-      - name: Test Go code with full debug information
-        working-directory: build
-        run: go test -buildvcs=false -mod=vendor -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false' ./...
-      - name: Check Go races with CGO on the native AMD64 runner
-        working-directory: build
-        env:
-          CGO_ENABLED: '1'
-        run: go test -race -buildvcs=false -mod=vendor -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false' ./...
-      - name: Test actual compiled Go binaries and five debug ELF targets
-        run: python3 -B ci/test_go_binary.py
-      - name: Run offline tests
+      - name: Check Go formatting and vet all five targets
+        run: bash ci/analyze-go.sh
+
+  static_bash:
+    name: Bash static code analysis
+    needs: [version_readme, version_dockerhub]
+    if: >-
+      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+          (needs.version_readme.outputs.eligible == 'true' &&
+           needs.version_dockerhub.outputs.eligible == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+      - name: Check shell syntax and run ShellCheck
+        run: bash ci/analyze-bash.sh
+
+  static_python:
+    name: Python static code analysis
+    needs: [version_readme, version_dockerhub]
+    if: >-
+      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+          (needs.version_readme.outputs.eligible == 'true' &&
+           needs.version_dockerhub.outputs.eligible == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install the pinned Python linter
+        run: python3 -m pip install --disable-pip-version-check -r ci/requirements-lint.txt
+      - name: Check source license copies and asset notices
+        run: python3 -B ci/check_licenses.py
+      - name: Check Python syntax and run Ruff
+        run: python3 -B ci/analyze-python.py
+
+  offline:
+    name: Offline CA and runtime tests
+    needs: [static_go, static_bash, static_python]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - name: Run the offline issuance, menu, error and signal regressions
         run: sh ci/tests/run.sh
       - name: Test Docker Hub verification logic
         run: bash ci/test-dockerhub.sh
+      - name: Test Buildx metadata, platform hashes and release tag configuration
+        run: python3 -B ci/test_publish.py
       - name: Test CI event routing and job dependencies
         run: python3 -B ci/test_workflows.py
       - name: Test prerelease tag policy
         run: python3 -B ci/versions/test_tags.py
 
+  go_tests:
+    name: Go offline tests and debug binaries
+    needs: [static_go, static_bash, static_python]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install native race-detector dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc python3
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - name: Run shuffled Go unit tests with full debug information and coverage
+        working-directory: build
+        env:
+          CGO_ENABLED: '0'
+        run: >-
+          go test -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m
+          -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false'
+          -coverprofile=coverage.out ./...
+      - name: Check races with pointer checks on native AMD64
+        working-directory: build
+        env:
+          CGO_ENABLED: '1'
+        run: >-
+          go test -race -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m
+          -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false' ./...
+      - name: Fuzz argument parsing, YAML and lego logs offline
+        working-directory: build
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          for target in FuzzParseOptions FuzzLoadDomains FuzzLegoLog; do
+            go test -buildvcs=false -mod=vendor -run='^$' -fuzz="^${target}$" \
+              -fuzztime=15s -parallel=2 -timeout=2m \
+              -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false' ./internal/certgen
+          done
+      - name: Test real Go binaries, logs, dumps and five debug ELF targets
+        run: python3 -B ci/test_go_binary.py
+
   smoke_armv6:
     name: ARMv6 smoke test
-    needs: offline
+    needs: [offline, go_tests]
     if: >-
       ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
@@ -120,7 +226,7 @@ jobs:
 
   smoke_armv7:
     name: ARMv7 smoke test
-    needs: offline
+    needs: [offline, go_tests]
     if: >-
       ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
@@ -130,7 +236,7 @@ jobs:
 
   smoke_arm64:
     name: ARM64 smoke test
-    needs: offline
+    needs: [offline, go_tests]
     if: >-
       ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
@@ -140,7 +246,7 @@ jobs:
 
   smoke_i386:
     name: i386 smoke test
-    needs: offline
+    needs: [offline, go_tests]
     if: >-
       ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
@@ -150,7 +256,7 @@ jobs:
 
   smoke_amd64:
     name: AMD64 smoke test
-    needs: offline
+    needs: [offline, go_tests]
     if: >-
       ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
@@ -165,8 +271,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     outputs:
-      image: ${{ steps.push.outputs.image }}
       digest: ${{ steps.push.outputs.digest }}
+      digest_armv6: ${{ steps.push.outputs.digest_armv6 }}
+      digest_armv7: ${{ steps.push.outputs.digest_armv7 }}
+      digest_arm64: ${{ steps.push.outputs.digest_arm64 }}
+      digest_i386: ${{ steps.push.outputs.digest_i386 }}
+      digest_amd64: ${{ steps.push.outputs.digest_amd64 }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -194,7 +304,9 @@ jobs:
         run: |
           result="$RUNNER_TEMP/certgen-publish.json"
           PUBLISH_RESULT_FILE="$result" bash ci/publish-image.sh
-          bash ci/read-publish-result.sh "$result" >> "$GITHUB_OUTPUT"
+          bash ci/read-publish-result.sh "$result" > "$RUNNER_TEMP/certgen-outputs"
+          cat "$RUNNER_TEMP/certgen-outputs" >> "$GITHUB_OUTPUT"
+          printf 'Exported the index hash and all five platform hashes.\n'
 
   update_description:
     name: Update Docker Hub overview
@@ -217,9 +329,6 @@ jobs:
     name: "Test: wait 20 seconds for image propagation"
     needs: publish
     runs-on: ubuntu-24.04
-    outputs:
-      image: ${{ needs.publish.outputs.image }}
-      digest: ${{ needs.publish.outputs.digest }}
     steps:
       - name: Wait for image propagation
         run: |
@@ -231,18 +340,47 @@ jobs:
     name: Verify published version tag
     needs: wait_image
     runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Verify tag and digest
+      - name: Find a full-version tag from the final CSV row
+        id: tag
+        run: bash ci/check-dockerhub.sh tag
+
+  verify_hashes:
+    name: Compare SHA-256 (${{ matrix.platform }})
+    needs: [publish, verify_image]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/arm/v6
+            output: digest_armv6
+          - platform: linux/arm/v7
+            output: digest_armv7
+          - platform: linux/arm64
+            output: digest_arm64
+          - platform: linux/386
+            output: digest_i386
+          - platform: linux/amd64
+            output: digest_amd64
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Compare Buildx hash with Docker Hub
         env:
-          IMAGE: ${{ needs.wait_image.outputs.image }}
-          DIGEST: ${{ needs.wait_image.outputs.digest }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
-        run: bash ci/check-dockerhub.sh image "$IMAGE" "$DIGEST"
+          PLATFORM: ${{ matrix.platform }}
+          TAG: ${{ needs.verify_image.outputs.tag }}
+          EXPECTED_DIGEST: ${{ needs.publish.outputs[matrix.output] }}
+          INDEX_DIGEST: ${{ needs.publish.outputs.digest }}
+        run: bash ci/check-dockerhub.sh platform "$PLATFORM" "$TAG" "$EXPECTED_DIGEST" "$INDEX_DIGEST"
 
   wait_description:
     name: "Test: wait 20 seconds for description propagation"

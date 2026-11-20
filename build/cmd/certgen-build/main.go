@@ -29,8 +29,12 @@ func run() (status int) {
 		err = imagebuild.BuildDelve(args[1])
 	case len(args) == 2 && args[0] == "verify-debug":
 		err = certgen.CheckDebugBinary(args[1])
+	case len(args) == 3 && args[0] == "licenses":
+		err = imagebuild.CollectLicenses(args[1], args[2])
+	case len(args) == 2 && args[0] == "verify-licenses":
+		err = imagebuild.VerifyLicenses(args[1])
 	default:
-		fmt.Fprintln(os.Stderr, "Usage: certgen-build download OUTPUT | prepare ROOT LICENSES | compile OUTPUT | delve ROOT | verify-debug BINARY")
+		fmt.Fprintln(os.Stderr, "Usage: certgen-build licenses ROOT INPUTS | verify-licenses ROOT | download OUTPUT | prepare ROOT LICENSES | compile OUTPUT | delve ROOT | verify-debug BINARY")
 		return 2
 	}
 	if err != nil {

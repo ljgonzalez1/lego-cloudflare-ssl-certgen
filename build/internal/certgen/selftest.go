@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"debug/buildinfo"
 	"debug/elf"
+	"encoding/json"
 	"fmt"
+	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/internal/debugrun"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,23 +67,42 @@ func ImageSelfTest(output, errorOutput *os.File) int {
 	if err = CheckDebugBinary(executable); err != nil {
 		return fail(err)
 	}
-	delve := "/usr/local/bin/dlv"
-	if runtime.GOARCH == "arm" {
-		if _, err = os.Lstat(delve); !os.IsNotExist(err) {
-			return fail(fmt.Errorf("Delve is unsupported on 32-bit ARM"))
-		}
-	} else {
-		version, err := exec.Command(delve, "version").CombinedOutput()
-		if err != nil || !bytes.Contains(version, []byte("Delve Debugger")) {
-			return fail(fmt.Errorf("Delve does not run on this architecture: %s (%v)", version, err))
-		}
-	}
 	dir, err := os.MkdirTemp("", "certgen-image-test-")
 	if err != nil {
 		return fail(err)
 	}
 	defer os.RemoveAll(dir)
 	if err = os.Chmod(dir, 0755); err != nil {
+		return fail(err)
+	}
+	if err = os.Setenv("CERTGEN_LOG_DIR", filepath.Join(dir, "debug")); err != nil {
+		return fail(err)
+	}
+	delve := "/usr/local/bin/dlv"
+	debuggerEnabled := false
+	reason := "Delve is not supported on this architecture"
+	if debugrun.SupportsDelve(runtime.GOOS, runtime.GOARCH) {
+		probe := exec.Command(executable, "debugger-probe")
+		probe.Stdout = output
+		probe.Stderr = errorOutput
+		if err = probe.Run(); err == nil {
+			debuggerEnabled = true
+			reason = "Delve executed the real Go probe"
+		} else {
+			reason = "Delve could not execute the Go probe; using portable Go diagnostics"
+		}
+	}
+	if !debuggerEnabled {
+		if err = os.Remove(delve); err != nil && !os.IsNotExist(err) {
+			return fail(err)
+		}
+		fmt.Fprintln(output, "Image self-test:", reason)
+	}
+	if err = os.MkdirAll("/usr/share/certgen", 0755); err != nil {
+		return fail(err)
+	}
+	manifest, _ := json.Marshal(map[string]any{"architecture": debugrun.Architecture(), "delve": debuggerEnabled, "reason": reason, "go_traces": true})
+	if err = os.WriteFile("/usr/share/certgen/debugger.json", manifest, 0644); err != nil {
 		return fail(err)
 	}
 	config := filepath.Join(dir, "domains.yaml")

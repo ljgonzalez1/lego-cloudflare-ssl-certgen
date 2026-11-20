@@ -3,6 +3,7 @@ package imagebuild
 import (
 	"debug/buildinfo"
 	"fmt"
+	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/internal/debugrun"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -19,7 +20,7 @@ func TargetEnvironment() ([]string, error) {
 		return nil, err
 	}
 	settings := map[string]string{"GOOS": "linux", "GOARCH": architecture, "CGO_ENABLED": "0", "GOAMD64": "v1", "GOTOOLCHAIN": "local", "GOWORK": "off", "GOFLAGS": ""}
-	if architecture != "amd64" && architecture != "arm64" && architecture != "386" {
+	if !debugrun.SupportsDelve("linux", architecture) {
 		settings["GOARM"] = strings.TrimPrefix(variant, "v")
 	} else {
 		settings["GOARM"] = ""
@@ -44,7 +45,14 @@ func Compile(output string) error {
 	if err = os.MkdirAll(filepath.Dir(output), 0755); err != nil {
 		return err
 	}
-	command := exec.Command(filepath.Join(runtime.GOROOT(), "bin/go"), "build", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags=-compressdwarf=false", "-o", output, "./cmd/certgen")
+	linkerFlags := "-compressdwarf=false"
+	if version := os.Getenv("APP_VERSION"); version != "" {
+		if !versionPattern.MatchString("v" + version) {
+			return fmt.Errorf("invalid APP_VERSION")
+		}
+		linkerFlags += " -X=main.applicationVersion=" + version
+	}
+	command := exec.Command(filepath.Join(runtime.GOROOT(), "bin/go"), "build", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags="+linkerFlags, "-o", output, "./cmd/certgen")
 	command.Env = environment
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
