@@ -1,0 +1,1 @@
+smoke: [example.com, www.example.com, '*.example.com']

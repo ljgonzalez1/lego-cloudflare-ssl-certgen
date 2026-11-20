@@ -3,11 +3,9 @@ set -euo pipefail
 
 source ci/versions.sh
 read_versions
-
 platform=$1
 image=$2
 bash ci/check-image-licenses.sh "$image" "$platform"
-
 work=$(mktemp -d)
 container=
 trap 'if [[ -n "$container" ]]; then docker rm -fv "$container" >/dev/null; fi; rm -rf -- "$work"' EXIT
@@ -18,88 +16,68 @@ smoke_gid=$(id -g)
 sed -e 's/^EMAIL=.*/EMAIL=ci@example.com/' \
     -e 's/^ACCEPT_LEGO_TOS=.*/ACCEPT_LEGO_TOS=true/' \
     -e 's/^CLOUDFLARE_API_TOKEN=.*/CLOUDFLARE_API_TOKEN=/' \
-    -e "s/^UID=.*/UID=$smoke_uid/" \
-    -e "s/^GID=.*/GID=$smoke_gid/" \
+    -e "s/^UID=.*/UID=$smoke_uid/" -e "s/^GID=.*/GID=$smoke_gid/" \
     template.env > "$work/.env"
-grep -Fxq 'ACCEPT_LEGO_TOS=true' "$work/.env"
-
-cat > "$work/domains.yaml" <<'YAML'
-smoke:
-  - example.com
-  - www.example.com
-  - '*.example.com'
-YAML
+cp build/smoke.domains.yaml "$work/domains.yaml"
 chmod 644 "$work/domains.yaml"
-mkdir "$work/debug"
-
+mkdir "$work/output"
 version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
-if [[ "$version" != "$APP_VERSION" ]]; then
-    printf 'Expected image %s, found %s\n' "$APP_VERSION" "$version" >&2
-    exit 1
-fi
-
+[[ "$version" == "$APP_VERSION" ]]
 alpine_version=$(docker image inspect --format '{{index .Config.Labels "com.certgen.alpine.version"}}' "$image")
-if [[ "$alpine_version" != "$ALPINE_VERSION" ]]; then
-    printf 'Expected Alpine %s, found %s\n' "$ALPINE_VERSION" "$alpine_version" >&2
-    exit 1
-fi
+[[ "$alpine_version" == "$ALPINE_VERSION" ]]
 
-args=(--rm --pull=never --platform "$platform" --network none)
+# Inspect actual runtime bytes, not Dockerfile text or a debugger manifest.
 container=$(docker create --platform "$platform" "$image")
-docker cp "$container:/usr/share/certgen/debugger.json" "$work/debugger.json"
-python3 - "$work/debugger.json" "$platform" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-assert data["go_traces"] is True
-assert isinstance(data["delve"], bool)
-assert isinstance(data["reason"], str) and data["reason"]
-arch = {"linux/arm/v6":"armv6", "linux/arm/v7":"armv7", "linux/386":"i386"}.get(sys.argv[2], sys.argv[2].removeprefix("linux/"))
-assert data["architecture"] == arch
-if sys.argv[2] in {"linux/arm/v6", "linux/arm/v7"}:
-    assert data["delve"] is False
+docker export "$container" > "$work/runtime.tar"
+python3 - "$work/runtime.tar" <<'PY'
+import sys, tarfile, zipfile, io
+with tarfile.open(sys.argv[1]) as archive:
+    files = {member.name.removeprefix("./"): member for member in archive if member.isfile()}
+    expected = {"usr/local/bin/certgen", "usr/local/bin/lego", "usr/share/zoneinfo.zip",
+                "etc/ssl/certs/ca-certificates.crt", "etc/passwd", "etc/group"}
+    assert expected <= files.keys(), expected - files.keys()
+    engine_files = {"etc/hosts", "etc/hostname", "etc/resolv.conf", ".dockerenv"}
+    for name in files:
+        assert name in expected or name in engine_files or name.startswith("usr/share/licenses/"), "unexpected runtime file: " + name
+        if name not in engine_files:
+            assert files[name].size > 0, name
+    zoneinfo = archive.extractfile(files["usr/share/zoneinfo.zip"]).read()
+    with zipfile.ZipFile(io.BytesIO(zoneinfo)) as zones:
+        for name in ("America/Santiago", "Etc/UTC", "Europe/London", "Asia/Tokyo"):
+            assert zones.read(name).startswith(b"TZif"), name
+    print("Runtime files:", len(files), "uncompressed file bytes:", sum(member.size for member in files.values()))
 PY
-if python3 -c 'import json,sys; sys.exit(not json.load(open(sys.argv[1]))["delve"])' "$work/debugger.json"; then
-    docker cp "$container:/usr/local/bin/dlv" "$work/dlv"
-    args+=(--cap-add SYS_PTRACE --security-opt seccomp=unconfined)
-else
-    if docker cp "$container:/usr/local/bin/dlv" "$work/dlv" >/dev/null 2>&1; then
-        printf 'An unusable debugger was included in the final filesystem\n' >&2
-        exit 1
-    fi
-fi
 docker rm -v "$container" >/dev/null
 container=
+args=(--rm --pull=never --platform "$platform" --network none --env-file "$work/.env"
+    --mount "type=bind,source=$work/domains.yaml,target=/app/domains.yaml,readonly"
+    --mount "type=bind,source=$work/output,target=/ssl-certs")
 lego_arch=${platform#linux/}
 lego_arch=${lego_arch%%/*}
-
-args+=(--env-file "$work/.env"
-    --mount "type=bind,source=$work/domains.yaml,target=/app/domains.yaml,readonly"
-    --mount "type=bind,source=$work/debug,target=/ssl-certs/debug")
-plan=$(docker run "${args[@]}" "$image" --test)
+plan=$(docker run "${args[@]}" --env TZ=America/Santiago "$image" --test)
 printf '%s\n' "$plan"
 grep -Fxq '🧪 TEST MODE (offline)' <<< "$plan"
 grep -Fxq "ℹ️  lego version $LEGO_VERSION linux/$lego_arch" <<< "$plan"
 grep -Fxq '✅ Offline test passed.' <<< "$plan"
 grep -Fxq '🧪 STAGING MODE' <<< "$plan"
-grep -Fxq 'ℹ️  ACME server: https://acme-staging-v02.api.letsencrypt.org/directory' <<< "$plan"
 grep -Fxq 'ℹ️  Domains (3):' <<< "$plan"
 for domain in example.com www.example.com '*.example.com'; do
     grep -Fxq "🔹 $domain" <<< "$plan"
 done
-case "$platform" in
-    linux/arm/v6) log_arch=armv6 ;;
-    linux/arm/v7) log_arch=armv7 ;;
-    linux/386) log_arch=i386 ;;
-    *) log_arch=${platform#linux/} ;;
-esac
-shopt -s nullglob
-logs=("$work/debug/v${APP_VERSION}."*."$log_arch.log")
-(( ${#logs[@]} == 1 ))
-grep -Fq 'Offline test passed.' "${logs[0]}"
-grep -Fq 'target final snapshot' "${logs[0]}"
-grep -Fq 'goroutine ' "${logs[0]}"
-dumps=("$work/debug/dump."*)
-(( ${#dumps[@]} == 0 ))
-[[ $(stat -c '%a' "${logs[0]}") == 600 ]]
+[[ -z $(find "$work/output" -mindepth 1 -print -quit) ]]
+app_version=$(docker run "${args[@]}" "$image" --version)
+[[ "$app_version" == "certgen version $APP_VERSION linux/$lego_arch" ]]
+if docker run "${args[@]}" "$image" --test --production > "$work/invalid" 2>&1; then
+    printf 'Conflicting CLI flags were accepted\n' >&2
+    exit 1
+else
+    status=$?
+    [[ "$status" == 2 ]]
+fi
+if grep -Eq 'debug trace|goroutine |/src/' "$work/invalid"; then
+    printf 'A diagnostic trace leaked into production output\n' >&2
+    exit 1
+fi
+[[ -z $(find "$work/output" -mindepth 1 -print -quit) ]]
 bash ci/profile-image.sh "$image" "$platform"
 printf 'PASS: %s\n' "$platform"

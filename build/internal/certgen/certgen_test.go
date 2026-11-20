@@ -1,11 +1,12 @@
 package certgen
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -190,31 +191,6 @@ func TestDiagnoseFatalLegoErrorsAndIgnoreProgress(t *testing.T) {
 	}
 }
 
-func TestDiagnosticsKeepsBoundedRedactedEventsAndStacks(t *testing.T) {
-	t.Setenv("CERTGEN_TRACE", "errors")
-	t.Setenv("CLOUDFLARE_API_TOKEN", "private-test-token")
-	var output bytes.Buffer
-	diagnostics := NewDiagnostics(&output)
-	var writers sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		writers.Add(1)
-		go func(n int) {
-			defer writers.Done()
-			for j := 0; j < 100; j++ {
-				diagnostics.Event(fmt.Sprintf("event %d:%d private-test-token", n, j))
-			}
-		}(i)
-	}
-	writers.Wait()
-	if output.Len() != 0 || diagnostics.count != 64 {
-		t.Fatal("traces must stay hidden and bounded until a failure")
-	}
-	diagnostics.Failure("failure private-test-token")
-	if strings.Contains(output.String(), "private-test-token") || !strings.Contains(output.String(), "[REDACTED]") || !strings.Contains(output.String(), "goroutine ") {
-		t.Fatal("failure trace did not redact secrets or include stacks")
-	}
-}
-
 func TestMakeOutputPathIsExclusiveAndRejectsSymlinks(t *testing.T) {
 	root := t.TempDir()
 	paths := make(chan string, 20)
@@ -280,6 +256,8 @@ func TestSupervisorChild(t *testing.T) {
 		fmt.Fprintln(os.Stderr, "2026/11/18 10:20:30 [INFO] Working on a valid challenge")
 		time.Sleep(350 * time.Millisecond)
 		os.Exit(0)
+	case "writer-error":
+		fmt.Fprintln(os.Stdout, os.Getpid())
 	}
 	for {
 		time.Sleep(time.Hour)
@@ -327,6 +305,51 @@ func TestSuperviseStopsFailuresAndKeepsWorkingChildren(t *testing.T) {
 	status, err := Supervise(ProcessOptions{Command: []string{executable, "-test.run=^TestSupervisorChild$"}, Seconds: 60, Output: output, Error: output, Signals: &SignalState{Context: ctx}})
 	if err != nil || status != 143 {
 		t.Fatalf("cancellation exit=%d error=%v", status, err)
+	}
+}
+
+type brokenCapture struct {
+	pid          int
+	panicOnWrite bool
+}
+
+func (capture *brokenCapture) Write(data []byte) (int, error) {
+	capture.pid, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+	if capture.panicOnWrite {
+		panic("fixture output panic")
+	}
+	return 0, errors.New("fixture output failure")
+}
+
+func TestSuperviseReapsChildOnOutputFailureOrPanic(t *testing.T) {
+	t.Setenv("CERTGEN_GO_CHILD", "writer-error")
+	t.Setenv("GORACE", "atexit_sleep_ms=0")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	for _, panicOnWrite := range []bool{false, true} {
+		capture := &brokenCapture{panicOnWrite: panicOnWrite}
+		started := time.Now()
+		status := recoverStatus(NewRedactor(), output, func() int {
+			status, err := Supervise(ProcessOptions{Command: []string{executable, "-test.run=^TestSupervisorChild$"},
+				Seconds: 10, Output: output, Error: output, Capture: capture})
+			if !panicOnWrite && (err == nil || status != 1) {
+				t.Errorf("status=%d err=%v", status, err)
+			}
+			return status
+		})
+		if panicOnWrite && status != 2 {
+			t.Fatalf("panic status=%d", status)
+		}
+		if capture.pid <= 0 || syscall.Kill(capture.pid, 0) != syscall.ESRCH || time.Since(started) > 5*time.Second {
+			t.Fatalf("child was not promptly reaped: %d", capture.pid)
+		}
 	}
 }
 

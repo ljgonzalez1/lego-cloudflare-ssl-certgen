@@ -152,7 +152,7 @@ func ReadSettings(issue bool, stdout *os.File) (Settings, error) {
 	}
 	return result, nil
 }
-func configureCloudflare(propagation uint64, secret string, diagnostics *Diagnostics) (int, error) {
+func configureCloudflare(propagation uint64, secret string, redactor *Redactor) (int, error) {
 	setting := strings.ToLower(env("LEGO_DISABLE_CNAME_SUPPORT", "true"))
 	disable := "true"
 	switch setting {
@@ -180,8 +180,8 @@ func configureCloudflare(propagation uint64, secret string, diagnostics *Diagnos
 			useFile = true
 		}
 	}
-	if diagnostics != nil {
-		diagnostics.AddSecret(token)
+	if redactor != nil {
+		redactor.AddSecret(token)
 	}
 	valid := token != ""
 	for _, ch := range token {

@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "repository": "ljgonzalez1/lego-cloudflare-ssl-certgen",
+  "ci": {
+    "message": "Unknown",
+    "color": "lightgrey",
+    "run": null,
+    "checked_at": null
+  },
+  "docker_pulls": {
+    "value": null,
+    "checked_at": null
+  },
+  "publication": null,
+  "tested_release": null
+}

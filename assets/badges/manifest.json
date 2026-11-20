@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "assets": [
+    {
+      "path": "assets/badges/ci.svg",
+      "sha256": "84685041a281b1243bc5d2ad86e29935e03e277e05b00d08393c068a4163cf9b",
+      "runtime": false,
+      "license": "MIT AND CC0-1.0",
+      "artwork_rights": "Original badge layout MIT; embedded Simple Icons CC0-1.0; trademarks retain their owners' rights.",
+      "third_party_notice": "licenses/badges/SimpleIcons-LICENSE.md"
+    },
+    {
+      "path": "assets/badges/docker-hub.svg",
+      "sha256": "e6fc79b74eac406f3d039cb63beba31bec1d44f98dd78a9fe8279104a395164f",
+      "runtime": false,
+      "license": "MIT AND CC0-1.0",
+      "artwork_rights": "Original badge layout MIT; embedded Simple Icons CC0-1.0; trademarks retain their owners' rights.",
+      "third_party_notice": "licenses/badges/SimpleIcons-LICENSE.md"
+    },
+    {
+      "path": "assets/badges/docker-image.svg",
+      "sha256": "f3294a66671173a67155462413ca94d034d90a7781f6af38ed760e4afcbbe23c",
+      "runtime": false,
+      "license": "MIT AND CC0-1.0",
+      "artwork_rights": "Original badge layout MIT; embedded Simple Icons CC0-1.0; trademarks retain their owners' rights.",
+      "third_party_notice": "licenses/badges/SimpleIcons-LICENSE.md"
+    },
+    {
+      "path": "assets/badges/docker-pulls.svg",
+      "sha256": "6c3ecc21c2706d87917033d33857507e2a813f75e1b89f42a9b545c3e335b0cc",
+      "runtime": false,
+      "license": "MIT AND CC0-1.0",
+      "artwork_rights": "Original badge layout MIT; embedded Simple Icons CC0-1.0; trademarks retain their owners' rights.",
+      "third_party_notice": "licenses/badges/SimpleIcons-LICENSE.md"
+    },
+    {
+      "path": "assets/badges/gitea.svg",
+      "sha256": "b97e55ad5e2f0cb74301e3ebc70763b611540e10f847a376300f4eb6fb3cfcae",
+      "runtime": false,
+      "license": "MIT AND CC0-1.0",
+      "artwork_rights": "Original badge layout MIT; embedded Simple Icons CC0-1.0; trademarks retain their owners' rights.",
+      "third_party_notice": "licenses/badges/SimpleIcons-LICENSE.md"
+    },
+    {
+      "path": "assets/badges/lego.svg",
+      "sha256": "114adbc38e281c9e9c720b440674aac480a82f7c6a84daea52741e0d4b32580d",
+      "runtime": false,
+      "license": "MIT AND CC0-1.0",
+      "artwork_rights": "Original badge layout MIT; embedded Simple Icons CC0-1.0; trademarks retain their owners' rights.",
+      "third_party_notice": "licenses/badges/SimpleIcons-LICENSE.md"
+    },
+    {
+      "path": "assets/badges/license.svg",
+      "sha256": "31b03e4333de314bb6edbf0fb465e8d77575a9175b9c9e1a1afa69d754645f02",
+      "runtime": false,
+      "license": "MIT",
+      "artwork_rights": "First-party generated MIT badge/metadata; no credentials included."
+    },
+    {
+      "path": "assets/badges/state.json",
+      "sha256": "c09e860e906e9e2538850adb271e3d431cad49647fe60e5b52bcf06192d3f0cd",
+      "runtime": false,
+      "license": "MIT",
+      "artwork_rights": "First-party generated MIT badge/metadata; no credentials included."
+    }
+  ]
+}
