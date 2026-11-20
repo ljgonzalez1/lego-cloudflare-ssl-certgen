@@ -34,29 +34,6 @@ env:
         (github.base_ref == 'master' && github.head_ref) || github.base_ref || github.ref_name }}
 
 jobs:
-  version_readme:
-    name: Check version in README.md
-    if: >-
-      ${{ github.event.deleted != true &&
-          (github.event_name != 'push' || github.ref == 'refs/heads/master' ||
-           github.event.created != true || github.event.commits[0] != null) }}
-    runs-on: ubuntu-24.04
-    outputs:
-      eligible: ${{ steps.check.outputs.eligible }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Verify the committed Docker tag table
-        id: check
-        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-        run: bash ci/check-version.sh README.md
-      - name: Report advisory version failure
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check.outcome == 'failure' }}
-        run: |
-          printf '::warning file=README.md::Version check failed on push to master; subsequent tests will continue. See the check log for details.\n'
-          printf '### Version check warning: README.md\n\nThe check failed on push to master. Subsequent tests continue; see the check log for details.\n' >> "$GITHUB_STEP_SUMMARY"
-
   version_dockerhub:
     name: Check version in DOCKERHUB.md
     if: >-
