@@ -31,7 +31,7 @@ class TagPolicyTests(unittest.TestCase):
         (self.root / "ci/versions").mkdir(parents=True)
         for name in (
             "ci/publish-image.sh", "ci/versions.sh", "ci/check-version.sh", "ci/is-version-branch.sh",
-            "ci/versions/tags_table.py", "ci/versions/check_version.py",
+            "ci/versions/tags_table.py", "ci/versions/check_version.py", "ci/versions/release_config.py",
         ):
             shutil.copy2(REPO_DIR / name, self.root / name)
         self.environment = os.environ.copy()
@@ -57,6 +57,10 @@ class TagPolicyTests(unittest.TestCase):
             with self.subTest(suffix=suffix):
                 version = f"5.2.3{suffix}"
                 self.write_versions(version)
+                with (self.root / "ci/versions/versions.csv").open("w", newline="") as file:
+                    writer = csv.DictWriter(file, fieldnames=COLUMNS)
+                    writer.writeheader()
+                    writer.writerow(make_fields(version))
                 record = make_release(make_fields(version), 1)
                 result = self.run_command("bash", "ci/publish-image.sh", "--print-tags")
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -84,6 +88,10 @@ class TagPolicyTests(unittest.TestCase):
 
     def test_release_requires_the_configured_suffix(self):
         self.write_versions("5.2.3")
+        with (self.root / "ci/versions/versions.csv").open("w", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=COLUMNS)
+            writer.writeheader()
+            writer.writerow(make_fields("5.2.3"))
         result = self.run_command(
             "bash", "ci/publish-image.sh", "--print-tags", RELEASE_TAG="v5.2.3-beta-1",
         )

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 ARG ALPINE_VERSION=3.24.4
 ARG GO_VERSION=1.27.4
-ARG APP_VERSION=6.0.0-alpha-1
+ARG APP_VERSION=6.0.0-alpha-2
 ARG LEGO_VERSION=v4.34.0
 
 # Build tools always run natively. Go cross-compiles the static target binary.
@@ -29,6 +29,7 @@ ARG LEGO_SHA256
 RUN ["/certgen-build", "download", "/out"]
 
 FROM tools AS builder
+ARG APP_VERSION
 ARG LEGO_VERSION
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -39,7 +40,7 @@ RUN ["/certgen-build", "verify-debug", "/runtime/usr/local/bin/certgen"]
 # Delve supports amd64, arm64 and 386; 32-bit ARM retains full DWARF and traces.
 RUN ["/certgen-build", "delve", "/runtime"]
 
-FROM scratch AS target
+FROM scratch AS runtime-check
 ARG APP_VERSION
 ARG ALPINE_VERSION
 ARG LEGO_VERSION
@@ -48,10 +49,11 @@ ARG TARGETARCH
 ARG TARGETVARIANT
 
 LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
-      org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01; Go debug alpha" \
+      org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01; Go runtime with pulse progress" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
       org.opencontainers.image.version="${APP_VERSION}" \
-      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.licenses="MIT AND LicenseRef-RuntimeInventory" \
+      com.certgen.license.inventory="/usr/share/licenses/manifest.json" \
       com.certgen.alpine.version="${ALPINE_VERSION}" \
       com.certgen.lego.version="${LEGO_VERSION}" \
       com.certgen.go.version="${GO_VERSION}"
@@ -66,7 +68,8 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     GOGC=off \
     GOMEMLIMIT=256MiB \
     GOTRACEBACK=system \
-    CERTGEN_TRACE=errors
+    CERTGEN_TRACE=errors \
+    CERTGEN_LOG_DIR=/ssl-certs/debug
 
 COPY --from=builder /runtime/ /
 COPY --from=downloader /out/lego /usr/local/bin/lego
@@ -80,6 +83,50 @@ WORKDIR /app
 
 # Exercise the real entry point and lego without a shell or network.
 RUN --network=none --mount=type=tmpfs,target=/tmp ["/usr/local/bin/certgen", "image-self-test"]
+
+# Copy the validated merged filesystem into a fresh scratch image. A debugger
+# removed by the real execution probe is absent from every final image layer.
+# Inspect the retained payload after debugger probes, then collect only its notices.
+FROM tools AS licensed
+ARG APP_VERSION
+ARG LEGO_VERSION
+COPY --from=runtime-check / /runtime/
+RUN ["/certgen-build", "licenses", "/runtime", "/licenses"]
+RUN --network=none ["/certgen-build", "verify-licenses", "/runtime"]
+
+FROM scratch AS target
+ARG APP_VERSION
+ARG ALPINE_VERSION
+ARG LEGO_VERSION
+ARG GO_VERSION
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
+      org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01; Go runtime with pulse progress" \
+      org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.licenses="MIT AND LicenseRef-RuntimeInventory" \
+      com.certgen.license.inventory="/usr/share/licenses/manifest.json" \
+      com.certgen.alpine.version="${ALPINE_VERSION}" \
+      com.certgen.lego.version="${LEGO_VERSION}" \
+      com.certgen.go.version="${GO_VERSION}"
+
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    TZ=Etc/UTC \
+    PROPAGATION_SECONDS=360 \
+    DNS_RESOLVERS="1.1.1.1:53,8.8.8.8:53,1.0.0.1:53" \
+    ACCEPT_LEGO_TOS=false \
+    UID=1000 \
+    GID=1000 \
+    GOGC=off \
+    GOMEMLIMIT=256MiB \
+    GOTRACEBACK=system \
+    CERTGEN_TRACE=errors \
+    CERTGEN_LOG_DIR=/ssl-certs/debug
+
+COPY --from=licensed /runtime/ /
+WORKDIR /app
 
 VOLUME ["/ssl-certs"]
 ENTRYPOINT ["/usr/local/bin/certgen"]
