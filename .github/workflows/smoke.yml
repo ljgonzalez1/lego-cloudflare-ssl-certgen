@@ -23,6 +23,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up native Go for final image license verification
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache: false
+
       - name: Set up QEMU for the target architecture
         uses: docker/setup-qemu-action@v4
         if: inputs.platform != 'linux/amd64' && inputs.platform != 'linux/arm64'

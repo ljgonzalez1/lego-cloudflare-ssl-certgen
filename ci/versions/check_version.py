@@ -3,11 +3,11 @@
 
 import argparse
 import csv
+import re
 import subprocess
 import sys
 
 from tags_table import (
-    APP_VERSION,
     CSV_PATH,
     DOCKER_IMAGE,
     REPO_DIR,
@@ -49,8 +49,9 @@ def check_ref(ref: str, version: str) -> None:
     result.check_returncode()
     numbers = (part.lstrip("0") or "0" for part in result.stdout.strip().split(".")[:3])
     branch_version = list(numbers)
-    if version[1:].split("-", 1)[0].split(".")[:len(branch_version)] != branch_version:
-        raise ValueError(f"{ref!r} does not match APP_VERSION={version[1:]} in ci/versions/versions.txt.")
+    app_version = re.sub(r"^[vV]", "", version).split("-", 1)[0]
+    if app_version.split(".")[:len(branch_version)] != branch_version:
+        raise ValueError(f"{ref!r} does not match APP_VERSION={app_version} in ci/versions/versions.txt.")
 
 
 def main() -> int:
@@ -61,17 +62,17 @@ def main() -> int:
 
     try:
         tags = expected_tags()
-        version, = (tag for tag in tags if tag.startswith("v") and APP_VERSION.fullmatch(tag))
+        version = tags[5]  # Full application version, preserving prefix and optional CSV suffix.
         check_ref(args.ref, version)
 
         releases = read_releases(CSV_PATH)
-        current_release = releases[-1]
-        if current_release.app_full != version:
+        latest = releases[-1]
+        if latest.app_full != version:
             raise ValueError(
-                f"The final row of ci/versions/versions.csv is {current_release.app_full}. "
+                f"The final row of ci/versions/versions.csv is {latest.app_full}. "
                 f"Add {version} as the final row and run python3 ci/versions/tags_table.py."
             )
-        if current_release.tags != tags:
+        if latest.tags != tags:
             raise ValueError(
                 f"The Docker tags for {version} in ci/versions/versions.csv differ from ci/versions/versions.txt. "
                 "Check the Alpine, lego, and application versions and suffixes."

@@ -5,7 +5,7 @@ Run:
     python3 ci/versions/tags_table.py
 
 Input:  versions.csv (UTF-8; comma-separated; 11 columns, with/without header)
-Output: the marked blocks in ../README.md (complete) and ../DOCKERHUB.md (short)
+Output: the marked blocks in root README.md (complete) and DOCKERHUB.md (short)
 
 Append each new release to the END of versions.csv. The last publisher of a
 rolling tag owns it. Alpha, alfa and beta releases keep their suffix on every

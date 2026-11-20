@@ -6,6 +6,7 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' 0
 mkdir "$work/bin"
+export CERTGEN_LOG_DIR="$work/debug-logs"
 entry="$work/certgen"
 
 # A precompiled executable lets the same regression suite test debug and race builds.
@@ -133,7 +134,9 @@ export PATH="$work/bin:$PATH"
 unset CLOUDFLARE_API_KEY CF_DNS_API_TOKEN CLOUDFLARE_API_TOKEN LEGO_DISABLE_CNAME_SUPPORT LEGO_OUTPUT \
     CERT_UID CERT_GID PROPAGATION_SECONDS DNS_RESOLVERS \
     LEGO_TARBALL LEGO_URL LEGO_SHA256 TARGETARCH TARGETVARIANT
-export UID="$(id -u)" GID="$(id -g)" EMAIL=test@example.com CLOUDFLARE_API_TOKEN=fixture-token \
+UID=$(id -u)
+GID=$(id -g)
+export UID GID EMAIL=test@example.com CLOUDFLARE_API_TOKEN=fixture-token \
     ACCEPT_LEGO_TOS=true TZ=Etc/UTC LEGO_VERSION=v4.34.0
 
 file="$work/domains.yaml"
@@ -340,10 +343,10 @@ cli_argument_errors() {
 }
 
 cli_listing_and_preview() {
-    EMAIL= ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN= expect_status 0 cli --only second --list --only first
+    EMAIL='' ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN='' expect_status 0 cli --only second --list --only first
     printf 'first: 5 domains\nsecond: 2 domains\n' > "$work/expected"
     diff -u "$work/expected" "$stdout"
-    EMAIL= CLOUDFLARE_API_TOKEN= TZ=America/Santiago expect_status 0 cli --only first --dry-run
+    EMAIL='' CLOUDFLARE_API_TOKEN='' TZ=America/Santiago expect_status 0 cli --only first --dry-run
     assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
     assert_contains '_GMT-' "$stdout"
     assert_contains '*.nested.example.com' "$stdout"
@@ -352,7 +355,7 @@ cli_listing_and_preview() {
 }
 
 cli_offline_test_mode() {
-    ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN= expect_status 0 cli --test --only first
+    ACCEPT_LEGO_TOS=false CLOUDFLARE_API_TOKEN='' expect_status 0 cli --test --only first
     assert_contains '🧪 TEST MODE (offline)' "$stdout"
     assert_contains 'https://acme-staging-v02.api.letsencrypt.org/directory' "$stdout"
     assert_contains 'Offline test passed.' "$stdout"
@@ -461,7 +464,7 @@ cli_rejects_invalid_token() {
 
 cli_routes_secret_file() {
     printf 'fixture-secret\n\n' > "$work/cloudflare-secret"
-    CLOUDFLARE_API_TOKEN= expect_status 0 "$CERTGEN_TEST_CORE" settings-probe "$work/cloudflare-secret"
+    CLOUDFLARE_API_TOKEN='' expect_status 0 "$CERTGEN_TEST_CORE" settings-probe "$work/cloudflare-secret"
     [ ! -s "$stdout" ] && [ ! -s "$stderr" ]
 }
 
@@ -517,12 +520,17 @@ core_time_limit() {
     # (120 s + names x (propagation + 60 s)) x 1.5, rounded up, at most 7200 s.
     for case in '1 0 270' '9 60 1800' '12 60 2340' '9 360 5850' '5 360 3330' \
             '96 60 7200' '100 2147483647 7200'; do
-        set -- $case
-        expect_status 0 certgen-core time-limit "$1" "$2"
-        [ "$(cat -- "$stdout")" = "$3" ]
+        read -r names propagation seconds <<EOF
+$case
+EOF
+        expect_status 0 certgen-core time-limit "$names" "$propagation"
+        [ "$(cat -- "$stdout")" = "$seconds" ]
     done
     for case in '0 60' '101 60' '1 2147483648' 'x 1' '1 -1'; do
-        expect_status 2 certgen-core time-limit $case
+        read -r names propagation <<EOF
+$case
+EOF
+        expect_status 2 certgen-core time-limit "$names" "$propagation"
     done
     expect_status 0 cli --dry-run --only first --only second
     assert_contains 'Time limit: 3330s (56 min)' "$stdout"
@@ -772,7 +780,9 @@ LOG
 cli_live_view_terminal() {
     # In a terminal tall enough for the list, lines are rewritten in place.
     export CERTGEN_TEST_ENTRY="$entry" CERTGEN_TEST_FILE="$file" CERTGEN_TEST_OUTPUT="$output"
-    NO_COLOR= TERM=xterm LINES=30 COLUMNS=100 script -q -e -c \
+    # The child shell started by script expands these exported paths.
+    # shellcheck disable=SC2016
+    NO_COLOR='' TERM=xterm LINES=30 COLUMNS=100 script -q -e -c \
         '"$CERTGEN_TEST_ENTRY" --staging --config "$CERTGEN_TEST_FILE" --output "$CERTGEN_TEST_OUTPUT" --only first' \
         /dev/null > "$stdout"
     assert_contains "$(printf '\033[5A')" "$stdout"
@@ -856,7 +866,9 @@ summary_tty_width() {
     report="$work/report"
     printf 'very_long_certificate_label_that_must_wrap_on_small_terminals\t100\t0\nexample-org\t55\t1\nskipped\t13\t2\n' > "$report"
     export CERTGEN_TEST_REPORT="$report"
-    NO_COLOR= TERM=xterm COLUMNS="$width" script -q -e -c '"$CERTGEN_TEST_CORE" summary < "$CERTGEN_TEST_REPORT"' /dev/null > "$stdout"
+    # The child shell started by script expands these exported paths.
+    # shellcheck disable=SC2016
+    NO_COLOR='' TERM=xterm COLUMNS="$width" script -q -e -c '"$CERTGEN_TEST_CORE" summary < "$CERTGEN_TEST_REPORT"' /dev/null > "$stdout"
     assert_contains "$(printf '\033[32m')" "$stdout"
     assert_contains "$(printf '\033[31m')" "$stdout"
     assert_contains "$(printf '\033[33m')" "$stdout"
@@ -917,7 +929,7 @@ check 'A, AAAA, CNAME, wildcard and planned names all use DNS-01' cli_dns_types
 check 'Credential precedence, CNAME delegation, timeout and resolvers' cli_delegation_and_resolvers
 check 'Multiple malformed settings abort before issuing' cli_bad_settings
 check 'Malformed token fails selected groups and is redacted' cli_rejects_invalid_token
-check 'Compose secret is passed through lego’s token-file option' cli_routes_secret_file
+check "Compose secret is passed through lego's token-file option" cli_routes_secret_file
 check 'Invalid CNAME delegation setting skips issuance' cli_rejects_invalid_delegation
 check 'Missing output path skips issuance' cli_missing_output
 check 'Mixed group outcomes, continuation, order and precise totals' cli_group_results

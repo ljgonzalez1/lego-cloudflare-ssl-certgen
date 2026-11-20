@@ -14,14 +14,15 @@ import (
 // Diagnostics keeps bounded human-readable events in memory. Failures emit the
 // event history and goroutine stacks to stderr without creating trace files.
 type Diagnostics struct {
-	mu      sync.Mutex
-	events  [64]string
-	next    int
-	count   int
-	secrets []string
-	output  io.Writer
-	started time.Time
-	mode    string
+	mu       sync.Mutex
+	events   [64]string
+	next     int
+	count    int
+	secrets  []string
+	output   io.Writer
+	started  time.Time
+	mode     string
+	Recorder interface{ Record(string, string) }
 }
 
 func NewDiagnostics(output io.Writer) *Diagnostics {
@@ -71,24 +72,30 @@ func (d *Diagnostics) Event(message string) {
 		d.count++
 	}
 	if d.mode == "always" {
-		fmt.Fprintf(d.output, "[alpha trace] %s\n", line)
+		fmt.Fprintf(d.output, "[debug trace] %s\n", line)
+	}
+	if d.Recorder != nil {
+		d.Recorder.Record("event", line)
 	}
 }
 func (d *Diagnostics) Failure(message string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	stack := make([]byte, 512<<10)
+	n := runtime.Stack(stack, true)
+	if d.Recorder != nil {
+		d.Recorder.Record("failure", d.redactLocked(message)+"\n"+d.redactLocked(string(stack[:n])))
+	}
 	if d.mode == "off" {
 		return
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	fmt.Fprintf(d.output, "\n[alpha trace] %s\n", d.redactLocked(message))
+	fmt.Fprintf(d.output, "\n[debug trace] %s\n", d.redactLocked(message))
 	for i := 0; i < d.count; i++ {
 		fmt.Fprintln(d.output, d.events[(d.next-d.count+i+len(d.events))%len(d.events)])
 	}
 	// A fixed upper bound prevents diagnostics from consuming an unbounded heap.
-	stack := make([]byte, 512<<10)
-	n := runtime.Stack(stack, true)
 	fmt.Fprintln(d.output, d.redactLocked(string(stack[:n])))
 	if n == len(stack) {
-		fmt.Fprintln(d.output, "[alpha trace] Goroutine stack output reached the 512 KiB limit.")
+		fmt.Fprintln(d.output, "[debug trace] Goroutine stack output reached the 512 KiB limit.")
 	}
 }

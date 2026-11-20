@@ -76,6 +76,8 @@ type App struct {
 	Input, Output, Error *os.File
 	Signals              *SignalState
 	Diagnostics          *Diagnostics
+	ParentOwnsOutput     bool
+	PrepareOutput        func() error
 }
 
 func (app *App) message(output *os.File, icon, text, style string) {
@@ -140,6 +142,16 @@ func (app *App) Run(arguments []string) int {
 	if options.Mode == "" {
 		options.Mode = "staging"
 	}
+	if app.ParentOwnsOutput && issue && options.Output == "/ssl-certs" {
+		if app.PrepareOutput == nil {
+			app.fail(errors.New("The output ownership callback is missing."))
+			return 1
+		}
+		if err = app.PrepareOutput(); err != nil {
+			app.fail(err)
+			return 1
+		}
+	}
 	if root {
 		if issue && options.Output == "/ssl-certs" {
 			if !outputMounted(options.Output) {
@@ -201,7 +213,7 @@ func (app *App) Run(arguments []string) int {
 			return setupStatus
 		}
 		capture := LimitedCapture{Limit: 1024}
-		status, err := Supervise(ProcessOptions{Command: []string{"lego", "--version"}, Seconds: 10, Output: app.Output, Error: app.Error, Capture: &capture, Signals: app.Signals})
+		status, err := Supervise(ProcessOptions{Command: []string{"lego", "--version"}, Seconds: 10, Output: app.Output, Error: app.Error, Capture: &capture, Signals: app.Signals, Diagnostics: app.Diagnostics})
 		if app.Signals.Status() != 0 {
 			return app.Signals.Status()
 		}

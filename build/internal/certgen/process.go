@@ -140,6 +140,13 @@ func Supervise(options ProcessOptions) (int, error) {
 	writer.Close()
 	if options.Diagnostics != nil {
 		options.Diagnostics.Event(fmt.Sprintf("Started lego process group %d for %s", command.Process.Pid, options.Group))
+		if recorder, ok := options.Diagnostics.Recorder.(interface {
+			ProcessStarted(int)
+			ProcessFinished(int)
+		}); ok {
+			recorder.ProcessStarted(command.Process.Pid)
+			defer recorder.ProcessFinished(command.Process.Pid)
+		}
 	}
 	completed := make(chan error, 1)
 	go func() { completed <- command.Wait() }()
@@ -205,6 +212,11 @@ func Supervise(options ProcessOptions) (int, error) {
 	}
 	relay := func(chunk outputChunk) error {
 		bytes := chunk.data[:chunk.size]
+		if options.Diagnostics != nil && chunk.size > 0 {
+			if recorder, ok := options.Diagnostics.Recorder.(interface{ RecordProcessOutput(int, string) }); ok {
+				recorder.RecordProcessOutput(command.Process.Pid, string(bytes))
+			}
+		}
 		if logFile != nil {
 			if _, err := logFile.Write(bytes); err != nil {
 				return fmt.Errorf("cannot write the lego log: %w", err)
