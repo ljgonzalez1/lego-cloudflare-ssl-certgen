@@ -1,5 +1,5 @@
 #!/bin/sh
-# Offline regression tests for the application and its C++ image builder.
+# Offline regression tests against the compiled Go application.
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -7,18 +7,15 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' 0
 mkdir "$work/bin"
 entry="$work/certgen"
-download="$work/certgen-build"
 
-# Allow a precompiled executable when testing with a different Alpine toolchain.
+# A precompiled executable lets the same regression suite test debug and race builds.
 if [ -n "${CERTGEN_CORE:-}" ]; then
     cp -- "$CERTGEN_CORE" "$work/certgen-core"
 else
-    "${CXX:-g++}" -std=c++20 -Og -g3 -Wall -Wextra \
-        "$root"/build/src/*.cpp -lyaml -o "$work/certgen-core"
+    (cd "$root/build" && CGO_ENABLED=0 "${GO:-go}" build -buildvcs=false -mod=vendor \
+        -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false' \
+        -o "$work/certgen-core" ./cmd/certgen)
 fi
-"${CXX:-g++}" -std=c++20 -Og -g3 -Wall -Wextra "$root/build/tools.cpp" -o "$download"
-"${CXX:-g++}" -std=c++20 -Og -g3 -Wall -Wextra "$root/ci/tests/settings_probe.cpp" \
-    "$root/build/src/settings.cpp" -o "$work/settings-probe"
 export CERTGEN_TEST_CORE="$work/certgen-core"
 ln -s "$CERTGEN_TEST_CORE" "$work/bin/certgen-core"
 ln -s "$CERTGEN_TEST_CORE" "$entry"
@@ -123,21 +120,6 @@ mkdir -p -- "$path/certificates"
 printf 'certificate\n' > "$path/certificates/$first.crt"
 printf 'key\n' > "$path/certificates/$first.key"
 SH
-cat > "$work/bin/curl" <<'SH'
-#!/bin/sh
-set -eu
-while [ "$#" -gt 1 ]; do
-    case "$1" in
-        -o) output=$2; shift ;;
-        --connect-timeout|--max-time) shift ;;
-        -fsSL|--retry|3|--) ;;
-        *) exit 90 ;;
-    esac
-    shift
-done
-printf '%s\n' "$1" >> "$TEST_CURL_LOG"
-cp -- "$TEST_FIXTURES/${1##*/}" "$output"
-SH
 cat > "$work/bin/forbidden-dns" <<'SH'
 #!/bin/sh
 printf '%s\n' "$0" >> "$TEST_DNS_LOG"
@@ -158,8 +140,7 @@ file="$work/domains.yaml"
 output="$work/output"
 stdout="$work/stdout"
 stderr="$work/stderr"
-export TEST_FIXTURES="$work/fixtures" \
-    TEST_LEGO_LOG="$work/lego.log" TEST_CURL_LOG="$work/curl.log" TEST_DNS_LOG="$work/dns.log"
+export TEST_LEGO_LOG="$work/lego.log" TEST_DNS_LOG="$work/dns.log"
 
 expect_status() {
     expected=$1
@@ -197,10 +178,9 @@ assert_absent() {
 }
 
 reset_case() {
-    rm -rf -- "$output" "$work/downloaded"
+    rm -rf -- "$output"
     mkdir -- "$output"
     : > "$TEST_LEGO_LOG"
-    : > "$TEST_CURL_LOG"
     : > "$TEST_DNS_LOG"
     cat > "$file" <<'YAML'
 first:
@@ -481,7 +461,7 @@ cli_rejects_invalid_token() {
 
 cli_routes_secret_file() {
     printf 'fixture-secret\n\n' > "$work/cloudflare-secret"
-    CLOUDFLARE_API_TOKEN= expect_status 0 "$work/settings-probe" "$work/cloudflare-secret"
+    CLOUDFLARE_API_TOKEN= expect_status 0 "$CERTGEN_TEST_CORE" settings-probe "$work/cloudflare-secret"
     [ ! -s "$stdout" ] && [ ! -s "$stderr" ]
 }
 
@@ -792,7 +772,7 @@ LOG
 cli_live_view_terminal() {
     # In a terminal tall enough for the list, lines are rewritten in place.
     export CERTGEN_TEST_ENTRY="$entry" CERTGEN_TEST_FILE="$file" CERTGEN_TEST_OUTPUT="$output"
-    LINES=30 COLUMNS=100 script -q -e -c \
+    NO_COLOR= TERM=xterm LINES=30 COLUMNS=100 script -q -e -c \
         '"$CERTGEN_TEST_ENTRY" --staging --config "$CERTGEN_TEST_FILE" --output "$CERTGEN_TEST_OUTPUT" --only first' \
         /dev/null > "$stdout"
     assert_contains "$(printf '\033[5A')" "$stdout"
@@ -876,7 +856,7 @@ summary_tty_width() {
     report="$work/report"
     printf 'very_long_certificate_label_that_must_wrap_on_small_terminals\t100\t0\nexample-org\t55\t1\nskipped\t13\t2\n' > "$report"
     export CERTGEN_TEST_REPORT="$report"
-    COLUMNS="$width" script -q -e -c '"$CERTGEN_TEST_CORE" summary < "$CERTGEN_TEST_REPORT"' /dev/null > "$stdout"
+    NO_COLOR= TERM=xterm COLUMNS="$width" script -q -e -c '"$CERTGEN_TEST_CORE" summary < "$CERTGEN_TEST_REPORT"' /dev/null > "$stdout"
     assert_contains "$(printf '\033[32m')" "$stdout"
     assert_contains "$(printf '\033[31m')" "$stdout"
     assert_contains "$(printf '\033[33m')" "$stdout"
@@ -890,124 +870,6 @@ summary_tty_width() {
         }
         END { if (row < 5) exit 1 }
     ' "$work/no-color"
-}
-
-core_license_notices() {
-    # The repository keeps the real license texts the image needs.
-    texts="$root/build/licenses"
-    assert_contains 'musl as a whole is licensed under the following standard MIT license' "$texts/musl.txt"
-    assert_contains 'Mozilla Public License Version 2.0' "$texts/MPL-2.0.txt"
-    assert_contains 'Kirill Simonov' "$texts/libyaml.txt"
-
-    mkdir -- "$work/apk-bin"
-    cat > "$work/apk-bin/apk" <<'SH'
-#!/bin/sh
-if [ "$1" = --root ]; then
-    printf 'musl-1.2.6-r3\nca-certificates-bundle-20261020-r0\ntzdata-2026f-r0\n'
-else
-    printf 'musl-1.2.6-r3\nyaml-0.2.5-r2\nyaml-dev-0.2.5-r2\n'
-    [ -n "${TEST_APK_NO_YAML:-}" ] || printf 'yaml-static-0.2.5-r2\n'
-fi
-SH
-    chmod 755 "$work/apk-bin/apk"
-    printf '3.24.4\n' > "$work/alpine-release"
-    PATH="$work/apk-bin:$PATH" ALPINE_RELEASE_FILE="$work/alpine-release" expect_status 0 \
-        "$download" notices "$texts" "$work/notice-root" v4.34.0
-    licenses="$work/notice-root/usr/share/licenses"
-    for license in NOTICE musl/COPYRIGHT \
-            ca-certificates/MPL-2.0 libyaml/LICENSE; do
-        [ -s "$licenses/$license" ]
-        [ "$(stat -c %a -- "$licenses/$license")" = 644 ]
-    done
-    notice="$licenses/NOTICE"
-    assert_contains 'lego-cloudflare-certgen is MIT licensed.' "$notice"
-    assert_contains 'lego v4.34.0: MIT' "$notice"
-    assert_contains 'musl 1.2.6-r3: MIT' "$notice"
-    assert_contains 'https://musl.libc.org/releases/musl-1.2.6.tar.gz' "$notice"
-    assert_contains 'ca-certificates-bundle 20261020-r0' "$notice"
-    assert_contains 'libyaml 0.2.5-r2, statically linked into certgen: MIT' "$notice"
-    assert_contains 'https://github.com/yaml/libyaml/tree/0.2.5' "$notice"
-    # Public-domain tzdata and build-only packages add nothing.
-    [ ! -e "$licenses/tzdata" ]
-    [ "$(find "$licenses" -type f | wc -l)" -eq 4 ]
-    # A missing package stops the build instead of writing a wrong notice.
-    TEST_APK_NO_YAML=1 PATH="$work/apk-bin:$PATH" ALPINE_RELEASE_FILE="$work/alpine-release" \
-        expect_status 1 "$download" notices "$texts" "$work/notice-missing" v4.34.0
-    assert_contains 'Cannot find the installed version of yaml-static.' "$stderr"
-}
-
-archive_fixtures() {
-    mkdir -- "$TEST_FIXTURES" "$work/archive"
-    printf '#!/bin/sh\nprintf "lego fixture\\n"\n' > "$work/archive/lego"
-    printf 'Test license\n' > "$work/archive/LICENSE"
-    for architecture in amd64 386 armv6 armv7 arm64; do
-        archive="lego_v4.34.0_linux_$architecture.tar.gz"
-        tar -czf "$TEST_FIXTURES/$archive" -C "$work/archive" lego LICENSE
-    done
-    (
-        cd -- "$TEST_FIXTURES"
-        sha256sum -- *.tar.gz > lego_4.34.0_checksums.txt
-    )
-}
-
-test_download() {
-    arch=$1 variant=$2 asset=$3
-    TARGETARCH="$arch" TARGETVARIANT="$variant" expect_status 0 "$download" download "$work/downloaded"
-    assert_contains '/lego_4.34.0_checksums.txt' "$TEST_CURL_LOG"
-    assert_contains "/lego_v4.34.0_linux_$asset.tar.gz" "$TEST_CURL_LOG"
-    [ -x "$work/downloaded/lego" ]
-    [ -r "$work/downloaded/LICENSE" ]
-    expect_status 0 "$work/downloaded/lego"
-    assert_line 'lego fixture' "$stdout"
-}
-
-unsupported_targets() {
-    for target in arm/v5 arm/ riscv64/ amd64/v3; do
-        TARGETARCH="${target%/*}" TARGETVARIANT="${target#*/}" \
-            expect_status 2 "$download" download "$work/downloaded"
-        assert_contains 'Unsupported target platform' "$stderr"
-    done
-    [ ! -s "$TEST_CURL_LOG" ]
-}
-
-archive_checksum_failures() {
-    TARGETARCH=amd64 LEGO_SHA256=invalid expect_status 1 "$download" download "$work/downloaded"
-    assert_contains 'Missing or invalid SHA-256' "$stderr"
-    [ ! -s "$TEST_CURL_LOG" ]
-    TARGETARCH=amd64 LEGO_SHA256=abcd expect_status 1 "$download" download "$work/downloaded"
-    assert_contains 'Invalid SHA-256 length' "$stderr"
-    [ ! -s "$TEST_CURL_LOG" ]
-    TARGETARCH=amd64 LEGO_TARBALL=missing.tar.gz expect_status 1 "$download" download "$work/downloaded"
-    assert_contains 'Missing or invalid SHA-256' "$stderr"
-    [ "$(wc -l < "$TEST_CURL_LOG")" -eq 1 ]
-    TARGETARCH=amd64 LEGO_SHA256="$(printf '%064d' 0)" expect_status 1 "$download" download "$work/downloaded"
-    [ ! -e "$work/downloaded/lego" ]
-}
-
-archive_override() {
-    name=lego_v4.34.0_linux_amd64.tar.gz
-    sha=$(sha256sum -- "$TEST_FIXTURES/$name")
-    TARGETARCH=amd64 LEGO_SHA256="${sha%% *}" LEGO_URL="https://example.test/custom/$name" \
-        expect_status 0 "$download" download "$work/downloaded"
-    assert_line "https://example.test/custom/$name" "$TEST_CURL_LOG"
-    [ "$(wc -l < "$TEST_CURL_LOG")" -eq 1 ]
-}
-
-archive_unsafe_payload() {
-    TARGETARCH=amd64 LEGO_TARBALL=../lego.tar.gz expect_status 2 "$download" download "$work/downloaded"
-    assert_contains 'LEGO_TARBALL must be a release archive filename' "$stderr"
-    [ ! -s "$TEST_CURL_LOG" ]
-
-    mkdir "$work/unsafe"
-    printf 'fixture license\n' > "$work/unsafe/LICENSE"
-    ln -s LICENSE "$work/unsafe/lego"
-    name=unsafe.tar.gz
-    tar -czf "$TEST_FIXTURES/$name" -C "$work/unsafe" lego LICENSE
-    sha=$(sha256sum -- "$TEST_FIXTURES/$name")
-    TARGETARCH=amd64 LEGO_SHA256="${sha%% *}" LEGO_URL="https://example.test/$name" \
-        expect_status 1 "$download" download "$work/downloaded"
-    assert_contains 'nonempty regular lego file' "$stderr"
-    [ ! -e "$work/downloaded" ]
 }
 
 count=0
@@ -1030,7 +892,6 @@ check() {
     fi
 }
 
-archive_fixtures
 check 'YAML order, duplicate selections and literal wildcards' yaml_order
 check 'YAML anchors, aliases, tags and quoted folder keys' yaml_aliases_and_tags
 check 'Missing file, malformed YAML and multiple documents' yaml_io_errors
@@ -1088,15 +949,5 @@ else
     skipped=4
     printf '# Skipped four PTY cases. Install util-linux script to run them.\n'
 fi
-check 'Official amd64 release asset' test_download amd64 '' amd64
-check 'Official i386 release asset' test_download 386 '' 386
-check 'Official ARMv6 release asset' test_download arm v6 armv6
-check 'Official ARMv7 release asset' test_download arm v7 armv7
-check 'Official ARM64 release asset' test_download arm64 v8 arm64
-check 'Unsupported architectures fail before network requests' unsupported_targets
-check 'Malformed, missing and mismatching checksums' archive_checksum_failures
-check 'Explicit checksum and custom archive URL' archive_override
-check 'Downloader rejects unsafe filenames and symlink payloads' archive_unsafe_payload
-check 'Third-party license texts and NOTICE for the image' core_license_notices
 printf '%s passed, %s failed, %s skipped\n' "$((count - failed))" "$failed" "$skipped"
 [ "$failed" -eq 0 ]

@@ -31,7 +31,7 @@ class TagPolicyTests(unittest.TestCase):
         (self.root / "ci/versions").mkdir(parents=True)
         for name in (
             "ci/publish-image.sh", "ci/versions.sh", "ci/check-version.sh", "ci/is-version-branch.sh",
-            "ci/versions/tags_table.py", "ci/versions/check_version.py", "ci/versions/release_config.py",
+            "ci/versions/tags_table.py", "ci/versions/check_version.py",
         ):
             shutil.copy2(REPO_DIR / name, self.root / name)
         self.environment = os.environ.copy()
@@ -47,10 +47,6 @@ class TagPolicyTests(unittest.TestCase):
         (self.root / "ci/versions/versions.txt").write_text(
             f"APP_VERSION={current}\nLEGO_VERSION=4.34.0\nALPINE_VERSION=3.24.4\n"
         )
-        with (self.root / "ci/versions/versions.csv").open("w", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=COLUMNS)
-            writer.writeheader()
-            writer.writerow(make_fields(current))
 
     def test_publisher_and_manual_command_agree(self):
         for suffix, expect_latest in (
