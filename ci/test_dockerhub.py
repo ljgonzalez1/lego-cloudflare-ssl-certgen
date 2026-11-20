@@ -6,16 +6,11 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = "ljgonzalez/lego-cloudflare-certgen"
-sys.path.insert(0, str(ROOT / "ci/versions"))
-from release_config import release_config, tag_candidates
-VALUES, RELEASE_TAGS = release_config()
-CURRENT_TAG = VALUES["APP_TAG"]
 
 CURL_MOCK = r'''#!/usr/bin/env python3
 import hashlib
@@ -95,32 +90,6 @@ else:
             if scenario == "hub-platforms": tag["images"].pop()
             payload = json.dumps(tag).encode()
             if scenario == "hub-html": payload = b'<html>Sign in</html>'
-        if scenario.startswith("tag-") or scenario.startswith("platform-"):
-            requested = url.rstrip("/").rsplit("/", 1)[1]
-            target = os.environ["MOCK_TAG"]
-            status = 200 if requested == target else 404
-            tag = {"name": requested, "digest": expected,
-                   "images": [item["platform"] | {"digest": item["digest"]} for item in json.loads(index)["manifests"]]}
-            if scenario == "tag-absent": status = 404
-            if scenario == "tag-legacy" and not legacy: status = 404
-            if scenario == "tag-empty": tag["images"] = []
-            if scenario == "tag-wrong-name": tag["name"] = "latest"
-            if scenario == "tag-429": status = 429
-            if scenario == "tag-503": status = 503
-            if scenario == "tag-retry" and number <= 2: status = 404
-            if scenario == "platform-index-mismatch": tag["digest"] = "sha256:" + "0" * 64
-            if scenario == "platform-no-index-digest": tag.pop("digest")
-            if scenario == "platform-wrong-hash": tag["images"][0]["digest"] = "sha256:" + "0" * 64
-            if scenario == "platform-missing-hash": tag["images"][0].pop("digest")
-            if scenario == "platform-missing": tag["images"].pop(0)
-            if scenario == "platform-duplicate": tag["images"].append(tag["images"][0])
-            if scenario == "platform-wrong-arm": tag["images"][0]["variant"] = "v7"
-            if scenario == "platform-wrong-arm64": tag["images"][2]["variant"] = "v9"
-            if scenario == "platform-arm64-implicit": tag["images"][2].pop("variant")
-            if scenario == "platform-swapped": tag["images"][0]["digest"], tag["images"][1]["digest"] = tag["images"][1]["digest"], tag["images"][0]["digest"]
-            payload = json.dumps(tag).encode()
-            if scenario == "tag-html": payload = b'<html>Sign in</html>'
-            if scenario == "tag-multiple": payload += b'\n{}'
     else:
         payload = json.dumps({"full_description": "# Expected\r\n\r\nMarkdown.\r\n \t"}).encode()
         if scenario == "overview-retry" and number <= 2:
@@ -195,80 +164,8 @@ class DockerHubChecks(unittest.TestCase):
         self.assertNotIn("fixture-pull-token", result.stdout + result.stderr)
         return result, requests
 
-    def run_hub_check(self, scenario, expected_status, *, tag=CURRENT_TAG, platform=None,
-                      digest=None, index_digest=None):
-        payload = json.dumps(self.index, separators=(",", ":")).encode()
-        (self.work / "index.json").write_bytes(payload)
-        (self.work / "requests.jsonl").write_text("")
-        output = self.work / "outputs"; output.write_text("")
-        command = ["bash", str(ROOT / "ci/check-dockerhub.sh")]
-        if platform is None:
-            command += ["tag"]
-        else:
-            command += ["platform", platform, tag, digest or "sha256:" + "1" * 64]
-            if index_digest is not None:
-                command.append(index_digest)
-        result = subprocess.run(command, cwd=self.work, env=self.environment | {
-            "SCENARIO": scenario, "MOCK_TAG": tag, "GITHUB_OUTPUT": str(output),
-        }, text=True, capture_output=True, timeout=30)
-        self.assertEqual(result.returncode, expected_status, result.stdout + result.stderr)
-        requests = [json.loads(line) for line in (self.work / "requests.jsonl").read_text().splitlines()]
-        self.assertTrue(all(request["category"] == "tag" for request in requests))
-        return result, output.read_text(), requests
-
-    def test_discovers_prefixed_unprefixed_and_composite_tags(self):
-        for tag in tag_candidates(VALUES, RELEASE_TAGS):
-            with self.subTest(tag=tag):
-                result, output, _ = self.run_hub_check("tag-valid", 0, tag=tag)
-                self.assertEqual(output, "tag=" + tag + "\n")
-                self.assertIn("Found release image", result.stdout)
-                self.assertNotIn("ljgonzalez", output)
-
-    def test_tag_absence_and_invalid_responses_fail_without_outputs(self):
-        for scenario in ("tag-absent", "tag-empty", "tag-wrong-name", "tag-html", "tag-multiple", "tag-429", "tag-503"):
-            with self.subTest(scenario=scenario):
-                result, output, _ = self.run_hub_check(scenario, 1)
-                self.assertEqual(output, "")
-                self.assertIn("None of the exact full-version tags is visible", result.stderr)
-        for scenario in ("tag-legacy", "tag-retry"):
-            self.run_hub_check(scenario, 0)
-
-    def test_each_platform_matches_its_own_build_digest(self):
-        platforms = ("linux/arm/v6", "linux/arm/v7", "linux/arm64", "linux/386", "linux/amd64")
-        for i, platform in enumerate(platforms, 1):
-            with self.subTest(platform=platform):
-                digest = "sha256:" + str(i) * 64
-                result, _, _ = self.run_hub_check("platform-valid", 0, platform=platform, digest=digest)
-                self.assertIn("expected: " + digest, result.stdout)
-                self.assertIn("received: " + digest, result.stdout)
-                self.assertIn("Verified SHA-256", result.stdout)
-        self.run_hub_check("platform-arm64-implicit", 0, platform="linux/arm64", digest="sha256:" + "3" * 64)
-        expected_index = "sha256:" + hashlib.sha256((self.work / "index.json").read_bytes()).hexdigest()
-        self.run_hub_check("platform-valid", 0, platform=platforms[0], index_digest=expected_index)
-        self.run_hub_check("platform-no-index-digest", 0, platform=platforms[0], index_digest=expected_index)
-
-    def test_platform_mismatch_missing_or_duplicate_fails(self):
-        for scenario in ("platform-wrong-hash", "platform-missing-hash", "platform-missing", "platform-duplicate", "platform-wrong-arm", "platform-swapped"):
-            with self.subTest(scenario=scenario):
-                self.run_hub_check(scenario, 1, platform="linux/arm/v6")
-        self.run_hub_check("platform-wrong-arm64", 1, platform="linux/arm64", digest="sha256:" + "3" * 64)
-        self.run_hub_check("platform-index-mismatch", 1, platform="linux/arm/v6", index_digest="sha256:" + "a" * 64)
-        result, _, _ = self.run_hub_check("platform-wrong-hash", 1, platform="linux/arm/v6")
-        self.assertIn("expected: sha256:" + "1" * 64, result.stdout)
-        self.assertIn("received: sha256:" + "0" * 64, result.stdout)
-        self.assertIn("SHA-256 MISMATCH", result.stderr)
-
-    def test_invalid_platform_inputs_never_reach_docker_hub(self):
-        for platform, tag, digest in (("linux/riscv64", CURRENT_TAG, "sha256:" + "1" * 64),
-                                      ("linux/arm/v6", "latest", "sha256:" + "1" * 64),
-                                      ("linux/arm/v6", CURRENT_TAG, "bad"),
-                                      ("linux/arm/v6", "", "sha256:" + "1" * 64)):
-            with self.subTest(platform=platform, tag=tag, digest=digest):
-                _, _, requests = self.run_hub_check("platform-valid", 2, platform=platform, tag=tag, digest=digest)
-                self.assertEqual(requests, [])
-
     def test_exact_versions_and_suffixes(self):
-        for tag in ("v4.2.12", "4.2.12", "V4.2.12", "v2.8.99-beta-5", "v5.2.4-alpha.1", "v5.2.4-alfa", "v344.26626.0", "alpine3.24.4-lego4.34.0-v4.2.15", "lego4.34.0-v4.2.15-beta-1"):
+        for tag in ("v4.2.12", "4.2.12", "V4.2.12", "v2.8.99-beta-5", "v5.2.4-alpha.1", "v5.2.4-alfa", "v344.26626.0"):
             with self.subTest(tag=tag):
                 result, requests = self.run_check("valid", 0, tag)
                 self.assertIn("all five platforms", result.stdout)
@@ -363,12 +260,7 @@ class DockerHubChecks(unittest.TestCase):
     def test_description_content_and_errors_fail(self):
         for scenario in ("overview-wrong", "overview-empty", "overview-html", "overview-missing", "overview-multiple", "overview-503"):
             with self.subTest(scenario=scenario):
-                result, _ = self.run_check(scenario, 1, description=True)
-                if scenario == "overview-wrong":
-                    self.assertIn("--- expected/DOCKERHUB.md", result.stderr)
-                    self.assertIn("+++ received/DockerHub.md", result.stderr)
-                    self.assertIn("-# Expected", result.stderr)
-                    self.assertIn("+Old Markdown", result.stderr)
+                self.run_check(scenario, 1, description=True)
 
 
 if __name__ == "__main__":

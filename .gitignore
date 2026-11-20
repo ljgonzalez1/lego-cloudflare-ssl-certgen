@@ -7,3 +7,9 @@ certgen.env
 /domains.yaml
 *.zip
 cloudflare_api_token
+/build/certgen
+/build/certgen-race
+/build/bin/
+/build/dist/
+/build/*.test
+/build/coverage*

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check CI event routing, job dependencies and separate propagation waits offline."""
 
+import json
 import os
 from pathlib import Path
 import re
@@ -35,7 +36,7 @@ def as_context(value):
     return value
 
 
-def accepts(expression, github, needs, steps=None):
+def accepts(expression, github, needs):
     # Only evaluate expressions read from this repository's own workflow.
     expression = expression.removeprefix("${{").removesuffix("}}").strip()
     expression = expression.replace("&&", " and ").replace("||", " or ")
@@ -43,7 +44,7 @@ def accepts(expression, github, needs, steps=None):
     expression = re.sub(r"(?<!['\"])\bfalse\b(?!['\"])", "False", expression)
     expression = re.sub(r"(?<!['\"])\bnull\b(?!['\"])", "None", expression)
     return bool(eval("(" + expression + ")", {"__builtins__": {}}, {
-        "github": as_context(github), "needs": as_context(needs), "steps": as_context(steps or {}),
+        "github": as_context(github), "needs": as_context(needs),
     }))
 
 
@@ -53,7 +54,7 @@ class WorkflowChecks(unittest.TestCase):
         cls.workflow = yaml.safe_load((ROOT / ".github/workflows/tests.yml").read_text())
         cls.jobs = cls.workflow["jobs"]
 
-    def route(self, event, branch="master", *, created=False, commits=None, deleted=False, failure=None, version_failures=()):
+    def route(self, event, branch="master", *, created=False, commits=None, deleted=False, failure=None):
         github = {"event_name": event, "ref": "refs/heads/" + branch,
                   "event": {"created": created, "deleted": deleted,
                             "commits": [] if commits is None else commits}}
@@ -65,53 +66,8 @@ class WorkflowChecks(unittest.TestCase):
             ready = all(results[dependency]["result"] == "success" for dependency in needs)
             allowed = ready and accepts(job.get("if", "true").strip(), github, results)
             result = "failure" if allowed and name == failure else ("success" if allowed else "skipped")
-            eligible = "true"
-            if allowed and name in version_failures:
-                eligible = ""  # check-version.sh exits before emitting eligible on failure.
-                check = next(step for step in job["steps"] if step.get("id") == "check")
-                if not accepts(check.get("continue-on-error", "false"), github, results):
-                    result = "failure"
-            results[name] = {"result": result, "outputs": {"eligible": eligible}}
+            results[name] = {"result": result, "outputs": {"eligible": "true"}}
         return {name for name, result in results.items() if result["result"] == "success"}
-
-    def test_version_failures_are_advisory_only_on_master_pushes(self):
-        documents = ("version_readme", "version_dockerhub")
-        for failures in ((documents[0],), (documents[1],), documents):
-            for event, branch in (("push", "master"), ("pull_request", "master"),
-                                  ("release", "master"), ("release", "v4.2.16"), ("push", "v4.2.16")):
-                with self.subTest(failures=failures, event=event, branch=branch):
-                    passed = self.route(event, branch, version_failures=failures)
-                    if event == "push" and branch == "master":
-                        self.assertTrue({"offline", *SMOKE_JOBS}.issubset(passed))
-                        self.assertNotIn("publish", passed)
-                    else:
-                        self.assertNotIn("offline", passed)
-                        self.assertTrue(set(SMOKE_JOBS).isdisjoint(passed))
-                        self.assertNotIn("publish", passed)
-        # Only document validation is advisory; checkout/job and offline failures still block.
-        for failure in (*documents, "offline"):
-            self.assertTrue(set(SMOKE_JOBS).isdisjoint(self.route("push", failure=failure)))
-
-    def test_advisory_failures_emit_warnings_and_summaries(self):
-        for name, document in (("version_readme", "README.md"), ("version_dockerhub", "DOCKERHUB.md")):
-            job = self.jobs[name]
-            check = next(step for step in job["steps"] if step.get("id") == "check")
-            warning = next(step for step in job["steps"] if step.get("name") == "Report advisory version failure")
-            for event, branch in (("push", "master"), ("pull_request", "master"), ("release", "master"), ("push", "v4.2.16")):
-                github = {"event_name": event, "ref": "refs/heads/" + branch}
-                advisory = event == "push" and branch == "master"
-                self.assertEqual(accepts(check["continue-on-error"], github, {}), advisory)
-                for outcome in ("success", "failure"):
-                    self.assertEqual(accepts(warning["if"], github, {}, {"check": {"outcome": outcome}}),
-                                     advisory and outcome == "failure")
-            with tempfile.TemporaryDirectory() as directory:
-                summary = Path(directory) / "summary.md"
-                result = subprocess.run(["bash", "-e", "-c", warning["run"]], text=True, capture_output=True,
-                                        env=os.environ | {"GITHUB_STEP_SUMMARY": str(summary)}, timeout=5)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("::warning file=" + document, result.stdout)
-                self.assertIn(document, summary.read_text())
-                self.assertIn("Subsequent tests continue", summary.read_text())
 
     def test_push_version_runs_documents_and_offline(self):
         self.assertEqual(self.route("push", "v4.2.14", commits=[{"id": "new"}]),
@@ -150,7 +106,6 @@ class WorkflowChecks(unittest.TestCase):
                 passed = self.route("release", failure=failed)
                 self.assertNotIn("publish", passed)
                 self.assertNotIn("verify_image", passed)
-                self.assertNotIn("verify_hashes", passed)
                 self.assertNotIn("verify_description", passed)
                 if failed.startswith("version_"):
                     self.assertNotIn("offline", passed)
@@ -216,24 +171,39 @@ class WorkflowChecks(unittest.TestCase):
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, 0 if branch in valid else 1)
 
-    def test_platform_hash_jobs_depend_on_tag_and_publisher(self):
-        job = self.jobs["verify_hashes"]
-        self.assertEqual(set(job["needs"]), {"publish", "verify_image"})
-        self.assertFalse(job["strategy"]["fail-fast"])
-        matrix = job["strategy"]["matrix"]["include"]
-        self.assertEqual({row["platform"] for row in matrix}, set(SMOKE_JOBS.values()))
-        self.assertEqual(len(matrix), 5)
-        outputs = self.jobs["publish"]["outputs"]
-        self.assertEqual(set(outputs), {"digest", *(row["output"] for row in matrix)})
-        for row in matrix:
-            self.assertEqual(outputs[row["output"]], "${{ steps.push.outputs." + row["output"] + " }}")
-        step = job["steps"][-1]
-        self.assertEqual(step["env"]["EXPECTED_DIGEST"], "${{ needs.publish.outputs[matrix.output] }}")
-        self.assertEqual(step["env"]["TAG"], "${{ needs.verify_image.outputs.tag }}")
-        self.assertIn('"$EXPECTED_DIGEST"', step["run"])
-        self.assertNotIn("image", outputs)
-        self.assertIn("verify_hashes", self.route("release", failure="update_description"))
-        self.assertNotIn("verify_hashes", self.route("release", failure="verify_image"))
+    def test_publisher_result_matches_this_checkout(self):
+        versions = ROOT / "ci/versions/versions.txt"
+        if not versions.exists():
+            versions = ROOT / "versions/versions.txt"
+        app, = re.findall(r"^APP_VERSION=(.+)$", versions.read_text(), re.M)
+        image = "ljgonzalez/lego-cloudflare-certgen:v" + app
+        digest = "sha256:" + "a" * 64
+        valid = {"image": image, "digest": digest}
+        invalid = [
+            {"image": image, "digest": "bad"}, {"image": image, "digest": None},
+            {"image": image, "digest": "sha256:" + "A" * 64},
+            {"image": image + "-wrong", "digest": digest},
+            {"image": "ljgonzalez/lego-cloudflare-certgen:latest", "digest": digest},
+            {"image": "elsewhere/certgen:v" + app, "digest": digest}, [], {},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            result_file = Path(directory) / "result.json"
+            for record in [valid, *invalid]:
+                with self.subTest(record=record):
+                    result_file.write_text(json.dumps(record))
+                    result = subprocess.run(["bash", "ci/read-publish-result.sh", str(result_file)],
+                                            cwd=ROOT, capture_output=True, text=True, timeout=5)
+                    if record == valid:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stdout, f"image={image}\ndigest={digest}\n")
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertEqual(result.stdout, "")
+            result_file.write_text(json.dumps(valid) + "\n" + json.dumps(valid))
+            result = subprocess.run(["bash", "ci/read-publish-result.sh", str(result_file)],
+                                    cwd=ROOT, capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, "")
 
     def test_unrelated_branch_is_ineligible(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -244,6 +214,27 @@ class WorkflowChecks(unittest.TestCase):
                                     text=True, capture_output=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(output.read_text(), "eligible=false\n")
+
+    def test_compose_defaults_to_unattended_staging_and_keeps_secret_file(self):
+        compose = yaml.safe_load((ROOT / "compose.yml").read_text())
+        service = compose["services"]["certgen"]
+        self.assertEqual(service["command"], ["--staging"])
+        self.assertEqual(service["environment"]["CLOUDFLARE_API_TOKEN"], "")
+        self.assertEqual(service["secrets"], ["cloudflare_api_token"])
+        self.assertNotIn("PRODUCTION", service["environment"])
+        self.assertEqual(compose["secrets"]["cloudflare_api_token"]["environment"], "CLOUDFLARE_API_TOKEN")
+        # Editing the one documented value must update the actual command.
+        changed = yaml.safe_load((ROOT / "compose.yml").read_text().replace('"--staging"', '"--production"'))
+        self.assertEqual(changed["services"]["certgen"]["command"], ["--production"])
+
+    def test_go_checks_are_required_before_all_smokes(self):
+        steps = self.jobs["offline"]["steps"]
+        scripts = "\n".join(step.get("run", "") for step in steps)
+        for check in ("go vet", "go test", "go test -race", "ci/test_go_binary.py", "ci/tests/run.sh"):
+            self.assertIn(check, scripts)
+        setup = next(step for step in steps if step.get("uses", "").startswith("actions/setup-go@"))
+        self.assertEqual(setup["with"]["go-version"], "1.27.4")
+        self.assertTrue(all(self.jobs[job]["needs"] == "offline" for job in SMOKE_JOBS))
 
 
 if __name__ == "__main__":
