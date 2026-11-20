@@ -82,6 +82,7 @@ func ImageSelfTest(output, errorOutput *os.File) int {
 	debuggerEnabled := false
 	reason := "Delve is not supported on this architecture"
 	if debugrun.SupportsDelve(runtime.GOOS, runtime.GOARCH) {
+		fmt.Fprintln(output, "[image-self-test] START debugger execution probe")
 		probe := exec.Command(executable, "debugger-probe")
 		probe.Stdout = output
 		probe.Stderr = errorOutput
@@ -91,6 +92,7 @@ func ImageSelfTest(output, errorOutput *os.File) int {
 		} else {
 			reason = "Delve could not execute the Go probe; using portable Go diagnostics"
 		}
+		fmt.Fprintln(output, "[image-self-test] debugger probe result:", reason)
 	}
 	if !debuggerEnabled {
 		if err = os.Remove(delve); err != nil && !os.IsNotExist(err) {
@@ -110,6 +112,7 @@ func ImageSelfTest(output, errorOutput *os.File) int {
 		return fail(err)
 	}
 	target := filepath.Join(dir, "no-orders")
+	fmt.Fprintln(output, "[image-self-test] START offline CLI preview and lego architecture check; expected status=0")
 	command := exec.Command(executable, "--config", config, "--output", target, "--test")
 	command.Stdin = nil
 	command.Stderr = errorOutput
@@ -126,7 +129,9 @@ func ImageSelfTest(output, errorOutput *os.File) int {
 	if _, err = os.Stat(target); !os.IsNotExist(err) {
 		return fail(fmt.Errorf("offline preview created output"))
 	}
+	fmt.Fprintln(output, "[image-self-test] PASS offline CLI preview; no issuance files created")
 	for _, args := range [][]string{{"--config", config}, {"--config", config, "--test", "--production"}} {
+		fmt.Fprintf(output, "[image-self-test] START negative CLI check args=%q; expected status=2\n", args)
 		command = exec.Command(executable, args...)
 		command.Stdin = nil
 		command.Stdout = output
@@ -136,6 +141,8 @@ func ImageSelfTest(output, errorOutput *os.File) int {
 		if !ok || failure.ExitCode() != 2 {
 			return fail(fmt.Errorf("invalid unattended invocation was accepted"))
 		}
+		fmt.Fprintln(output, "[image-self-test] PASS negative CLI check; observed status=2")
 	}
+	fmt.Fprintln(output, "[image-self-test] PASS all image checks")
 	return 0
 }

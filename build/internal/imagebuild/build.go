@@ -52,13 +52,15 @@ func Compile(output string) error {
 		}
 		linkerFlags += " -X=main.applicationVersion=" + version
 	}
-	command := exec.Command(filepath.Join(runtime.GOROOT(), "bin/go"), "build", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags="+linkerFlags, "-o", output, "./cmd/certgen")
+	command := exec.Command(filepath.Join(runtime.GOROOT(), "bin/go"), "build", "-v", "-x", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags="+linkerFlags, "-o", output, "./cmd/certgen")
 	command.Env = environment
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
+	Tracef("EXEC %q; target GOOS=linux GOARCH=%s GOARM=%s CGO_ENABLED=0", command.Args, value("TARGETARCH", runtime.GOARCH), os.Getenv("TARGETVARIANT"))
 	return command.Run()
 }
 func copyFile(source, target string, mode os.FileMode) error {
+	Tracef("COPY file %s -> %s mode=%04o", source, target, mode)
 	contents, err := os.ReadFile(source)
 	if err != nil {
 		return err
@@ -66,7 +68,11 @@ func copyFile(source, target string, mode os.FileMode) error {
 	if err = os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(target, contents, mode)
+	if err = os.WriteFile(target, contents, mode); err != nil {
+		return err
+	}
+	Tracef("COPY complete %s bytes=%d", target, len(contents))
+	return nil
 }
 func copyTree(source, target string) error {
 	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, err error) error {
@@ -79,6 +85,7 @@ func copyTree(source, target string) error {
 		}
 		destination := filepath.Join(target, relative)
 		if entry.IsDir() {
+			Tracef("MKDIR %s mode=0755", destination)
 			return os.MkdirAll(destination, 0755)
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -86,6 +93,7 @@ func copyTree(source, target string) error {
 			if err != nil {
 				return err
 			}
+			Tracef("SYMLINK %s -> %s", destination, link)
 			return os.Symlink(link, destination)
 		}
 		return copyFile(path, destination, 0644)
@@ -96,6 +104,7 @@ func PrepareRuntime(root, licenses string) error {
 }
 func prepareRuntimeFrom(root, licenses, sourceRoot string) error {
 	for _, dir := range []string{"usr/local/bin", "etc/ssl/certs", "usr/share/zoneinfo", "usr/share/licenses", "app", "tmp", "ssl-certs", "root"} {
+		Tracef("MKDIR runtime %s mode=0755", filepath.Join(root, dir))
 		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
 			return err
 		}
@@ -113,6 +122,7 @@ func prepareRuntimeFrom(root, licenses, sourceRoot string) error {
 	}
 	files := map[string]string{"etc/passwd": "root:x:0:0:root:/root:/sbin/nologin\ncertgen:x:1000:1000:certgen:/nonexistent:/sbin/nologin\n", "etc/group": "root:x:0:\ncertgen:x:1000:\n"}
 	for path, contents := range files {
+		Tracef("WRITE generated runtime file %s bytes=%d", path, len(contents))
 		if err := os.WriteFile(filepath.Join(root, path), []byte(contents), 0644); err != nil {
 			return err
 		}
@@ -173,10 +183,11 @@ func BuildDelve(root string) error {
 	if !versionPattern.MatchString(version) {
 		return fmt.Errorf("invalid Delve version")
 	}
-	command := exec.Command(filepath.Join(runtime.GOROOT(), "bin/go"), "install", "-buildvcs=false", "-gcflags=all=-N -l", "-ldflags=-compressdwarf=false", "github.com/go-delve/delve/cmd/dlv@"+version)
+	command := exec.Command(filepath.Join(runtime.GOROOT(), "bin/go"), "install", "-v", "-x", "-buildvcs=false", "-gcflags=all=-N -l", "-ldflags=-compressdwarf=false", "github.com/go-delve/delve/cmd/dlv@"+version)
 	command.Env = environment
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
+	Tracef("EXEC %q; target GOARCH=%s CGO_ENABLED=0", command.Args, architecture)
 	if err = command.Run(); err != nil {
 		return err
 	}
@@ -202,6 +213,7 @@ func BuildDelve(root string) error {
 		if module.Version == "" {
 			continue
 		}
+		Tracef("Delve dependency notices: %s@%s", module.Path, module.Version)
 		directory := filepath.Join(cache, escapedModule(module.Path)+"@"+escapedModule(module.Version))
 		entries, err := os.ReadDir(directory)
 		if err != nil {

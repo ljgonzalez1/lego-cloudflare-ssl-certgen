@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.29.0
 ARG ALPINE_VERSION=3.24.4
 ARG GO_VERSION=1.27.4
-ARG APP_VERSION=6.0.1-beta-3
+ARG APP_VERSION=6.0.1-beta-4
 ARG LEGO_VERSION=v4.34.0
 
 # Build tools always run natively. Go cross-compiles the static target binary.
@@ -9,7 +9,7 @@ FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine3.24 AS go-toolchain
 FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS tools
 COPY --from=go-toolchain /usr/local/go/ /usr/local/go/
 ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local GOWORK=off CGO_ENABLED=0
-RUN ["apk", "add", "--no-cache", "ca-certificates-bundle", "tzdata"]
+RUN ["apk", "add", "--verbose", "--no-cache", "ca-certificates-bundle", "tzdata"]
 WORKDIR /src
 COPY go.mod ./
 COPY vendor/ ./vendor/
@@ -17,7 +17,7 @@ COPY internal/ ./internal/
 COPY spinner/ ./spinner/
 COPY cmd/ ./cmd/
 COPY licenses/ /licenses/
-RUN ["go", "build", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags=-compressdwarf=false", "-o", "/certgen-build", "./cmd/certgen-build"]
+RUN ["go", "build", "-v", "-x", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags=-compressdwarf=false", "-o", "/certgen-build", "./cmd/certgen-build"]
 
 # Download and SHA-256 verify the official lego binary for the requested CPU.
 FROM tools AS downloader
@@ -92,8 +92,13 @@ RUN --network=none --mount=type=tmpfs,target=/tmp ["/usr/local/bin/certgen", "im
 FROM tools AS licensed
 ARG APP_VERSION
 ARG LEGO_VERSION
+ARG TARGETARCH
+ARG TARGETVARIANT
+ENV GOMODCACHE=/root/go/pkg/mod
 COPY --from=runtime-check / /runtime/
-RUN ["/certgen-build", "licenses", "/runtime", "/licenses"]
+# Go serializes individual module downloads; the cache is safe to share across
+# target architectures. ZIP h1 authentication still runs before collecting notices.
+RUN --mount=type=cache,id=certgen-license-go-mod-v1,target=/root/go/pkg/mod,sharing=shared ["/certgen-build", "licenses", "/runtime", "/licenses"]
 RUN --network=none ["/certgen-build", "verify-licenses", "/runtime"]
 
 FROM scratch AS target

@@ -297,12 +297,15 @@ func TestDataSourcesBindPayloadPackageRecipeAndArchive(t *testing.T) {
 	}
 	commit := strings.Repeat("a", 40)
 	var database strings.Builder
+	recipes := map[string]string{}
 	for _, entry := range []struct{ name, version, origin, license string }{
 		{"ca-certificates-bundle", "20261020-r0", "ca-certificates", "MPL-2.0 AND MIT"},
 		{"tzdata", "2026e-r0", "tzdata", "Public-Domain"},
 		{"alpine-release", "3.24.4-r0", "alpine-base", "MIT"},
 	} {
 		fmt.Fprintf(&database, "P:%s\nV:%s\no:%s\nL:%s\nc:%s\n\n", entry.name, entry.version, entry.origin, entry.license, commit)
+		version, revision, _ := strings.Cut(entry.version, "-r")
+		recipes[entry.origin] = fmt.Sprintf("# Maintainer: Alpine fixture contributor\npkgname=%s\npkgver=%s\npkgrel=%s\nlicense=\"%s\"\n", entry.origin, version, revision, entry.license)
 	}
 	put(t, filepath.Join(installed, "lib/apk/db/installed"), database.String())
 	var compressed bytes.Buffer
@@ -324,22 +327,40 @@ func TestDataSourcesBindPayloadPackageRecipeAndArchive(t *testing.T) {
 	}
 	sum := sha512.Sum512(compressed.Bytes())
 	recipe := fmt.Sprintf("source=\"https://source.example.test/source.tar.gz\"\nsha512sums=\"%x  source.tar.gz\"\n", sum)
-	tampered := false
+	tampered, challenge := false, false
+	githubChallenge := false
+	invalidRecipe := ""
 	client := &http.Client{Transport: sourceTransport(func(request *http.Request) (*http.Response, error) {
 		var data []byte
 		switch {
+		case request.URL.Host == "raw.githubusercontent.com" && githubChallenge:
+			data = []byte("<html>challenge, not source evidence</html>")
 		case request.URL.Host == "gitlab.alpinelinux.org":
 			// A bot challenge can be HTTP 200: reject it and try the pinned mirror.
 			data = []byte("<html>challenge, not source evidence</html>")
 		case strings.HasSuffix(request.URL.Path, "/APKBUILD"):
-			data = []byte(recipe)
+			origin := filepath.Base(filepath.Dir(request.URL.Path))
+			data = []byte(recipes[origin])
+			if origin != "alpine-base" {
+				data = append(data, recipe...)
+			}
+			if invalidRecipe != "" {
+				data = bytes.ReplaceAll(data, []byte(invalidRecipe), []byte("wrong"))
+			}
 		case strings.HasSuffix(request.URL.Path, "/COPYING"):
-			data = []byte(fixtureLicense)
+			// Real aports trees have no repository-root COPYING. A fictitious
+			// fixture here hid the failure in every target image build.
+			return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("not found")), Header: http.Header{}}, nil
 		case request.URL.String() == "https://source.example.test/source.tar.gz":
 			data = compressed.Bytes()
+			if challenge {
+				data = []byte("<html>HTTP 200 source challenge</html>")
+			}
 			if tampered {
 				data = append(append([]byte{}, data...), 'x')
 			}
+		case request.URL.String() == "https://distfiles.alpinelinux.org/distfiles/v3.24/source.tar.gz" && challenge && !tampered:
+			data = compressed.Bytes()
 		default:
 			return nil, fmt.Errorf("unexpected source request %s", request.URL)
 		}
@@ -354,11 +375,11 @@ func TestDataSourcesBindPayloadPackageRecipeAndArchive(t *testing.T) {
 		if source.Sum != "aports-commit:"+commit || source.Version == "" {
 			t.Fatal("package provenance omitted")
 		}
-		if !strings.HasPrefix(source.Origin, "https://git.alpinelinux.org/") {
-			t.Fatal("invalid HTTP 200 evidence did not trigger mirror fallback")
+		if !strings.HasPrefix(source.Origin, "https://raw.githubusercontent.com/") {
+			t.Fatal("pinned raw mirror was not preferred")
 		}
 		collector := collector{options: Options{Inputs: "../../licenses"}, blobs: map[string][]byte{}, aliases: map[string]string{}}
-		component := Component{ID: kind}
+		component := Component{ID: "data:" + kind, DeclaredLicense: source.License}
 		if err := collector.collectTree(&component, source.Directory, false); err != nil {
 			t.Fatal(err)
 		}
@@ -371,9 +392,57 @@ func TestDataSourcesBindPayloadPackageRecipeAndArchive(t *testing.T) {
 				t.Fatal("Mozilla data header attribution omitted")
 			}
 		}
+		if kind == "alpine-release" {
+			found := false
+			for _, doc := range component.Documents {
+				found = found || doc.Source == "supplemental/MIT.txt"
+			}
+			if !found {
+				t.Fatal("MIT-declared release metadata lacks supplemental terms")
+			}
+		}
 	}
+	githubChallenge = true
+	fallback := &NativeSources{Root: root, DataRoot: installed, Work: filepath.Join(work, "recipe-fallback"), Client: client}
+	fallbackSource, err := fallback.Data("ca-certificates")
+	if err != nil || !strings.HasPrefix(fallbackSource.Origin, "https://git.alpinelinux.org/") {
+		t.Fatal("invalid HTTP 200 recipes did not trigger pinned fallback", err)
+	}
+	githubChallenge = false
+	challenge = true
+	sources := &NativeSources{Root: root, DataRoot: installed, Work: filepath.Join(work, "mirror"), Client: client}
+	source, err := sources.Data("ca-certificates")
+	if err != nil {
+		t.Fatal("checksum-identical distfiles fallback failed", err)
+	}
+	notice, err := os.ReadFile(filepath.Join(source.Directory, "NOTICE-source-provenance.txt"))
+	if err != nil || !bytes.Contains(notice, []byte("Retrieved from: https://distfiles.alpinelinux.org/distfiles/v3.24/source.tar.gz")) {
+		t.Fatal("actual source mirror omitted from provenance", err)
+	}
+	if err = os.Remove(filepath.Join(source.Directory, "0/upstream/LICENSE")); err != nil {
+		t.Fatal(err)
+	}
+	collector := collector{options: Options{Inputs: "../../licenses"}, blobs: map[string][]byte{}, aliases: map[string]string{}}
+	component := Component{ID: "data:ca-certificates", DeclaredLicense: source.License}
+	if err = collector.collectTree(&component, source.Directory, false); err != nil {
+		t.Fatal("Mozilla license header requires no fictitious root license", err)
+	}
+	put(t, filepath.Join(source.Directory, "0/upstream/certdata.txt"), "# Copyright fixture Mozilla contributors\nBEGINDATA\n")
+	component.Documents = nil
+	if err = collector.collectTree(&component, source.Directory, false); err == nil {
+		t.Fatal("upstream source without license terms was accepted")
+	}
+	challenge = false
+	for _, value := range []string{"pkgname=ca-certificates", "pkgver=20261020", "pkgrel=0", "MPL-2.0 AND MIT"} {
+		invalidRecipe = value
+		sources := &NativeSources{Root: root, DataRoot: installed, Work: filepath.Join(work, "invalid-recipe"), Client: client}
+		if _, err := sources.Data("ca-certificates"); err == nil || !strings.Contains(err.Error(), "installed package ca-certificates-bundle 20261020-r0") {
+			t.Fatal("mismatched recipe accepted or package diagnostic omitted", value, err)
+		}
+	}
+	invalidRecipe = ""
 	tampered = true
-	sources := &NativeSources{Root: root, DataRoot: installed, Work: filepath.Join(work, "tampered-source"), Client: client}
+	sources = &NativeSources{Root: root, DataRoot: installed, Work: filepath.Join(work, "tampered-source"), Client: client}
 	if _, err := sources.Data("ca-certificates"); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatal("changed upstream source archive accepted", err)
 	}
@@ -386,6 +455,53 @@ func TestDataSourcesBindPayloadPackageRecipeAndArchive(t *testing.T) {
 	put(t, filepath.Join(root, "usr/share/zoneinfo/Etc/UTC"), "different timezone")
 	if _, err := sources.Data("tzdata"); err == nil {
 		t.Fatal("changed timezone payload attributed to unmodified package")
+	}
+}
+
+func TestAlpineReleaseSupplementDoesNotLicenseUnrelatedSources(t *testing.T) {
+	root := t.TempDir()
+	put(t, filepath.Join(root, "NOTICE-APKBUILD.txt"), "# Maintainer: Alpine fixture contributor\nlicense=\"MIT\"\n")
+	for _, entry := range []struct{ id, license string }{
+		{"data:ca-certificates", "MIT"},
+		{"data:tzdata", "MIT"},
+		{"data:alpine-release", "unknown"},
+	} {
+		collector := collector{options: Options{Inputs: "../../licenses"}, blobs: map[string][]byte{}, aliases: map[string]string{}}
+		component := Component{ID: entry.id, DeclaredLicense: entry.license}
+		if err := collector.collectTree(&component, root, false); err == nil {
+			t.Fatal("supplemental MIT terms incorrectly licensed unrelated source", entry)
+		}
+	}
+}
+
+func TestCAHeaderNoticeRetainsFullMPLTerms(t *testing.T) {
+	options, work := fixtureOptions(t)
+	resolve := options.ResolveData
+	source := filepath.Join(work, "ca-source")
+	put(t, filepath.Join(source, "NOTICE-APKBUILD.txt"), "# Maintainer: Alpine fixture contributor\nlicense=\"MPL-2.0 AND MIT\"\n")
+	put(t, filepath.Join(source, "certdata.txt"), "# This Source Code Form is subject to the terms of the Mozilla Public\n# License, v. 2.0. If a copy of the MPL was not distributed with this\n# file, You can obtain one at http://mozilla.org/MPL/2.0/.\nBEGINDATA\n")
+	options.ResolveData = func(kind string) (Source, error) {
+		if kind == "ca-certificates" {
+			return Source{Directory: source, Origin: "checksum-verified CA source fixture", License: "MPL-2.0 AND MIT", Version: "20261020-r0"}, nil
+		}
+		return resolve(kind)
+	}
+	if err := Collect(options); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, component := range manifestAt(t, options.Root).Components {
+		if component.ID == "data:ca-certificates" {
+			for _, doc := range component.Documents {
+				found = found || doc.Source == "supplemental/MPL-2.0.txt"
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Mozilla header was retained without full MPL terms")
+	}
+	if err := Verify(options.Root); err != nil {
+		t.Fatal(err)
 	}
 }
 
