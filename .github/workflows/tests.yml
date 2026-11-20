@@ -423,12 +423,8 @@ jobs:
       run: python3 -B ci/test_workflows.py
     - name: Test prerelease tag policy
       run: python3 -B ci/versions/test_tags.py
-    - name: Check committed local badge snapshots
-      run: python3 -B ci/badges.py --check
-    - name: Test badge states, publication pairing and atomic updates
-      run: python3 -B ci/test_badges.py
   go_tests:
-    name: Go offline tests and production binaries
+    name: Go offline tests and debug binaries
     needs: *id002
     if: ${{ !cancelled() && (needs.static_go.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
       && needs.static_go.result == 'failure')) && (needs.static_python.result == 'success' || ((github.event_name != 'pull_request'
@@ -465,25 +461,26 @@ jobs:
       with:
         go-version: 1.27.4
         cache: false
-    - name: Run shuffled optimized Go unit tests with coverage
+    - name: Run shuffled Go unit tests with full debug information and coverage
       working-directory: build
       env:
         CGO_ENABLED: '0'
-      run: go test -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m -trimpath -tags=netgo,osusergo,certgen_test -coverprofile=coverage.out
-        ./...
+      run: go test -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false'
+        -coverprofile=coverage.out ./...
     - name: Check races with pointer checks on native AMD64
       working-directory: build
       env:
         CGO_ENABLED: '1'
-      run: go test -race -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m -trimpath -tags=netgo,osusergo,certgen_test ./...
+      run: go test -race -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false'
+        ./...
     - name: Fuzz argument parsing, YAML and lego logs offline
       working-directory: build
       env:
         CGO_ENABLED: '0'
       run: "for target in FuzzParseOptions FuzzLoadDomains FuzzLegoLog; do\n  go test -buildvcs=false -mod=vendor -run='^$' -fuzz=\"\
-        ^${target}$\" \\\n    -fuzztime=15s -parallel=2 -timeout=2m \\\n    -trimpath -tags=netgo,osusergo,certgen_test ./internal/certgen\n\
-        done\n"
-    - name: Test production binaries, console redaction and five static ELF targets
+        ^${target}$\" \\\n    -fuzztime=15s -parallel=2 -timeout=2m \\\n    -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false'\
+        \ ./internal/certgen\ndone\n"
+    - name: Test real Go binaries, logs, dumps and five debug ELF targets
       run: python3 -B ci/test_go_binary.py
   smoke_armv6:
     name: ARMv6 smoke test
@@ -690,16 +687,6 @@ jobs:
       run: bash ci/check-dockerhub.sh description
 'on':
   push:
-    paths-ignore:
-    - assets/badges/docker-hub.svg
-    - assets/badges/docker-pulls.svg
-    - assets/badges/docker-image.svg
-    - assets/badges/ci.svg
-    - assets/badges/gitea.svg
-    - assets/badges/lego.svg
-    - assets/badges/license.svg
-    - assets/badges/state.json
-    - assets/badges/manifest.json
     branches:
     - master
     - '[vV][0-9]+.[0-9]*'

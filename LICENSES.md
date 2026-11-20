@@ -65,8 +65,4 @@ Automated collection and integrity checks are not a legal compatibility opinion.
 - Font notices: metadata embedded in the supplied SVG files, retained verbatim alongside the source
 - Cloudflare brand guidance: https://www.cloudflare.com/trademark/
 
-See the release's `ci/validation-6.0.1.md` report for what was actually executed locally and what still requires Docker/network access. Source and fixture tests must not be presented as a completed audit of a real upstream lego image.
-
-## Local badge icons
-
-The local badge renderer and layout are original MIT code. Four unmodified SVG icons from a pinned Simple Icons commit retain CC0-1.0, with the complete upstream notice in `licenses/badges/SimpleIcons-LICENSE.md` and exact source/SHA-256/Git-blob mappings in `licenses/badges/sources.json`. Generated SVGs embedding those icons are recorded as MIT AND CC0-1.0; brand trademarks remain with their owners. `ci/check_licenses.py` checks the source icon/notice bytes and both the fixed source inventory and generated-only badge manifest. Automatic refreshes do not modify the source inventory. Badge source code, icon files and images are excluded from the runtime image.
+See the release's `ci/validation-6.0.1-beta-1.md` report for what was actually executed locally and what still requires Docker/network access. Source and fixture tests must not be presented as a completed audit of a real upstream lego image.

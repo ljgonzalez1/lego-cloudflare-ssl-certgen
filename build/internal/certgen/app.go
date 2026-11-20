@@ -75,7 +75,9 @@ func ParseOptions(arguments []string) (Options, error) {
 type App struct {
 	Input, Output, Error *os.File
 	Signals              *SignalState
-	Redactor             *Redactor
+	Diagnostics          *Diagnostics
+	ParentOwnsOutput     bool
+	PrepareOutput        func() error
 }
 
 func (app *App) message(output *os.File, icon, text, style string) {
@@ -84,7 +86,7 @@ func (app *App) message(output *os.File, icon, text, style string) {
 func (app *App) info(text string) { app.message(app.Output, "ℹ️  ", text, "36") }
 func (app *App) fail(err error) {
 	if err != nil {
-		app.message(app.Error, "❌ ", app.Redactor.Safe(err.Error()), "31")
+		app.message(app.Error, "❌ ", app.Diagnostics.Safe(err.Error()), "31")
 	}
 }
 func (app *App) section(title string) {
@@ -104,6 +106,7 @@ func (app *App) Run(arguments []string) int {
 		fmt.Fprint(app.Output, Usage)
 		return 0
 	}
+	app.Diagnostics.Event("Parsed action " + options.Action)
 	identity, err := ReadIdentity()
 	if err != nil {
 		app.fail(err)
@@ -139,6 +142,16 @@ func (app *App) Run(arguments []string) int {
 	if options.Mode == "" {
 		options.Mode = "staging"
 	}
+	if app.ParentOwnsOutput && issue && options.Output == "/ssl-certs" {
+		if app.PrepareOutput == nil {
+			app.fail(errors.New("The output ownership callback is missing."))
+			return 1
+		}
+		if err = app.PrepareOutput(); err != nil {
+			app.fail(err)
+			return 1
+		}
+	}
 	if root {
 		if issue && options.Output == "/ssl-certs" {
 			if !outputMounted(options.Output) {
@@ -154,13 +167,15 @@ func (app *App) Run(arguments []string) int {
 			return 1
 		}
 	}
-	// Apply before creating any certificate, account or report files.
+	// Apply before creating any certificate, account, log or report files.
 	syscall.Umask(0077)
+	app.Diagnostics.Event("Running as UID " + idText(identity.UID) + " GID " + idText(identity.GID))
 	groups, err := LoadDomains(options.Config, options.Groups, issue)
 	if err != nil {
 		app.fail(fmt.Errorf("Error in %s: %w", printable(options.Config), err))
 		return 2
 	}
+	app.Diagnostics.Event(fmt.Sprintf("Validated %d certificate groups", len(groups)))
 	if options.Action == "list" {
 		for _, group := range groups {
 			fmt.Fprintf(app.Output, "%s: %d domains\n", group.Name, group.Count)
@@ -174,7 +189,7 @@ func (app *App) Run(arguments []string) int {
 		app.fail(err)
 		setupStatus = 2
 	} else if issue {
-		credentialStatus, credentialErr := configureCloudflare(settings.Propagation, "/run/secrets/cloudflare_api_token", app.Redactor)
+		credentialStatus, credentialErr := configureCloudflare(settings.Propagation, "/run/secrets/cloudflare_api_token", app.Diagnostics)
 		if credentialStatus != 0 {
 			app.fail(credentialErr)
 			setupStatus = credentialStatus
@@ -198,7 +213,7 @@ func (app *App) Run(arguments []string) int {
 			return setupStatus
 		}
 		capture := LimitedCapture{Limit: 1024}
-		status, err := Supervise(ProcessOptions{Command: []string{"lego", "--version"}, Seconds: 10, Output: app.Output, Error: app.Error, Capture: &capture, Signals: app.Signals, Redactor: app.Redactor})
+		status, err := Supervise(ProcessOptions{Command: []string{"lego", "--version"}, Seconds: 10, Output: app.Output, Error: app.Error, Capture: &capture, Signals: app.Signals, Diagnostics: app.Diagnostics})
 		if app.Signals.Status() != 0 {
 			return app.Signals.Status()
 		}
@@ -267,6 +282,7 @@ func (app *App) runGroup(group DomainGroup, options Options, settings Settings, 
 	target, err := MakeOutputPath(issue, options.Output, group.Name, settings.Location)
 	if err != nil {
 		app.fail(err)
+		app.Diagnostics.Failure(group.Name + ": output path failed")
 		return 2
 	}
 	limit, err := TimeLimit(group.Count, settings.Propagation)
@@ -286,6 +302,7 @@ func (app *App) runGroup(group DomainGroup, options Options, settings Settings, 
 	if !issue {
 		return 0
 	}
+	app.Diagnostics.Event("Requesting " + group.Name + " with " + options.Mode + " ACME server")
 	if app.Signals.Status() != 0 {
 		return 1
 	}
@@ -305,13 +322,14 @@ func (app *App) runGroup(group DomainGroup, options Options, settings Settings, 
 	if settings.Pretty {
 		names = group.Names
 	}
-	status, err := Supervise(ProcessOptions{Command: command, Seconds: limit, Certificate: target + "/certificates/" + first, Group: group.Name, Names: names, Output: app.Output, Error: app.Error, Signals: app.Signals, Redactor: app.Redactor})
+	status, err := Supervise(ProcessOptions{Command: command, Seconds: limit, Log: target + "/lego.log", Certificate: target + "/certificates/" + first, Group: group.Name, Names: names, Output: app.Output, Error: app.Error, Signals: app.Signals, Diagnostics: app.Diagnostics})
 	if app.Signals.Status() != 0 {
-		app.message(app.Error, "⚠️  ", "Certificate issuance cancelled.", "33")
+		app.message(app.Error, "⚠️  ", "Certificate issuance cancelled. See "+target+"/lego.log for details.", "33")
 		return 1
 	}
 	if err != nil {
 		app.fail(err)
+		app.Diagnostics.Failure(group.Name + ": process supervision failed")
 		return 1
 	}
 	if status == 0 {
@@ -319,5 +337,6 @@ func (app *App) runGroup(group DomainGroup, options Options, settings Settings, 
 		app.message(app.Output, "✅ ", "Account data: "+target+"/accounts/", "32")
 		return 0
 	}
+	app.info("Full lego output: " + target + "/lego.log")
 	return 1
 }

@@ -1,6 +1,6 @@
 # CI and release checks
 
-This snapshot is **v6.0.1** (optimized production without the debugger). See the [event matrix](../docs/ci-policy.md) for the implemented routing and dependencies.
+This snapshot is **v6.0.1-beta-1** (debug with traces and Delve probes). See the [event matrix](../docs/ci-policy.md) for the implemented routing and dependencies.
 
 Static analysis finishes first. It is blocking for PRs to master and advisory for master pushes, version-branch activity, releases and prereleases. Advisory failures emit visible warnings; they do not suppress the offline tests. Failed, skipped or cancelled functional prerequisites never permit publication. Version branches run offline suites only after analysis. Master activity and releases also check README.md and DOCKERHUB.md versions, then run five parallel Docker smoke tests.
 
@@ -22,7 +22,7 @@ python3 -B ci/versions/test_tags.py
 python3 -B ci/test_go_binary.py
 ```
 
-Go unit/race/fuzz tests are retained in the workflow. Test fixtures are offline and never submit ACME orders. Each image smoke job builds the actual target image, exercises its entrypoint and lego, verifies retained program/license inventory and records image size plus a process-resource sample. The resource probe is not a measurement of live issuance or a simultaneous cgroup peak. See this snapshot's [validation report](validation-6.0.1.md) for what was actually executed here.
+Go unit/race/fuzz tests are retained in the workflow. Test fixtures are offline and never submit ACME orders. Each image smoke job builds the actual target image, exercises its entrypoint and lego, verifies retained program/license inventory and records image size plus a process-resource sample. The resource probe is not a measurement of live issuance or a simultaneous cgroup peak. See this snapshot's [validation report](validation-6.0.1-beta-1.md) for what was actually executed here.
 
 ## Release identity
 
@@ -32,8 +32,8 @@ Go unit/race/fuzz tests are retained in the workflow. Test fixtures are offline 
 
 ```sh
 python3 -B ci/versions/tags_table.py
-python3 -B ci/versions/check_version.py README.md --ref v6.0.1
-python3 -B ci/versions/check_version.py DOCKERHUB.md --ref v6.0.1
+python3 -B ci/versions/check_version.py README.md --ref v6.0.1-beta-1
+python3 -B ci/versions/check_version.py DOCKERHUB.md --ref v6.0.1-beta-1
 ```
 
 No workflow automatically edits Markdown. A Git tag alone does not publish; the workflow subscribes to release.published, including prereleases. Only that event may run the publisher, after the mandatory offline suites and all five smokes pass. Pull requests cannot receive Docker Hub credentials. Configure DOCKERHUB_USERNAME, DOCKERHUB_PUSH_TOKEN and DOCKERHUB_DESCRIPTION_TOKEN as repository secrets for publication.

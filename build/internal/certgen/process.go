@@ -12,8 +12,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-
-	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/spinner"
 )
 
 type SignalState struct {
@@ -63,14 +61,14 @@ func TimeLimit(names int, propagation uint64) (uint64, error) {
 }
 
 type ProcessOptions struct {
-	Command            []string
-	Seconds            uint64
-	Certificate, Group string
-	Names              []string
-	Output, Error      *os.File
-	Capture            io.Writer
-	Redactor           *Redactor
-	Signals            *SignalState
+	Command                 []string
+	Seconds                 uint64
+	Log, Certificate, Group string
+	Names                   []string
+	Output, Error           *os.File
+	Capture                 io.Writer
+	Diagnostics             *Diagnostics
+	Signals                 *SignalState
 }
 type outputChunk struct {
 	data [4096]byte
@@ -112,8 +110,14 @@ func Supervise(options ProcessOptions) (int, error) {
 	if options.Error == nil {
 		options.Error = os.Stderr
 	}
-	if options.Redactor == nil {
-		options.Redactor = NewRedactor()
+	var logFile *os.File
+	var err error
+	if options.Log != "" {
+		logFile, err = os.OpenFile(options.Log, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+		if err != nil {
+			return 2, fmt.Errorf("cannot open the lego log: %w", err)
+		}
+		defer logFile.Close()
 	}
 	var view *LegoView
 	if len(options.Names) > 0 {
@@ -134,16 +138,18 @@ func Supervise(options ProcessOptions) (int, error) {
 		return 127, err
 	}
 	writer.Close()
-	completed := make(chan error, 1)
-	finished := false
-	go func() { completed <- command.Wait() }()
-	// Always reap the leader and stop descendants, including during a panic.
-	defer func() {
-		killGroup(command.Process.Pid, syscall.SIGKILL)
-		if !finished {
-			<-completed
+	if options.Diagnostics != nil {
+		options.Diagnostics.Event(fmt.Sprintf("Started lego process group %d for %s", command.Process.Pid, options.Group))
+		if recorder, ok := options.Diagnostics.Recorder.(interface {
+			ProcessStarted(int)
+			ProcessFinished(int)
+		}); ok {
+			recorder.ProcessStarted(command.Process.Pid)
+			defer recorder.ProcessFinished(command.Process.Pid)
 		}
-	}()
+	}
+	completed := make(chan error, 1)
+	go func() { completed <- command.Wait() }()
 	chunks := make(chan outputChunk, 4)
 	stopReading := make(chan struct{})
 	defer close(stopReading)
@@ -163,16 +169,11 @@ func Supervise(options ProcessOptions) (int, error) {
 	}()
 	if view != nil {
 		view.Start()
-		defer view.Close()
 	}
 	deadline := time.NewTimer(time.Duration(options.Seconds) * time.Second)
 	defer deadline.Stop()
-	var ticks <-chan time.Time
-	if view != nil && view.ansi {
-		ticker := time.NewTicker(spinner.Interval)
-		defer ticker.Stop()
-		ticks = ticker.C
-	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 	var contextDone <-chan struct{}
 	if options.Signals != nil {
 		contextDone = options.Signals.Context.Done()
@@ -192,13 +193,14 @@ func Supervise(options ProcessOptions) (int, error) {
 	}
 	pending := make([]byte, 0, 16384)
 	legoLog := LegoLog{}
+	finished := false
 	pipeClosed := false
 	killed := false
 	timedOut := false
 	interruption := 0
 	status := 0
 	observe := func(text string) {
-		line := parseLegoLine(options.Redactor.Safe(text))
+		line := parseLegoLine(text)
 		wasFailed := legoLog.Cause != causeNone
 		legoLog.Observe(line)
 		if !wasFailed && legoLog.Cause != causeNone {
@@ -208,21 +210,24 @@ func Supervise(options ProcessOptions) (int, error) {
 			view.Feed(line)
 		}
 	}
-	var console *redactedWriter
-	if options.Capture != nil {
-		console = options.Redactor.writer(options.Capture)
-	} else if view == nil {
-		console = options.Redactor.writer(options.Error)
-	}
-	defer func() {
-		if console != nil {
-			_ = console.Close()
-		}
-	}()
 	relay := func(chunk outputChunk) error {
 		bytes := chunk.data[:chunk.size]
-		if console != nil {
-			if _, err := console.Write(bytes); err != nil {
+		if options.Diagnostics != nil && chunk.size > 0 {
+			if recorder, ok := options.Diagnostics.Recorder.(interface{ RecordProcessOutput(int, string) }); ok {
+				recorder.RecordProcessOutput(command.Process.Pid, string(bytes))
+			}
+		}
+		if logFile != nil {
+			if _, err := logFile.Write(bytes); err != nil {
+				return fmt.Errorf("cannot write the lego log: %w", err)
+			}
+		}
+		if options.Capture != nil {
+			if _, err := options.Capture.Write(bytes); err != nil {
+				return err
+			}
+		} else if view == nil {
+			if _, err := options.Error.Write(bytes); err != nil {
 				return err
 			}
 		}
@@ -258,6 +263,10 @@ func Supervise(options ProcessOptions) (int, error) {
 		select {
 		case chunk := <-chunks:
 			if err = relay(chunk); err != nil {
+				killGroup(command.Process.Pid, syscall.SIGKILL)
+				if !finished {
+					<-completed
+				}
 				return 1, err
 			}
 		case waitErr := <-completed:
@@ -299,7 +308,7 @@ func Supervise(options ProcessOptions) (int, error) {
 			killGroup(command.Process.Pid, syscall.SIGKILL)
 			reader.Close()
 			pipeClosed = true
-		case <-ticks:
+		case <-ticker.C:
 			if view != nil {
 				view.Tick()
 			}
@@ -307,11 +316,6 @@ func Supervise(options ProcessOptions) (int, error) {
 	}
 	if len(pending) > 0 {
 		observe(string(pending))
-	}
-	if console != nil {
-		if err := console.Close(); err != nil {
-			return 1, err
-		}
 	}
 	failure := ""
 	switch {
@@ -342,6 +346,9 @@ func Supervise(options ProcessOptions) (int, error) {
 		view.Finish(failure)
 	} else if failure != "" {
 		fmt.Fprintln(options.Error, "❌ "+failure)
+	}
+	if failure != "" && options.Diagnostics != nil {
+		options.Diagnostics.Failure(failure)
 	}
 	return status, nil
 }

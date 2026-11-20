@@ -1,5 +1,3 @@
-//go:build certgen_test
-
 package certgen
 
 import (
@@ -149,6 +147,8 @@ func RunHelper(args []string, input, output, errorOutput *os.File) int {
 		index := 1
 		for index+1 < len(args) && strings.HasPrefix(args[index], "--") {
 			switch args[index] {
+			case "--log":
+				options.Log = args[index+1]
 			case "--view":
 				if args[index+1] != "" {
 					options.Names = strings.Split(args[index+1], ",")

@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 	"unicode"
-
-	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/spinner"
 )
 
 const reset = "\x1b[0m"
@@ -30,8 +28,7 @@ type LegoView struct {
 	list, ansi, inError                   bool
 	started                               time.Time
 	stamp, firstStamp, lastRaw, dayOffset float64
-	active                                bool
-	pulse                                 string
+	spinner                               int
 }
 
 func NewLegoView(names []string, limit uint64, output *os.File) *LegoView {
@@ -134,17 +131,7 @@ func (v *LegoView) render(index int, columns int) string {
 		width = max(width, len(entry.Value))
 	}
 	width = min(width, max(columns/2, 16))
-	marker := v.paint(markers[name.State], colors[name.State])
-	gap := " "
-	if v.ansi {
-		// Reserve three columns for either the pulse or a two-column status icon.
-		gap = "  "
-		if v.active && name.State == 1 {
-			marker = v.pulse
-			gap = " "
-		}
-	}
-	text := marker + gap + v.paint(name.Value, colors[name.State])
+	text := v.paint(markers[name.State]+" "+name.Value, colors[name.State])
 	if name.Label != "" {
 		text += strings.Repeat(" ", max(0, width-len(name.Value))) + "  " + name.Label
 	}
@@ -152,8 +139,6 @@ func (v *LegoView) render(index int, columns int) string {
 }
 func (v *LegoView) Start() {
 	v.started = time.Now()
-	v.active = true
-	v.pulse = spinner.At(0).Render(true)
 	rows, columns := terminalSize(v.output)
 	v.list = v.ansi && rows >= len(v.names)+3
 	v.activity = "starting lego"
@@ -165,46 +150,14 @@ func (v *LegoView) Start() {
 	v.Tick()
 }
 func (v *LegoView) Tick() {
-	if !v.ansi || !v.active {
+	if !v.ansi {
 		return
 	}
 	_, columns := terminalSize(v.output)
-	elapsed := time.Since(v.started)
-	frame := spinner.At(elapsed).Render(true)
-	changed := frame != v.pulse
-	v.pulse = frame
-	if v.list && changed {
-		for index, name := range v.names {
-			if name.State == 1 {
-				v.redraw(index, columns)
-			}
-		}
-	}
-	text := fmt.Sprintf("%s / %s · %d/%d verified · %s", clock(elapsed.Seconds()), clock(float64(v.limit)), v.verified(), len(v.names), v.activity)
-	v.emit(clearLine + fit(frame+" "+v.paint(text, "36"), columns-1))
-}
-
-// Close clears an unfinished progress line, including early supervisor errors.
-// No cursor visibility or terminal mode is changed by the animation.
-func (v *LegoView) Close() {
-	wasActive := v.active
-	v.active = false
-	if wasActive && v.ansi {
-		if v.list {
-			_, columns := terminalSize(v.output)
-			for index, name := range v.names {
-				if name.State == 1 {
-					v.redraw(index, columns)
-				}
-			}
-		}
-		v.emit(clearLine)
-	}
-}
-
-func (v *LegoView) redraw(index, columns int) {
-	up := len(v.names) - index
-	v.emit(fmt.Sprintf("\x1b[%dA%s%s\x1b[%dB\r", up, clearLine, v.render(index, columns), up))
+	v.spinner++
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	text := fmt.Sprintf("%s %s / %s · %d/%d verified · %s", frames[v.spinner%len(frames)], clock(time.Since(v.started).Seconds()), clock(float64(v.limit)), v.verified(), len(v.names), v.activity)
+	v.emit(clearLine + fit(v.paint(text, "36"), columns-1))
 }
 func (v *LegoView) set(index, state int, label string, now float64) {
 	name := &v.names[index]
@@ -225,7 +178,8 @@ func (v *LegoView) set(index, state int, label string, now float64) {
 	}
 	_, columns := terminalSize(v.output)
 	if v.list {
-		v.redraw(index, columns)
+		up := len(v.names) - index
+		v.emit(fmt.Sprintf("\x1b[%dA%s%s\x1b[%dB\r", up, clearLine, v.render(index, columns), up))
 	} else if state == 2 {
 		v.emit(v.clear() + v.render(index, columns) + "\n")
 	}
@@ -353,7 +307,6 @@ func (v *LegoView) addWarning(warning string) {
 	}
 }
 func (v *LegoView) Finish(failure string) {
-	v.Close()
 	ok := v.verified()
 	_, columns := terminalSize(v.output)
 	for i := range v.names {
@@ -398,7 +351,7 @@ func (v *LegoView) Finish(failure string) {
 		}
 	}
 	if details > 5 {
-		v.emit(fmt.Sprintf("   %d additional DNS errors\n", details-5))
+		v.emit(fmt.Sprintf("   %d more DNS errors in lego.log\n", details-5))
 	}
 	for i, warning := range v.warnings {
 		if i == 5 {

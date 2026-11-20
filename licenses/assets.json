@@ -27,15 +27,6 @@
       "sha256": "62139a28a9cf563244fe0ad30b05123f1e0de6db32794cfac0c8f56b77eebb3e",
       "runtime": false,
       "artwork_rights": "No independent artwork/trademark grant supplied; no MIT relicensing inferred."
-    },
-    {
-      "path": "assets/logo.svg",
-      "sha256": "4fd4a64a35a2fa7f62592b568ea929ef869944dcea005c08305faa549fef7e3c",
-      "runtime": false,
-      "artwork_rights": "No independent artwork/trademark grant supplied; no MIT relicensing inferred.",
-      "font_notice": "licenses/assets/logo-fonts.txt",
-      "font_notice_sha256": "2155ad345d502be57a5b7fda7f74a7bf0c27b8a821f15f213cffdd3eca159265",
-      "font_license": "Original embedded font notices retained verbatim"
     }
   ]
 }

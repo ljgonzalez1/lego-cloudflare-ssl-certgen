@@ -6,15 +6,16 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' 0
 mkdir "$work/bin"
+export CERTGEN_LOG_DIR="$work/debug-logs"
 entry="$work/certgen"
 
-# A precompiled executable lets the same regression suite test optimized and race builds.
+# A precompiled executable lets the same regression suite test debug and race builds.
 if [ -n "${CERTGEN_CORE:-}" ]; then
     cp -- "$CERTGEN_CORE" "$work/certgen-core"
 else
     (cd "$root/build" && CGO_ENABLED=0 "${GO:-go}" build -buildvcs=false -mod=vendor \
-        -trimpath -tags=netgo,osusergo,certgen_test -ldflags='-s -w -buildid=' \
-        -o "$work/certgen-core" ./cmd/certgen-test)
+        -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false' \
+        -o "$work/certgen-core" ./cmd/certgen)
 fi
 export CERTGEN_TEST_CORE="$work/certgen-core"
 ln -s "$CERTGEN_TEST_CORE" "$work/bin/certgen-core"
@@ -562,11 +563,11 @@ core_supervise() {
 core_stops_on_failed_order() {
     started=$(date +%s)
     # The fatal message spans different reads and its detail follows the header.
-    expect_status 137 certgen-core supervise 10 /bin/sh "$root/ci/tests/fixtures/failed-registration.sh" "$work/failed-order.pid"
+    expect_status 137 certgen-core supervise --log "$work/lego.log" 10 /bin/sh "$root/ci/tests/fixtures/failed-registration.sh" "$work/failed-order.pid"
     [ $(($(date +%s) - started)) -lt 5 ]
     process_gone "$(cat -- "$work/failed-order.pid")"
     assert_contains 'Could not complete registration ACME directory unavailable (lego stopped)' "$stderr"
-    assert_contains 'ACME directory unavailable' "$stderr"
+    assert_contains 'ACME directory unavailable' "$work/lego.log"
 
     # A fatal error is still a failure when the last line has no newline.
     expect_status 1 certgen-core supervise 5 /bin/sh -c \
@@ -607,7 +608,7 @@ YAML
     assert_contains 'blocked: Cloudflare denied API access.' "$stderr"
     assert_contains '(lego stopped)' "$stderr"
     assert_line 'last.example.org' "$TEST_LEGO_LOG"
-    [ -z "$(find "$output" -name '*.log' -print -quit)" ]
+    assert_contains '6111:' "$(find "$output/bad" -name lego.log)"
     summary_rows > "$work/rows"
     printf 'bad:2:0:2:0:FAILED:\nblocked:2:0:2:0:FAILED:\nlast:1:1:0:0:ISSUED:\nTOTAL:5:1:4:0::\n' > "$work/expected"
     diff -u "$work/expected" "$work/rows"
@@ -620,7 +621,7 @@ cli_continues_on_recoverable_errors() {
     assert_contains '✅ Certificate received · 1/1 names verified' "$work/view"
     assert_contains 'TXT record not removed' "$work/view"
     assert_absent '❌' "$work/view"
-    [ -z "$(find "$output" -name '*.log' -print -quit)" ]
+    assert_contains 'serverInternal' "$(find "$output/recover" -name lego.log)"
 }
 
 cli_uses_separate_time_limits() {
@@ -645,13 +646,14 @@ plain_view() {
     sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1" | tr '\r' '\n'
 }
 
-cli_raw_output_without_log() {
+cli_raw_output_and_log() {
     LEGO_OUTPUT=raw expect_status 0 cli --only second
     assert_contains '[INFO] [*.example.org] The server validated our request' "$stderr"
     assert_contains '🔹 *.example.org' "$stdout"
-    assert_contains 'Server responded with a certificate' "$stderr"
-    assert_contains 'HEADS UP' "$stderr"
-    [ -z "$(find "$output" -name '*.log' -print -quit)" ]
+    log=$(find "$output/second" -name lego.log)
+    assert_contains 'Server responded with a certificate' "$log"
+    assert_contains 'HEADS UP' "$log"
+    [ "$(stat -c %a -- "$log")" = 600 ]
 }
 
 cli_live_view() {
@@ -662,10 +664,10 @@ cli_live_view() {
     done
     assert_contains '✅ Certificate received · 5/5 names verified' "$work/view"
     assert_absent '🔹 a.example.com' "$work/view"
-    # Pretty output suppresses lego noise without writing a log file.
+    # lego's log and advice text stay out of the terminal but are kept in the log.
     assert_absent '[INFO]' "$stderr"
     assert_absent 'HEADS UP' "$stdout"
-    [ -z "$(find "$output" -name '*.log' -print -quit)" ]
+    assert_contains 'HEADS UP' "$(find "$output/first" -name lego.log)"
     assert_contains 'Certificates: 1 attempted, 1 issued, 0 failed, 0 skipped.' "$stdout"
 }
 
@@ -740,7 +742,7 @@ LOG
     assert_absent 'cleaning up failed' "$work/view"
     assert_contains 'familita: Cloudflare zone lookup failed.' "$work/view"
     assert_contains '(lego stopped)' "$work/view"
-    assert_absent 'Full lego output:' "$stdout"
+    assert_contains 'Full lego output:' "$stdout"
     summary_rows > "$work/rows"
     printf 'familita:5:0:5:0:FAILED:\nTOTAL:5:0:5:0::\n' > "$work/expected"
     diff -u "$work/expected" "$work/rows"
@@ -933,7 +935,7 @@ check 'ACME retries and cleanup warnings allow issuance to continue' cli_continu
 check 'Each group has its own deadline' cli_uses_separate_time_limits
 check 'Exit status 0 without certificate files counts as failed' cli_requires_saved_certificate
 check 'DNS names are passed to lego in lowercase' cli_lowercases_names
-check 'Raw lego output is shown without creating log files' cli_raw_output_without_log
+check 'Raw lego output is shown and always saved to lego.log' cli_raw_output_and_log
 check 'Live view marks every verified name and hides lego noise' cli_live_view
 check 'Live view replays a real lego failure with exact durations' cli_live_view_replays_failure
 check 'Live view durations use lego clock across midnight' cli_live_view_clock
