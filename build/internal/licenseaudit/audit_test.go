@@ -545,3 +545,57 @@ func TestGoTimezoneNoticesMatchActualSDKData(t *testing.T) {
 		t.Fatal("different timezone ZIP attributed to native SDK")
 	}
 }
+
+// The OCI SDK publishes dual-license terms at the repository root, but its
+// split Go modules can be missing a LICENSE inside the checksum-verified ZIP.
+func TestMissingOCIModuleLicenseUsesPinnedApacheAlternative(t *testing.T) {
+	options, work := fixtureOptions(t)
+	licenseDir := filepath.Join(work, "oci-no-notices")
+	put(t, filepath.Join(licenseDir, "common.go"), "// Copyright (c) Oracle and/or its affiliates.\npackage common\n")
+	put(t, filepath.Join(licenseDir, "NOTICE"), "Copyright Oracle contributors.\n")
+	module := "github.com/nrdcg/oci-go-sdk/common/v1065"
+	version := "v1065.111.0"
+	put(t, filepath.Join(options.Inputs, "Apache-2.0.txt"), "Apache License\nVersion 2.0\nPermission is hereby granted for this fixture.\n")
+	c := &collector{options: options, components: map[string]Component{}, blobs: map[string][]byte{}, aliases: map[string]string{}}
+	id, err := c.component("module:"+module+"@"+version, "go-module", module, version,
+		Source{Directory: licenseDir, Origin: "authenticated fixture", Sum: "h1:fixture"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	component := c.components[id]
+	if len(component.Documents) < 2 {
+		t.Fatal("supplemental license and attribution were not recorded")
+	}
+	seenDocuments := map[string]bool{}
+	for _, d := range component.Documents {
+		if seenDocuments[d.Source] {
+			t.Fatalf("duplicate module license entry: %s", d.Source)
+		}
+		seenDocuments[d.Source] = true
+	}
+	if !seenDocuments["supplemental/Apache-2.0.txt"] || !seenDocuments["supplemental/NOTICE-OCI-SDK.txt"] {
+		t.Fatal("missing supplemental OCI terms or attribution")
+	}
+	for _, d := range component.Documents {
+		if d.Source == "supplemental/Apache-2.0.txt" && !terms(c.blobs[d.SHA256]) {
+			t.Fatal("supplemental license did not contain real terms")
+		}
+	}
+	for _, identity := range []string{
+		"module:" + module + "@v1065.111.1", // Future versions require review.
+		"module:example.test/unlicensed@" + version,
+	} {
+		if _, err := c.component(identity, "go-module", identity, version,
+			Source{Directory: licenseDir, Origin: "fixture"}, false); err == nil {
+			t.Fatalf("unreviewed module accepted: %s", identity)
+		}
+	}
+	if err := os.Remove(filepath.Join(options.Inputs, "Apache-2.0.txt")); err != nil {
+		t.Fatal(err)
+	}
+	other := &collector{options: options, components: map[string]Component{}, blobs: map[string][]byte{}, aliases: map[string]string{}}
+	if _, err := other.component("module:"+module+"@"+version, "go-module", module, version,
+		Source{Directory: licenseDir}, false); err == nil {
+		t.Fatal("required supplemental license may not be missing")
+	}
+}

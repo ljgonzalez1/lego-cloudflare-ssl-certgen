@@ -1,6 +1,6 @@
 # License inventory and verification
 
-The original project code remains MIT licensed, with its copyright and grant preserved in LICENSE. The corrected snapshots collect original third-party notices by actual retained program, dependency, compiler and data version. The original alpha-1 ZIP is an unchanged archival reference.
+The original project code remains MIT licensed, with its copyright and grant preserved in LICENSE. The corrected snapshots from alpha-2 onward collect original third-party notices by actual retained program, dependency, compiler and data version. The original alpha-1 ZIP is an unchanged archival reference.
 
 ## Publishing under MIT
 
@@ -65,4 +65,4 @@ Automated collection and integrity checks are not a legal compatibility opinion.
 - Font notices: metadata embedded in the supplied SVG files, retained verbatim alongside the source
 - Cloudflare brand guidance: https://www.cloudflare.com/trademark/
 
-See the release's `ci/validation-6.0.1-beta-2.md` report for what was actually executed locally and what still requires Docker/network access. Source and fixture tests must not be presented as a completed audit of a real upstream lego image.
+See the release's `ci/validation-6.0.0-alpha-2.md` report for what was actually executed locally and what still requires Docker/network access. Source and fixture tests must not be presented as a completed audit of a real upstream lego image.
