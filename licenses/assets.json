@@ -2,6 +2,21 @@
   "schema": 1,
   "assets": [
     {
+      "path": "assets/banner.png",
+      "sha256": "e835ed0ac73fca47108c0d4940f067cefb4a2bfc4494dafa8a78cbc62465d6aa",
+      "runtime": false,
+      "artwork_rights": "No independent artwork/trademark grant supplied; no MIT relicensing inferred."
+    },
+    {
+      "path": "assets/banner.svg",
+      "sha256": "8bc8f51f8c8597640614bd3b14723a149605cfdb3e0add0b560bee3945108b70",
+      "runtime": false,
+      "artwork_rights": "No independent artwork/trademark grant supplied; no MIT relicensing inferred.",
+      "font_notice": "licenses/assets/banner-fonts.txt",
+      "font_notice_sha256": "a5441f978a1903f54460df8d96f774e5febe782a8432ca754b7fe71e6cb7baba",
+      "font_license": "Original embedded font notices retained verbatim"
+    },
+    {
       "path": "assets/certgen-terminal-example.png",
       "sha256": "b4866b7ce4e22ec9d3b4cdd6cd20417d5bd3f7740e2d72f5971e9620779f0da2",
       "runtime": false,
@@ -10,12 +25,6 @@
     {
       "path": "assets/certgen-terminal-live.png",
       "sha256": "62139a28a9cf563244fe0ad30b05123f1e0de6db32794cfac0c8f56b77eebb3e",
-      "runtime": false,
-      "artwork_rights": "No independent artwork/trademark grant supplied; no MIT relicensing inferred."
-    },
-    {
-      "path": "assets/readme-banner.png",
-      "sha256": "29abb4fa352ff6c1e486f536948dcb39253894a429bd95c22a60cf87573e04bb",
       "runtime": false,
       "artwork_rights": "No independent artwork/trademark grant supplied; no MIT relicensing inferred."
     }

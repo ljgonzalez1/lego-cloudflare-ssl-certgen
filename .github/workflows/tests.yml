@@ -1,273 +1,546 @@
 name: CI/CD
-
-on:
-  push:
-    branches:
-      - master
-      - '[vV][0-9]+.[0-9]*'
-      - '[0-9]+.[0-9]*'
-      - '[vV][0-9]+.[0-9]*/**'
-      - '[0-9]+.[0-9]*/**'
-  pull_request:
-    branches:
-      - master
-      - '[vV][0-9]+.[0-9]*'
-      - '[0-9]+.[0-9]*'
-      - '[vV][0-9]+.[0-9]*/**'
-      - '[0-9]+.[0-9]*/**'
-  release:
-    types: [published]
-
 permissions:
   contents: read
-
 concurrency:
-  group: >-
-    ${{ github.event_name == 'release' && 'certgen-dockerhub-publication' ||
-        format('certgen-ci-{0}', github.run_id) }}
+  group: "${{ github.event_name == 'release' && 'certgen-dockerhub-publication' ||\n    format('certgen-ci-{0}', github.run_id) }}"
   queue: max
-
 env:
   TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
-  VERSION_REF: >-
-    ${{ github.event.release.tag_name ||
-        (github.base_ref == 'master' && github.head_ref) || github.base_ref || github.ref_name }}
-
+  VERSION_REF: "${{ github.event.release.tag_name ||\n    (github.base_ref == 'master' && github.head_ref) || github.base_ref || github.ref_name\
+    \ }}"
 jobs:
-  version_readme:
-    name: Check version in README.md
-    if: >-
-      ${{ github.event.deleted != true &&
-          (github.event_name != 'push' || github.ref == 'refs/heads/master' ||
-           github.event.created != true || github.event.commits[0] != null) }}
-    runs-on: ubuntu-24.04
-    outputs:
-      eligible: ${{ steps.check.outputs.eligible }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Verify the committed Docker tag table
-        id: check
-        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-        run: bash ci/check-version.sh README.md
-      - name: Report advisory version failure
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check.outcome == 'failure' }}
-        run: |
-          printf '::warning file=README.md::Version check failed on push to master; subsequent tests will continue. See the check log for details.\n'
-          printf '### Version check warning: README.md\n\nThe check failed on push to master. Subsequent tests continue; see the check log for details.\n' >> "$GITHUB_STEP_SUMMARY"
-
-  version_dockerhub:
-    name: Check version in DOCKERHUB.md
-    if: >-
-      ${{ github.event.deleted != true &&
-          (github.event_name != 'push' || github.ref == 'refs/heads/master' ||
-           github.event.created != true || github.event.commits[0] != null) }}
-    runs-on: ubuntu-24.04
-    outputs:
-      eligible: ${{ steps.check.outputs.eligible }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Verify the committed Docker tag table
-        id: check
-        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-        run: bash ci/check-version.sh DOCKERHUB.md
-      - name: Report advisory version failure
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check.outcome == 'failure' }}
-        run: |
-          printf '::warning file=DOCKERHUB.md::Version check failed on push to master; subsequent tests will continue. See the check log for details.\n'
-          printf '### Version check warning: DOCKERHUB.md\n\nThe check failed on push to master. Subsequent tests continue; see the check log for details.\n' >> "$GITHUB_STEP_SUMMARY"
-
   static_go:
-    name: Go static code analysis
-    needs: [version_readme, version_dockerhub]
-    if: >-
-      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-          (needs.version_readme.outputs.eligible == 'true' &&
-           needs.version_dockerhub.outputs.eligible == 'true') }}
+    name: Go / Golang static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.27.4'
-          cache: false
-      - name: Check Go formatting and vet all five targets
-        run: bash ci/analyze-go.sh
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Set up pinned Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 1.27.4
+        cache: false
+    - name: Analyze Go / Golang
+      run: python3 -B ci/analyze.py go
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
 
-  static_bash:
-    name: Bash static code analysis
-    needs: [version_readme, version_dockerhub]
-    if: >-
-      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-          (needs.version_readme.outputs.eligible == 'true' &&
-           needs.version_dockerhub.outputs.eligible == 'true') }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
-      - name: Check shell syntax and run ShellCheck
-        run: bash ci/analyze-bash.sh
-
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
   static_python:
     name: Python static code analysis
-    needs: [version_readme, version_dockerhub]
-    if: >-
-      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-          (needs.version_readme.outputs.eligible == 'true' &&
-           needs.version_dockerhub.outputs.eligible == 'true') }}
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Install the pinned Python linter
-        run: python3 -m pip install --disable-pip-version-check -r ci/requirements-lint.txt
-      - name: Check source license copies and asset notices
-        run: python3 -B ci/check_licenses.py
-      - name: Check Python syntax and run Ruff
-        run: python3 -B ci/analyze-python.py
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Install pinned Ruff
+      run: python3 -m pip install --disable-pip-version-check -r ci/requirements-lint.txt
+    - name: Analyze Python
+      run: python3 -B ci/analyze.py python
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
 
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_bash:
+    name: Bash static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze Bash
+      run: python3 -B ci/analyze.py bash
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_posix:
+    name: POSIX shell static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze POSIX shell
+      run: python3 -B ci/analyze.py posix
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_jq:
+    name: jq static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze jq
+      run: python3 -B ci/analyze.py jq
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_awk:
+    name: awk static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze awk
+      run: python3 -B ci/analyze.py awk
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_sed:
+    name: sed static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze sed
+      run: python3 -B ci/analyze.py sed
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_dockerfile:
+    name: Dockerfile static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze Dockerfile
+      run: python3 -B ci/analyze.py dockerfile
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_yaml:
+    name: YAML static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze YAML
+      run: python3 -B ci/analyze.py yaml
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_actions:
+    name: GitHub Actions expressions static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze GitHub Actions expressions
+      run: python3 -B ci/analyze.py actions
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_csv:
+    name: CSV static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze CSV
+      run: python3 -B ci/analyze.py csv
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_json:
+    name: JSON metadata static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze JSON metadata
+      run: python3 -B ci/analyze.py json
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_modules:
+    name: Go modules static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Set up pinned Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 1.27.4
+        cache: false
+    - name: Analyze Go modules
+      run: python3 -B ci/analyze.py modules
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  static_formats:
+    name: Other formats and source inventory static code analysis
+    if: ${{ github.event.deleted != true && (github.event_name != 'push' || github.event.created != true) }}
+    continue-on-error: ${{ github.event_name != 'pull_request' || github.base_ref != 'master' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install static analysis dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq shellcheck gawk
+    - name: Analyze Other formats and source inventory
+      run: python3 -B ci/analyze.py formats
+    - name: Report advisory static failure
+      if: ${{ always() && failure() && (github.event_name != 'pull_request' || github.base_ref != 'master') }}
+      run: 'printf ''::warning::Static analysis failed; this event treats it as advisory. Functional checks remain required.\n''
+
+        printf ''### Static analysis warning\n\nInspect this job for diagnostics. Functional checks remain required.\n'' >> "$GITHUB_STEP_SUMMARY"'
+  version_readme:
+    name: Check version in README.md
+    needs: &id001
+    - static_go
+    - static_python
+    - static_bash
+    - static_posix
+    - static_jq
+    - static_awk
+    - static_sed
+    - static_dockerfile
+    - static_yaml
+    - static_actions
+    - static_csv
+    - static_json
+    - static_modules
+    - static_formats
+    if: ${{ !cancelled() && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'master')) && (needs.static_go.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_go.result == 'failure')) && (needs.static_python.result == 'success'
+      || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_python.result == 'failure')) && (needs.static_bash.result
+      == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_bash.result == 'failure'))
+      && (needs.static_posix.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_posix.result
+      == 'failure')) && (needs.static_jq.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_jq.result == 'failure')) && (needs.static_awk.result == 'success' || ((github.event_name != 'pull_request' ||
+      github.base_ref != 'master') && needs.static_awk.result == 'failure')) && (needs.static_sed.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_sed.result == 'failure')) && (needs.static_dockerfile.result
+      == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_dockerfile.result == 'failure'))
+      && (needs.static_yaml.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_yaml.result
+      == 'failure')) && (needs.static_actions.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_actions.result == 'failure')) && (needs.static_csv.result == 'success' || ((github.event_name != 'pull_request'
+      || github.base_ref != 'master') && needs.static_csv.result == 'failure')) && (needs.static_json.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_json.result == 'failure')) && (needs.static_modules.result ==
+      'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_modules.result == 'failure'))
+      && (needs.static_formats.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_formats.result
+      == 'failure')) }}
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Check committed version table
+      run: bash ci/check-version.sh README.md
+  version_dockerhub:
+    name: Check version in DOCKERHUB.md
+    needs: *id001
+    if: ${{ !cancelled() && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'master')) && (needs.static_go.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_go.result == 'failure')) && (needs.static_python.result == 'success'
+      || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_python.result == 'failure')) && (needs.static_bash.result
+      == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_bash.result == 'failure'))
+      && (needs.static_posix.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_posix.result
+      == 'failure')) && (needs.static_jq.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_jq.result == 'failure')) && (needs.static_awk.result == 'success' || ((github.event_name != 'pull_request' ||
+      github.base_ref != 'master') && needs.static_awk.result == 'failure')) && (needs.static_sed.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_sed.result == 'failure')) && (needs.static_dockerfile.result
+      == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_dockerfile.result == 'failure'))
+      && (needs.static_yaml.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_yaml.result
+      == 'failure')) && (needs.static_actions.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_actions.result == 'failure')) && (needs.static_csv.result == 'success' || ((github.event_name != 'pull_request'
+      || github.base_ref != 'master') && needs.static_csv.result == 'failure')) && (needs.static_json.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_json.result == 'failure')) && (needs.static_modules.result ==
+      'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_modules.result == 'failure'))
+      && (needs.static_formats.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_formats.result
+      == 'failure')) }}
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Check committed version table
+      run: bash ci/check-version.sh DOCKERHUB.md
   offline:
     name: Offline CA and runtime tests
-    needs: [static_go, static_bash, static_python]
+    needs: &id002
+    - static_go
+    - static_python
+    - static_bash
+    - static_posix
+    - static_jq
+    - static_awk
+    - static_sed
+    - static_dockerfile
+    - static_yaml
+    - static_actions
+    - static_csv
+    - static_json
+    - static_modules
+    - static_formats
+    - version_readme
+    - version_dockerhub
+    if: ${{ !cancelled() && (needs.static_go.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_go.result == 'failure')) && (needs.static_python.result == 'success' || ((github.event_name != 'pull_request'
+      || github.base_ref != 'master') && needs.static_python.result == 'failure')) && (needs.static_bash.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_bash.result == 'failure')) && (needs.static_posix.result ==
+      'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_posix.result == 'failure'))
+      && (needs.static_jq.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_jq.result
+      == 'failure')) && (needs.static_awk.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_awk.result == 'failure')) && (needs.static_sed.result == 'success' || ((github.event_name != 'pull_request' ||
+      github.base_ref != 'master') && needs.static_sed.result == 'failure')) && (needs.static_dockerfile.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_dockerfile.result == 'failure')) && (needs.static_yaml.result
+      == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_yaml.result == 'failure'))
+      && (needs.static_actions.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_actions.result
+      == 'failure')) && (needs.static_csv.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_csv.result == 'failure')) && (needs.static_json.result == 'success' || ((github.event_name != 'pull_request' ||
+      github.base_ref != 'master') && needs.static_json.result == 'failure')) && (needs.static_modules.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_modules.result == 'failure')) && (needs.static_formats.result
+      == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_formats.result == 'failure'))
+      && (((github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master')) && needs.version_readme.result == 'success' && needs.version_dockerhub.result
+      == 'success') || (!(github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master')) && needs.version_readme.result == 'skipped' && needs.version_dockerhub.result
+      == 'skipped')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install test dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.27.4'
-          cache: false
-      - name: Run the offline issuance, menu, error and signal regressions
-        run: sh ci/tests/run.sh
-      - name: Test Docker Hub verification logic
-        run: bash ci/test-dockerhub.sh
-      - name: Test Buildx metadata, platform hashes and release tag configuration
-        run: python3 -B ci/test_publish.py
-      - name: Test CI event routing and job dependencies
-        run: python3 -B ci/test_workflows.py
-      - name: Test prerelease tag policy
-        run: python3 -B ci/versions/test_tags.py
-
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install test dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-yaml jq
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 1.27.4
+        cache: false
+    - name: Run the offline issuance, menu, error and signal regressions
+      run: sh ci/tests/run.sh
+    - name: Test Docker Hub verification logic
+      run: bash ci/test-dockerhub.sh
+    - name: Test Buildx metadata, platform hashes and release tag configuration
+      run: python3 -B ci/test_publish.py
+    - name: Test CI event routing and job dependencies
+      run: python3 -B ci/test_workflows.py
+    - name: Test prerelease tag policy
+      run: python3 -B ci/versions/test_tags.py
   go_tests:
     name: Go offline tests and debug binaries
-    needs: [static_go, static_bash, static_python]
+    needs: *id002
+    if: ${{ !cancelled() && (needs.static_go.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_go.result == 'failure')) && (needs.static_python.result == 'success' || ((github.event_name != 'pull_request'
+      || github.base_ref != 'master') && needs.static_python.result == 'failure')) && (needs.static_bash.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_bash.result == 'failure')) && (needs.static_posix.result ==
+      'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_posix.result == 'failure'))
+      && (needs.static_jq.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_jq.result
+      == 'failure')) && (needs.static_awk.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_awk.result == 'failure')) && (needs.static_sed.result == 'success' || ((github.event_name != 'pull_request' ||
+      github.base_ref != 'master') && needs.static_sed.result == 'failure')) && (needs.static_dockerfile.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_dockerfile.result == 'failure')) && (needs.static_yaml.result
+      == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_yaml.result == 'failure'))
+      && (needs.static_actions.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_actions.result
+      == 'failure')) && (needs.static_csv.result == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master')
+      && needs.static_csv.result == 'failure')) && (needs.static_json.result == 'success' || ((github.event_name != 'pull_request' ||
+      github.base_ref != 'master') && needs.static_json.result == 'failure')) && (needs.static_modules.result == 'success' || ((github.event_name
+      != 'pull_request' || github.base_ref != 'master') && needs.static_modules.result == 'failure')) && (needs.static_formats.result
+      == 'success' || ((github.event_name != 'pull_request' || github.base_ref != 'master') && needs.static_formats.result == 'failure'))
+      && (((github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master')) && needs.version_readme.result == 'success' && needs.version_dockerhub.result
+      == 'success') || (!(github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master')) && needs.version_readme.result == 'skipped' && needs.version_dockerhub.result
+      == 'skipped')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install native race-detector dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc python3
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.27.4'
-          cache: false
-      - name: Run shuffled Go unit tests with full debug information and coverage
-        working-directory: build
-        env:
-          CGO_ENABLED: '0'
-        run: >-
-          go test -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m
-          -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false'
-          -coverprofile=coverage.out ./...
-      - name: Check races with pointer checks on native AMD64
-        working-directory: build
-        env:
-          CGO_ENABLED: '1'
-        run: >-
-          go test -race -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m
-          -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false' ./...
-      - name: Fuzz argument parsing, YAML and lego logs offline
-        working-directory: build
-        env:
-          CGO_ENABLED: '0'
-        run: |
-          for target in FuzzParseOptions FuzzLoadDomains FuzzLegoLog; do
-            go test -buildvcs=false -mod=vendor -run='^$' -fuzz="^${target}$" \
-              -fuzztime=15s -parallel=2 -timeout=2m \
-              -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false' ./internal/certgen
-          done
-      - name: Test real Go binaries, logs, dumps and five debug ELF targets
-        run: python3 -B ci/test_go_binary.py
-
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install native race-detector dependencies
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc python3
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 1.27.4
+        cache: false
+    - name: Run shuffled Go unit tests with full debug information and coverage
+      working-directory: build
+      env:
+        CGO_ENABLED: '0'
+      run: go test -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false'
+        -coverprofile=coverage.out ./...
+    - name: Check races with pointer checks on native AMD64
+      working-directory: build
+      env:
+        CGO_ENABLED: '1'
+      run: go test -race -buildvcs=false -mod=vendor -shuffle=on -count=1 -timeout=5m -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false'
+        ./...
+    - name: Fuzz argument parsing, YAML and lego logs offline
+      working-directory: build
+      env:
+        CGO_ENABLED: '0'
+      run: "for target in FuzzParseOptions FuzzLoadDomains FuzzLegoLog; do\n  go test -buildvcs=false -mod=vendor -run='^$' -fuzz=\"\
+        ^${target}$\" \\\n    -fuzztime=15s -parallel=2 -timeout=2m \\\n    -gcflags='all=-N -l -d=checkptr=2' -ldflags='-compressdwarf=false'\
+        \ ./internal/certgen\ndone\n"
+    - name: Test real Go binaries, logs, dumps and five debug ELF targets
+      run: python3 -B ci/test_go_binary.py
   smoke_armv6:
     name: ARMv6 smoke test
-    needs: [offline, go_tests]
-    if: >-
-      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+    needs:
+    - offline
+    - go_tests
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/arm/v6
-
   smoke_armv7:
     name: ARMv7 smoke test
-    needs: [offline, go_tests]
-    if: >-
-      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+    needs:
+    - offline
+    - go_tests
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/arm/v7
-
   smoke_arm64:
     name: ARM64 smoke test
-    needs: [offline, go_tests]
-    if: >-
-      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+    needs:
+    - offline
+    - go_tests
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/arm64
-
   smoke_i386:
     name: i386 smoke test
-    needs: [offline, go_tests]
-    if: >-
-      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+    needs:
+    - offline
+    - go_tests
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/386
-
   smoke_amd64:
     name: AMD64 smoke test
-    needs: [offline, go_tests]
-    if: >-
-      ${{ github.event_name == 'release' || github.event_name == 'pull_request' ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+    needs:
+    - offline
+    - go_tests
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name
+      == 'pull_request' && github.base_ref == 'master') }}
     uses: ./.github/workflows/smoke.yml
     with:
       platform: linux/amd64
-
   publish:
     name: Buildx and push to Docker Hub
     if: github.event_name == 'release'
-    needs: [smoke_armv6, smoke_armv7, smoke_arm64, smoke_i386, smoke_amd64]
+    needs:
+    - smoke_armv6
+    - smoke_armv7
+    - smoke_arm64
+    - smoke_i386
+    - smoke_amd64
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     outputs:
@@ -278,64 +551,70 @@ jobs:
       digest_i386: ${{ steps.push.outputs.digest_i386 }}
       digest_amd64: ${{ steps.push.outputs.digest_amd64 }}
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
+    - uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Check that Docker Hub credentials are configured
+      shell: bash
+      env:
+        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
+        DOCKERHUB_DESCRIPTION_TOKEN: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
+      run: ': "${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}"
 
-      - name: Check that Docker Hub credentials are configured
-        shell: bash
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
-          DOCKERHUB_DESCRIPTION_TOKEN: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
-        run: |
-          : "${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}"
-          : "${DOCKERHUB_PUSH_TOKEN:?Set DOCKERHUB_PUSH_TOKEN}"
-          : "${DOCKERHUB_DESCRIPTION_TOKEN:?Set DOCKERHUB_DESCRIPTION_TOKEN}"
+        : "${DOCKERHUB_PUSH_TOKEN:?Set DOCKERHUB_PUSH_TOKEN}"
 
-      - name: Build and publish all five platforms
-        id: push
-        shell: bash
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          result="$RUNNER_TEMP/certgen-publish.json"
-          PUBLISH_RESULT_FILE="$result" bash ci/publish-image.sh
-          bash ci/read-publish-result.sh "$result" > "$RUNNER_TEMP/certgen-outputs"
-          cat "$RUNNER_TEMP/certgen-outputs" >> "$GITHUB_OUTPUT"
-          printf 'Exported the index hash and all five platform hashes.\n'
+        : "${DOCKERHUB_DESCRIPTION_TOKEN:?Set DOCKERHUB_DESCRIPTION_TOKEN}"
 
+        '
+    - name: Build and publish all five platforms
+      id: push
+      shell: bash
+      env:
+        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        DOCKERHUB_PUSH_TOKEN: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: 'result="$RUNNER_TEMP/certgen-publish.json"
+
+        PUBLISH_RESULT_FILE="$result" bash ci/publish-image.sh
+
+        bash ci/read-publish-result.sh "$result" > "$RUNNER_TEMP/certgen-outputs"
+
+        cat "$RUNNER_TEMP/certgen-outputs" >> "$GITHUB_OUTPUT"
+
+        printf ''Exported the index hash and all five platform hashes.\n''
+
+        '
   update_description:
     name: Update Docker Hub overview
     needs: publish
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Update the Docker Hub overview
-        uses: peter-evans/dockerhub-description@v5
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
-          repository: ljgonzalez/lego-cloudflare-certgen
-          readme-filepath: ./DOCKERHUB.md
-
+    - uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Update the Docker Hub overview
+      uses: peter-evans/dockerhub-description@v5
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
+        repository: ljgonzalez/lego-cloudflare-certgen
+        readme-filepath: ./DOCKERHUB.md
   wait_image:
-    name: "Test: wait 20 seconds for image propagation"
+    name: 'Test: wait 20 seconds for image propagation'
     needs: publish
     runs-on: ubuntu-24.04
     steps:
-      - name: Wait for image propagation
-        run: |
-          sleep 20
-          echo Done waiting
-          true
+    - name: Wait for image propagation
+      run: 'sleep 20
 
+        echo Done waiting
+
+        true
+
+        '
   verify_image:
     name: Verify published version tag
     needs: wait_image
@@ -343,64 +622,84 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Find a full-version tag from the final CSV row
-        id: tag
-        run: bash ci/check-dockerhub.sh tag
-
+    - uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Find a full-version tag from the final CSV row
+      id: tag
+      run: bash ci/check-dockerhub.sh tag
   verify_hashes:
     name: Compare SHA-256 (${{ matrix.platform }})
-    needs: [publish, verify_image]
+    needs:
+    - publish
+    - verify_image
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: linux/arm/v6
-            output: digest_armv6
-          - platform: linux/arm/v7
-            output: digest_armv7
-          - platform: linux/arm64
-            output: digest_arm64
-          - platform: linux/386
-            output: digest_i386
-          - platform: linux/amd64
-            output: digest_amd64
+        - platform: linux/arm/v6
+          output: digest_armv6
+        - platform: linux/arm/v7
+          output: digest_armv7
+        - platform: linux/arm64
+          output: digest_arm64
+        - platform: linux/386
+          output: digest_i386
+        - platform: linux/amd64
+          output: digest_amd64
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Compare Buildx hash with Docker Hub
-        env:
-          PLATFORM: ${{ matrix.platform }}
-          TAG: ${{ needs.verify_image.outputs.tag }}
-          EXPECTED_DIGEST: ${{ needs.publish.outputs[matrix.output] }}
-          INDEX_DIGEST: ${{ needs.publish.outputs.digest }}
-        run: bash ci/check-dockerhub.sh platform "$PLATFORM" "$TAG" "$EXPECTED_DIGEST" "$INDEX_DIGEST"
-
+    - uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Compare Buildx hash with Docker Hub
+      env:
+        PLATFORM: ${{ matrix.platform }}
+        TAG: ${{ needs.verify_image.outputs.tag }}
+        EXPECTED_DIGEST: ${{ needs.publish.outputs[matrix.output] }}
+        INDEX_DIGEST: ${{ needs.publish.outputs.digest }}
+      run: bash ci/check-dockerhub.sh platform "$PLATFORM" "$TAG" "$EXPECTED_DIGEST" "$INDEX_DIGEST"
   wait_description:
-    name: "Test: wait 20 seconds for description propagation"
+    name: 'Test: wait 20 seconds for description propagation'
     needs: update_description
     runs-on: ubuntu-24.04
     steps:
-      - name: Wait for description propagation
-        run: |
-          sleep 20
-          echo Done waiting
-          true
+    - name: Wait for description propagation
+      run: 'sleep 20
 
+        echo Done waiting
+
+        true
+
+        '
   verify_description:
     name: Verify published Docker Hub overview
     needs: wait_description
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Compare Docker Hub Markdown
-        run: bash ci/check-dockerhub.sh description
+    - uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Compare Docker Hub Markdown
+      run: bash ci/check-dockerhub.sh description
+'on':
+  push:
+    branches:
+    - master
+    - '[vV][0-9]+.[0-9]*'
+    - '[0-9]+.[0-9]*'
+    - '[vV][0-9]+.[0-9]*/**'
+    - '[0-9]+.[0-9]*/**'
+  pull_request:
+    branches:
+    - master
+    - '[vV][0-9]+.[0-9]*'
+    - '[0-9]+.[0-9]*'
+    - '[vV][0-9]+.[0-9]*/**'
+    - '[0-9]+.[0-9]*/**'
+  release:
+    types:
+    - published

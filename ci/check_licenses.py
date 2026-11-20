@@ -24,6 +24,8 @@ def main():
     inventory = json.loads((ROOT / "licenses/assets.json").read_text())
     actual = {str(p.relative_to(ROOT)) for p in (ROOT / "assets").iterdir() if p.is_file()}
     expected = {entry["path"] for entry in inventory["assets"]}
+    if len(expected) != len(inventory["assets"]):
+        raise ValueError("Duplicate asset inventory paths")
     if actual != expected:
         raise ValueError("Asset inventory must be updated for added or removed assets")
     unresolved = []
