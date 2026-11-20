@@ -10,11 +10,6 @@ case "$platform" in
     *) printf 'Unsupported smoke-test platform: %s\n' "$platform" >&2; exit 2 ;;
 esac
 
-case "$(uname -m)" in
-    x86_64) native_platform=linux/amd64 ;;
-    aarch64|arm64) native_platform=linux/arm64 ;;
-    *) printf 'Unsupported smoke-test agent architecture\n' >&2; exit 2 ;;
-esac
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/certgen-smoke.XXXXXXXX")
 id=${scratch##*.}
@@ -30,13 +25,9 @@ cleanup() {
 trap cleanup EXIT
 
 options=(--platform "$platform" --progress=plain --tag "$image" "${version_build_args[@]}")
-if [[ "$platform" == "$native_platform" ]]; then
-    docker build "${options[@]}" ./build
-else
-    name="certgen-smoke-$id"
-    docker buildx create --name "$name" --driver docker-container
-    builder=$name
-    docker buildx build --builder "$builder" "${options[@]}" --load ./build
-fi
+name="certgen-smoke-$id"
+docker buildx create --name "$name" --driver docker-container --driver-opt image=moby/buildkit:v0.35.1
+builder=$name
+docker buildx build --builder "$builder" "${options[@]}" --load ./build
 
 bash ci/tests/smoke.sh "$platform" "$image"

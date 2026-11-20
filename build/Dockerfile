@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.29.0
 ARG ALPINE_VERSION=3.24.4
 ARG GO_VERSION=1.27.4
-ARG APP_VERSION=6.0.1-beta-2
+ARG APP_VERSION=6.0.1-beta-3
 ARG LEGO_VERSION=v4.34.0
 
 # Build tools always run natively. Go cross-compiles the static target binary.
@@ -14,6 +14,7 @@ WORKDIR /src
 COPY go.mod ./
 COPY vendor/ ./vendor/
 COPY internal/ ./internal/
+COPY spinner/ ./spinner/
 COPY cmd/ ./cmd/
 COPY licenses/ /licenses/
 RUN ["go", "build", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags=-compressdwarf=false", "-o", "/certgen-build", "./cmd/certgen-build"]
@@ -77,6 +78,7 @@ COPY --from=downloader /out/LICENSE /usr/share/licenses/lego/LICENSE
 # Keep original source paths for Delve and readable source-level stack traces.
 COPY go.mod /src/go.mod
 COPY internal/ /src/internal/
+COPY spinner/ /src/spinner/
 COPY cmd/ /src/cmd/
 COPY vendor/ /src/vendor/
 WORKDIR /app
