@@ -1,6 +1,6 @@
 # 🔐 Lego Cloudflare Certgen
 
-![Project banner](https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/master/assets/banner.png)
+![Project banner](https://raw.githubusercontent.com/ljgonzalez1/lego-cloudflare-ssl-certgen/master/assets/readme-banner.png)
 
 [GitHub repository and documentation](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen)
 
@@ -42,18 +42,18 @@ website:
 docker run --rm -it --env-file .env \
   -v "$PWD/domains.yaml:/app/domains.yaml:ro" \
   -v "$PWD/ssl-certs:/ssl-certs" \
-  ljgonzalez/lego-cloudflare-certgen:v6.0.1-beta-1
+  ljgonzalez/lego-cloudflare-certgen:v6.0.0-alpha-2
 ```
 
 Add `--dry-run` to preview the request. When staging works, choose **Production** and confirm it for trusted certificates. The files are saved under `ssl-certs/`. This command pins the Go beta; `latest` tracks stable releases in the table below.
 
 ❌ The live view reports definitive errors such as an invalid token, missing zone access or a rate limit. The failed group ends early and the other groups still run. Each certificate allows up to 100 names and has its own deadline of at most two hours. The run ends with the issued and failed counts.
 
-🧪 **v6.0.1-beta-1 migrates the application to Go**, with optimizations disabled, full debug symbols and redacted beta traces on errors. `latest` stays on stable **v5.2.4**. Delve is considered on AMD64, ARM64 and i386 and retained only after a real execution probe passes. All five architectures attempt Go logs and text dumps.
+🧪 **v6.0.0-alpha-2 migrates the application to Go**, with optimizations disabled, full debug symbols and redacted beta traces on errors. `latest` stays on stable **v5.2.4**. Delve is considered on AMD64, ARM64 and i386 and retained only after a real execution probe passes. All five architectures attempt Go logs and text dumps.
 
 🤖 Add `--staging` to request staging certificates unattended. **`--production` bypasses confirmation and consumes live rate limits.** `--test` checks the compiled program and lego offline. The optional Compose file runs unattended in staging; edit its `x-certgen-mode` value to select production. [Debugging and full documentation](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen#debugging-the-go-beta)
 
-📝 Every run attempts a private log under `/ssl-certs/debug`, preserved by the certificate bind above. Failures also produce `dump.<log-name>` before the supervisor closes. Names use `v6.0.1-beta-1.AAAA-DD-MM_HH.MM.SS.arch.log`. The Go supervisor remains active when Delve is unsupported or unavailable. Abruptly killing the whole container cannot guarantee a final dump.
+📝 Every run attempts a private log under `/ssl-certs/debug`, preserved by the certificate bind above. Failures also produce `dump.<log-name>` before the supervisor closes. Names use `v6.0.0-alpha-2.AAAA-DD-MM_HH.MM.SS.arch.log`. The Go supervisor remains active when Delve is unsupported or unavailable. Abruptly killing the whole container cannot guarantee a final dump.
 
 ## 🏷️ Tags and platforms
 
