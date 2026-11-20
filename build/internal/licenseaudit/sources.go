@@ -34,6 +34,8 @@ type NativeSources struct {
 	Client                              *http.Client
 	modules                             map[string]Source
 	goRoots                             map[string]Source
+
+	Progress func(string, ...any)
 }
 
 func NewNativeSources(root, toolchain string) (*NativeSources, error) {
@@ -84,13 +86,30 @@ func (s *NativeSources) Module(module, version, expected string) (Source, error)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
+	started := time.Now()
+	logProgress(s.Progress, "Go module download: %s (limit 4m; authenticated shared cache may be in use)", key)
 	command := exec.CommandContext(ctx, s.Go, "mod", "download", "-json", key)
 	command.Dir = s.Work
 	command.Env = environment
+	// Bound pipe draining too: a surviving VCS child can otherwise keep Output
+	// waiting after the Go command exits or its context has been cancelled.
+	command.WaitDelay = 5 * time.Second
+	logProgress(s.Progress, "EXEC %q; working directory=%s; context limit=4m; pipe drain limit=5s", command.Args, s.Work)
 	data, err := command.Output()
 	if err != nil {
-		return Source{}, fmt.Errorf("cannot obtain authenticated source for %s: %w", key, err)
+		var failure struct{ Error string }
+		_ = json.Unmarshal(data, &failure)
+		if failure.Error == "" {
+			if exited, ok := err.(*exec.ExitError); ok {
+				failure.Error = string(exited.Stderr)
+			}
+		}
+		if ctx.Err() != nil {
+			failure.Error = ctx.Err().Error() + ": " + failure.Error
+		}
+		return Source{}, fmt.Errorf("cannot obtain authenticated source for %s after %s: %w: %s", key, time.Since(started).Round(time.Millisecond), err, safeDiagnostic(failure.Error))
 	}
+	logProgress(s.Progress, "Go module download completed: %s in %s", key, time.Since(started).Round(time.Millisecond))
 	var result struct{ Path, Version, Dir, Zip, Sum, Error string }
 	if err = json.Unmarshal(data, &result); err != nil {
 		return Source{}, err
@@ -102,9 +121,11 @@ func (s *NativeSources) Module(module, version, expected string) (Source, error)
 		return Source{}, fmt.Errorf("module checksum mismatch for %s", key)
 	}
 	directory := filepath.Join(s.Work, "module-"+digest([]byte(key)))
-	if err = authenticatedModuleSource(result.Zip, result.Sum, directory); err != nil {
+	logProgress(s.Progress, "authenticate cached ZIP and extract source notices: %s", key)
+	if err = authenticatedModuleSourceWithProgress(result.Zip, result.Sum, directory, s.Progress); err != nil {
 		return Source{}, err
 	}
+	logProgress(s.Progress, "module source ready: %s", key)
 	source := Source{Directory: directory, Origin: "Go module proxy source: " + key, Sum: result.Sum}
 	s.modules[key] = source
 	return source, nil
@@ -121,6 +142,7 @@ func readGoVersion(root string) (string, error) {
 	return fields[0], nil
 }
 func (s *NativeSources) GoSource(version string) (Source, error) {
+	logProgress(s.Progress, "resolve Go SDK source: %s", version)
 	if cached, ok := s.goRoots[version]; ok {
 		return cached, nil
 	}
@@ -151,7 +173,20 @@ func (s *NativeSources) GoSource(version string) (Source, error) {
 	s.goRoots[version] = source
 	return source, nil
 }
-func (s *NativeSources) fetch(url string, limit int64) ([]byte, error) {
+func (s *NativeSources) fetch(url string, limit int64) (data []byte, err error) {
+	started := time.Now()
+	timeout := time.Duration(0)
+	if s.Client != nil {
+		timeout = s.Client.Timeout
+	}
+	logProgress(s.Progress, "HTTP GET %s (client timeout %s)", url, timeout)
+	defer func() {
+		if err != nil {
+			logProgress(s.Progress, "HTTP failed after %s: %s: %v", time.Since(started).Round(time.Millisecond), url, err)
+		} else {
+			logProgress(s.Progress, "HTTP body complete: %s (%d bytes, %s)", url, len(data), time.Since(started).Round(time.Millisecond))
+		}
+	}()
 	if !strings.HasPrefix(url, "https://") {
 		return nil, fmt.Errorf("untrusted non-HTTPS source URL")
 	}
@@ -160,10 +195,11 @@ func (s *NativeSources) fetch(url string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	defer response.Body.Close()
+	logProgress(s.Progress, "HTTP status %d: %s", response.StatusCode, url)
 	if response.StatusCode != 200 {
 		return nil, fmt.Errorf("source server returned HTTP %d", response.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	data, err = io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
@@ -352,20 +388,69 @@ func extractSource(data []byte, name, directory string) error {
 
 func (s *NativeSources) aports(commit, relative string, valid func([]byte) bool) ([]byte, string, error) {
 	urls := []string{
+		"https://raw.githubusercontent.com/alpinelinux/aports/" + commit + "/" + relative,
 		"https://gitlab.alpinelinux.org/alpine/aports/-/raw/" + commit + "/" + relative,
 		"https://git.alpinelinux.org/aports/plain/" + relative + "?id=" + commit,
-		"https://raw.githubusercontent.com/alpinelinux/aports/" + commit + "/" + relative,
 	}
+	var failures []string
 	for _, url := range urls {
 		data, err := s.fetch(url, maxDocument)
 		if err == nil && valid(data) {
+			logProgress(s.Progress, "installed package recipe verified: %s at %s", relative, commit)
 			return data, url, nil
 		}
+		if err == nil {
+			err = fmt.Errorf("response did not match the installed package recipe")
+		}
+		failures = append(failures, url+": "+err.Error())
+		logProgress(s.Progress, "aports candidate rejected; trying next pinned mirror: %s: %v", url, err)
 	}
-	return nil, "", fmt.Errorf("cannot obtain valid pinned aports evidence: %s at %s", relative, commit)
+	return nil, "", fmt.Errorf("cannot obtain valid pinned aports evidence: %s at %s: %s", relative, commit, strings.Join(failures, "; "))
+}
+
+func packageRecipe(data []byte, fields map[string]string) bool {
+	values := map[string]string{}
+	for _, key := range []string{"pkgname", "pkgver", "pkgrel", "license"} {
+		value, err := assignment(string(data), key)
+		if err != nil {
+			return false
+		}
+		values[key] = value
+	}
+	return values["pkgname"] == fields["o"] && values["pkgver"]+"-r"+values["pkgrel"] == fields["V"] &&
+		strings.Join(strings.Fields(values["license"]), " ") == strings.Join(strings.Fields(fields["L"]), " ")
+}
+
+// Mirrors may supply the same archive, never a different revision or checksum.
+func (s *NativeSources) sourceArchive(entry [3]string) ([]byte, string, error) {
+	urls := []string{entry[1]}
+	release, err := os.ReadFile(filepath.Join(s.DataRoot, "etc/alpine-release"))
+	if err == nil {
+		match := regexp.MustCompile(`^([0-9]+\.[0-9]+)\.[0-9]+$`).FindStringSubmatch(strings.TrimSpace(string(release)))
+		if match != nil {
+			// Prefer Alpine's distribution mirror over source hosts with bot challenges.
+			urls = append([]string{"https://distfiles.alpinelinux.org/distfiles/v" + match[1] + "/" + entry[0]}, urls...)
+		}
+	}
+	var failures []string
+	for _, url := range urls {
+		data, err := s.fetch(url, 128<<20)
+		if err == nil {
+			sum := sha512.Sum512(data)
+			if hex.EncodeToString(sum[:]) == entry[2] {
+				logProgress(s.Progress, "source archive SHA-512 verified: %s", entry[0])
+				return data, url, nil
+			}
+			err = fmt.Errorf("source archive checksum mismatch")
+		}
+		failures = append(failures, url+": "+err.Error())
+		logProgress(s.Progress, "source archive candidate rejected: %s: %v", url, err)
+	}
+	return nil, "", fmt.Errorf("cannot obtain checksum-verified source archive %s: %s", entry[0], strings.Join(failures, "; "))
 }
 
 func (s *NativeSources) Data(kind string) (Source, error) {
+	logProgress(s.Progress, "check runtime data payload: %s", kind)
 	if kind == "tzdata" {
 		if _, err := os.Stat(filepath.Join(s.Root, "usr/share/zoneinfo.zip")); err == nil {
 			hash, err := hashFile(filepath.Join(s.Root, "usr/share/zoneinfo.zip"))
@@ -475,6 +560,7 @@ func (s *NativeSources) Data(kind string) (Source, error) {
 	if err != nil {
 		return Source{}, err
 	}
+	logProgress(s.Progress, "installed APK: %s %s; declared license %s; aports commit %s", name, fields["V"], fields["L"], fields["c"])
 	origin := fields["o"]
 	if origin == "" {
 		origin = name
@@ -484,12 +570,10 @@ func (s *NativeSources) Data(kind string) (Source, error) {
 		return Source{}, fmt.Errorf("invalid package source origin")
 	}
 	recipe, base, err := s.aports(fields["c"], "main/"+origin+"/APKBUILD", func(data []byte) bool {
-		_, sourceErr := assignment(string(data), "source")
-		_, nameErr := assignment(string(data), "pkgname")
-		return sourceErr == nil || nameErr == nil
+		return packageRecipe(data, fields)
 	})
 	if err != nil {
-		return Source{}, err
+		return Source{}, fmt.Errorf("installed package %s %s: %w", name, fields["V"], err)
 	}
 	directory := filepath.Join(s.Work, "data-"+name)
 	if err = os.MkdirAll(directory, 0755); err != nil {
@@ -497,18 +581,11 @@ func (s *NativeSources) Data(kind string) (Source, error) {
 	}
 	var notice strings.Builder
 	fmt.Fprintf(&notice, "Installed Alpine package: %s %s\nDeclared license: %s\nSource recipe: %s\n\n", name, fields["V"], fields["L"], base)
-	// The package recipe and local patches belong to aports, in addition to upstream archives.
-	license, repositoryLicense, licenseErr := s.aports(fields["c"], "COPYING", terms)
-	if licenseErr != nil {
-		return Source{}, fmt.Errorf("cannot obtain aports copyright and terms: %w", licenseErr)
-	}
-	if err = os.WriteFile(filepath.Join(directory, "COPYING-aports"), license, 0644); err != nil {
-		return Source{}, err
-	}
+	// Aports has no repository-root COPYING. Retain the exact recipe (including
+	// contributor notices), then collect the checksum-bound upstream notices.
 	if err = os.WriteFile(filepath.Join(directory, "NOTICE-APKBUILD.txt"), recipe, 0644); err != nil {
 		return Source{}, err
 	}
-	fmt.Fprintf(&notice, "Packaging copyright and terms: %s\n", repositoryLicense)
 	var archives [][3]string
 	if kind != "alpine-release" {
 		archives, err = sourceArchives(string(recipe), fields)
@@ -519,18 +596,15 @@ func (s *NativeSources) Data(kind string) (Source, error) {
 		return Source{}, fmt.Errorf("release metadata source/license changed; explicit review required")
 	}
 	for index, entry := range archives {
-		data, err := s.fetch(entry[1], 128<<20)
+		data, sourceURL, err := s.sourceArchive(entry)
 		if err != nil {
 			return Source{}, err
-		}
-		sum := sha512.Sum512(data)
-		if hex.EncodeToString(sum[:]) != entry[2] {
-			return Source{}, fmt.Errorf("source archive checksum mismatch: %s", entry[0])
 		}
 		if err = extractSource(data, entry[0], filepath.Join(directory, fmt.Sprint(index))); err != nil {
 			return Source{}, err
 		}
-		fmt.Fprintf(&notice, "Corresponding source: %s\nSHA-512: %s\n", entry[1], entry[2])
+		logProgress(s.Progress, "source archive extracted: %s", entry[0])
+		fmt.Fprintf(&notice, "Corresponding source: %s\nRetrieved from: %s\nSHA-512: %s\n", entry[1], sourceURL, entry[2])
 	}
 	if err = os.WriteFile(filepath.Join(directory, "NOTICE-source-provenance.txt"), []byte(notice.String()), 0644); err != nil {
 		return Source{}, err
@@ -541,12 +615,17 @@ func (s *NativeSources) Data(kind string) (Source, error) {
 // Authenticate the cached archive itself using Go's documented h1 directory-hash
 // format. Do not trust a mutable extracted module-cache directory as evidence.
 func authenticatedModuleSource(archivePath, expected, destination string) error {
+	return authenticatedModuleSourceWithProgress(archivePath, expected, destination, nil)
+}
+
+func authenticatedModuleSourceWithProgress(archivePath, expected, destination string, progress func(string, ...any)) error {
 	archive, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return err
 	}
 	defer archive.Close()
 	files := append([]*zip.File(nil), archive.File...)
+	logProgress(progress, "authenticate Go ZIP: %d entries", len(files))
 	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
 	outer := sha256.New()
 	total := uint64(0)
@@ -582,6 +661,7 @@ func authenticatedModuleSource(archivePath, expected, destination string) error 
 	if actual != expected {
 		return fmt.Errorf("cached module ZIP checksum mismatch")
 	}
+	logProgress(progress, "Go ZIP h1 verified (%d expanded bytes); extracting notice sources", total)
 	if len(files) > 100000 {
 		return fmt.Errorf("module ZIP has too many files")
 	}

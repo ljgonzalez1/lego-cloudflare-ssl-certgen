@@ -49,6 +49,8 @@ func ReleaseArchitecture(architecture, variant string) (string, error) {
 type Downloader struct {
 	Client   *http.Client
 	Attempts int
+
+	Progress func(string, ...any)
 }
 
 func NewDownloader() Downloader {
@@ -66,12 +68,18 @@ func (d Downloader) fetch(ctx context.Context, url string, maximum int64) ([]byt
 	}
 	var last error
 	for attempt := 0; attempt < attempts; attempt++ {
+		if d.Progress != nil {
+			d.Progress("HTTP release attempt %d/%d GET %s", attempt+1, attempts, url)
+		}
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, err
 		}
 		response, err := d.Client.Do(request)
 		if err == nil {
+			if d.Progress != nil {
+				d.Progress("HTTP release status=%d bytes_expected=%d", response.StatusCode, response.ContentLength)
+			}
 			contents, readErr := io.ReadAll(io.LimitReader(response.Body, maximum+1))
 			response.Body.Close()
 			switch {
@@ -85,12 +93,18 @@ func (d Downloader) fetch(ctx context.Context, url string, maximum int64) ([]byt
 			case int64(len(contents)) > maximum:
 				return nil, errors.New("release asset exceeds its size limit")
 			default:
+				if d.Progress != nil {
+					d.Progress("HTTP release body complete: %d bytes", len(contents))
+				}
 				return contents, nil
 			}
 		} else {
 			last = err
 		}
 		if attempt+1 < attempts {
+			if d.Progress != nil {
+				d.Progress("HTTP release retry after %ds: %v", attempt+1, last)
+			}
 			timer := time.NewTimer(time.Duration(attempt+1) * time.Second)
 			select {
 			case <-ctx.Done():
@@ -129,6 +143,9 @@ func (d Downloader) Download(ctx context.Context, output, releaseBase, archive, 
 	actual := sha256.Sum256(contents)
 	if !strings.EqualFold(hex.EncodeToString(actual[:]), expected) {
 		return errors.New("SHA-256 verification failed for the lego archive.")
+	}
+	if d.Progress != nil {
+		d.Progress("lego archive SHA-256 verified: %x; extracting %s", actual, archive)
 	}
 	return ExtractArchive(contents, output)
 }
@@ -240,5 +257,7 @@ func DownloadFromEnvironment(output string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	return NewDownloader().Download(ctx, output, release+"/lego_"+strings.TrimPrefix(version, "v")+"_checksums.txt", archive, url, os.Getenv("LEGO_SHA256"))
+	downloader := NewDownloader()
+	downloader.Progress = Progress
+	return downloader.Download(ctx, output, release+"/lego_"+strings.TrimPrefix(version, "v")+"_checksums.txt", archive, url, os.Getenv("LEGO_SHA256"))
 }

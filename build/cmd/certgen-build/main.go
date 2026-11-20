@@ -3,18 +3,34 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"runtime/debug"
+	"time"
 
 	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/internal/certgen"
 	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/internal/imagebuild"
+	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/internal/licenseaudit"
 )
 
 func run() (status int) {
+	platform := os.Getenv("TARGETARCH")
+	if platform == "" {
+		platform = runtime.GOARCH
+	}
+	if variant := os.Getenv("TARGETVARIANT"); variant != "" {
+		platform += "/" + variant
+	}
+	progress, stop := licenseaudit.NewProgressLog(os.Stderr, "build linux/"+platform)
+	defer stop()
+	imagebuild.Progress = progress
+	started := time.Now()
+	progress("revision=beta4-build-trace-r3 START command=%q toolchain=%s", os.Args[1:], runtime.Version())
 	defer func() {
 		if failure := recover(); failure != nil {
 			fmt.Fprintf(os.Stderr, "Build panic: %v\n%s", failure, debug.Stack())
 			status = 1
 		}
+		progress("END command=%q status=%d duration=%s", os.Args[1:], status, time.Since(started).Round(time.Millisecond))
 	}()
 	args := os.Args[1:]
 	var err error
