@@ -249,6 +249,21 @@ func (c *collector) collectTree(component *Component, root string, goSDK bool) e
 			return err
 		}
 	}
+	// Oracle OCI SDK split modules omit the repository-root LICENSE.txt.
+	// The upstream dual license permits choosing Apache-2.0; keep its complete
+	// terms and the module's source-header attributions in the final inventory.
+	if named == 0 && strings.HasPrefix(component.ID, "module:github.com/nrdcg/oci-go-sdk/") && strings.HasSuffix(component.ID, "@v1065.111.0") {
+		data, err := os.ReadFile(filepath.Join(c.options.Inputs, "Apache-2.0.txt"))
+		if err != nil {
+			return err
+		}
+		if err := c.addDocument(component, "inherited/Apache-2.0.txt", data); err != nil {
+			return err
+		}
+		component.DeclaredLicense = "Apache-2.0 OR UPL-1.0"
+		named++
+		termsFound = terms(data)
+	}
 	if named == 0 || !termsFound {
 		return fmt.Errorf("no license/notice files for %s", component.ID)
 	}

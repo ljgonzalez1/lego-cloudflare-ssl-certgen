@@ -2,7 +2,7 @@
 
 This snapshot is **v6.0.1-beta-2** (debug with traces and Delve probes). See the [event matrix](../docs/ci-policy.md) for the implemented routing and dependencies.
 
-Static analysis finishes first. It is blocking for PRs to master and advisory for master pushes, version-branch activity, releases and prereleases. Advisory failures emit visible warnings; they do not suppress the offline tests. Failed, skipped or cancelled functional prerequisites never permit publication. Version branches run offline suites only after analysis. Master activity and releases also check README.md and DOCKERHUB.md versions, then run five parallel Docker smoke tests.
+Static analysis finishes first. It is blocking for PRs to master and advisory for master pushes, version-branch activity, releases and prereleases. Advisory failures emit visible warnings; they do not suppress the offline tests. Failed, skipped or cancelled functional prerequisites never permit publication. Version branches (including their initial push), master activity, pull requests and releases check README.md and DOCKERHUB.md against the committed CSV and versions.txt after static analysis; only master activity and releases also run five parallel Docker smoke tests. Branch names are checked for valid version syntax (2–4 numeric components and alpha/alfa/beta/audit/rc/build suffixes, with -, . or + before the suffix), but do not need to equal the release version in the documents. Docker image tags cannot contain +; a valid version branch is not automatically a publishable Docker tag.
 
 The analyzers cover Go, Python, Bash, POSIX sh, jq, awk, sed, Dockerfile, YAML, GitHub expressions, CSV, JSON and Go modules. Format inventory additionally checks TOML, environment templates, Markdown file targets, SVG and PNG integrity. Unknown file formats fail inventory instead of being silently ignored. ShellCheck analyzes standalone child-process fixtures, so intentionally deferred shell variables do not require global SC2016 suppression. The custom format checks validate project contracts; they are not a complete replacement for the Docker engine or external tool schemas.
 
@@ -28,7 +28,7 @@ Go unit/race/fuzz tests are retained in the workflow. Test fixtures are offline 
 
 `ci/versions/versions.csv` is the release source. Its final row identifies this snapshot. The CSV includes its earlier alpha/beta/stable history, including restored v4.2.10 through v4.2.16. The publisher passes the row's application, lego and Alpine values to Docker. The Dockerfile and application defaults match this snapshot, even when built without explicit arguments.
 
-`versions.txt`, when retained in an early historical beta, is compatibility metadata. Newer snapshots remove it. Current release scripts read CSV. A published release/prerelease tag must match the complete application version, including its suffix. Alpha/alfa/beta aliases retain their suffix and do not replace latest. Tables are generated and committed before publication:
+`versions.txt` defines the application, lego and Alpine values checked against the final CSV row. Version branch names and pull-request base names do not replace these values. The publisher itself still requires a matching release tag, including its suffix; this restriction is separate from the Markdown checks. Alpha/alfa/beta aliases retain their suffix and do not replace latest. Tables are generated and committed before publication:
 
 ```sh
 python3 -B ci/versions/tags_table.py
