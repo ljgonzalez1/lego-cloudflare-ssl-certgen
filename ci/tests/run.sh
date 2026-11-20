@@ -549,8 +549,7 @@ core_supervise() {
     # A deadline sends SIGKILL at once, even to a process that ignores SIGTERM,
     # and reaches everything in lego's process group.
     started=$(date +%s)
-    expect_status 124 certgen-core supervise 1 /bin/sh -c \
-        'trap "" TERM; sleep 30 & echo $! > "$1"; wait' sh "$work/background.pid"
+    expect_status 124 certgen-core supervise 1 /bin/sh "$root/ci/tests/fixtures/background-group.sh" "$work/background.pid"
     [ $(($(date +%s) - started)) -lt 5 ]
     sleep 1
     process_gone "$(cat -- "$work/background.pid")"
@@ -564,13 +563,7 @@ core_supervise() {
 core_stops_on_failed_order() {
     started=$(date +%s)
     # The fatal message spans different reads and its detail follows the header.
-    expect_status 137 certgen-core supervise --log "$work/lego.log" 10 /bin/sh -c '
-        sleep 30 & echo $! > "$1"
-        printf "2026/11/17 06:53:55 Could not com" >&2
-        sleep 0.1
-        printf "plete registration\n\tACME directory unavailable\n" >&2
-        wait
-    ' sh "$work/failed-order.pid"
+    expect_status 137 certgen-core supervise --log "$work/lego.log" 10 /bin/sh "$root/ci/tests/fixtures/failed-registration.sh" "$work/failed-order.pid"
     [ $(($(date +%s) - started)) -lt 5 ]
     process_gone "$(cat -- "$work/failed-order.pid")"
     assert_contains 'Could not complete registration ACME directory unavailable (lego stopped)' "$stderr"

@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/spinner"
 )
 
 type SignalState struct {
@@ -169,11 +171,16 @@ func Supervise(options ProcessOptions) (int, error) {
 	}()
 	if view != nil {
 		view.Start()
+		defer view.Close()
 	}
 	deadline := time.NewTimer(time.Duration(options.Seconds) * time.Second)
 	defer deadline.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+	var ticks <-chan time.Time
+	if view != nil && view.ansi {
+		ticker := time.NewTicker(spinner.Interval)
+		defer ticker.Stop()
+		ticks = ticker.C
+	}
 	var contextDone <-chan struct{}
 	if options.Signals != nil {
 		contextDone = options.Signals.Context.Done()
@@ -308,7 +315,7 @@ func Supervise(options ProcessOptions) (int, error) {
 			killGroup(command.Process.Pid, syscall.SIGKILL)
 			reader.Close()
 			pipeClosed = true
-		case <-ticker.C:
+		case <-ticks:
 			if view != nil {
 				view.Tick()
 			}

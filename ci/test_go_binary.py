@@ -176,7 +176,7 @@ class CompiledGoTests(unittest.TestCase):
         files = list(directory.glob("*.log"))
         self.assertEqual(len(files), 1)
         architecture = {"x86_64":"amd64", "aarch64":"arm64", "arm64":"arm64", "i386":"i386", "i686":"i386", "armv6l":"armv6", "armv7l":"armv7"}[platform.machine()]
-        self.assertRegex(files[0].name, r"^v6\.0\.0-alpha-2\.\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}\."+architecture+r"\.log$")
+        self.assertRegex(files[0].name, r"^v6\.0\.1-beta-3\.\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}\."+architecture+r"\.log$")
         self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
         contents = files[0].read_text()
         self.assertIn("Offline test passed.", contents)
@@ -198,7 +198,7 @@ class CompiledGoTests(unittest.TestCase):
         self.assertEqual(dump.stat().st_mode & 0o777, 0o600)
 
     def test_linked_release_version_controls_log_filenames(self) -> None:
-        version = "6.0.0-alpha-2.build.7"
+        version = "6.0.1-beta-3.build.7"
         binary = self.work / "linked-version"
         compile_go(binary, "./cmd/certgen", application_version=version)
         result = subprocess.run([str(binary), "--help"], env=self.environment,
@@ -352,7 +352,6 @@ class CompiledGoTests(unittest.TestCase):
             os.close(slave)
             os.close(master)
 
-    @unittest.skip("Pulse animation is not part of beta-1")
     def test_pulse_terminal_frames_and_plain_fallbacks(self) -> None:
         for scenario, settings, animated in (
             ("terminal", {}, True), ("narrow", {"COLUMNS":"20"}, True),
@@ -385,7 +384,6 @@ class CompiledGoTests(unittest.TestCase):
                         tail = output.split("Certificate received", 1)[1]
                         self.assertNotIn("⠀⠶⠀", tail)
 
-    @unittest.skip("Pulse animation is not part of beta-1")
     def test_pulse_signal_stops_animation_before_failure_summary(self) -> None:
         status, output = self.terminal_issuance(interrupt=True)
         self.assertEqual(status, 128 + signal.SIGTERM, output)

@@ -33,6 +33,7 @@ jobs:
         uses: docker/setup-qemu-action@v4
         if: inputs.platform != 'linux/amd64' && inputs.platform != 'linux/arm64'
         with:
+          image: tonistiigi/binfmt:qemu-v10.2.3-68
           platforms: ${{ inputs.platform == 'linux/386' && '386' || 'arm' }}
 
       - name: Build and run the staging simulation

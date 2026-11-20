@@ -169,7 +169,7 @@ class WorkflowChecks(unittest.TestCase):
     def test_markdown_checks_are_never_skipped_for_version_branch_events(self):
         """Regression: beta/alpha pushes once skipped both markdown jobs silently."""
         branches = [
-            'v6.0.1-beta-2', 'v6.0.1-beta-1', 'V6.0.1-beta-2',
+            'v6.0.1-beta-3', 'v6.0.1-beta-1', 'V6.0.1-beta-3',
             'v6.0.0-alpha-2', 'v1.2-alpha', '1.2-beta1', 'V1.2.3.RC-25',
         ]
         for event in ('push', 'pull_request'):
