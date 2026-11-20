@@ -352,7 +352,7 @@ class CompiledGoTests(unittest.TestCase):
             os.close(slave)
             os.close(master)
 
-    @unittest.skip("Pulse animation starts with beta-3")
+    @unittest.skip("Pulse animation is not part of beta-1")
     def test_pulse_terminal_frames_and_plain_fallbacks(self) -> None:
         for scenario, settings, animated in (
             ("terminal", {}, True), ("narrow", {"COLUMNS":"20"}, True),
@@ -385,7 +385,7 @@ class CompiledGoTests(unittest.TestCase):
                         tail = output.split("Certificate received", 1)[1]
                         self.assertNotIn("⠀⠶⠀", tail)
 
-    @unittest.skip("Pulse animation starts with beta-3")
+    @unittest.skip("Pulse animation is not part of beta-1")
     def test_pulse_signal_stops_animation_before_failure_summary(self) -> None:
         status, output = self.terminal_issuance(interrupt=True)
         self.assertEqual(status, 128 + signal.SIGTERM, output)

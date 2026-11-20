@@ -7,7 +7,8 @@ Run:
 Input:  versions.csv (UTF-8; comma-separated; 11 columns, with/without header)
 Output: the marked blocks in root README.md (complete) and DOCKERHUB.md (short)
 
-Append each new release to the END of versions.csv. The last publisher of a
+Append each new release to the END of versions.csv. Rows with an empty App URL
+are branch-only history, not published Docker images. The last publisher of a
 rolling tag owns it. Alpha, alfa and beta releases keep their suffix on every
 tag and leave ``latest`` on the last eligible release. Both tables are displayed
 newest-first. The short table keeps the row that owns ``latest`` visible and contains
@@ -17,7 +18,7 @@ without any display limit; the SHORT table shows at most four tags per row
 OS+lego+app tag is always the last visible alias.
 No tag overrides are used.
 
-Every release generates eight or nine *unique* Docker tags by this convention:
+Each published release generates eight or nine *unique* Docker tags by this convention:
     1. OS(full)-lego(full)-app(full)
     2. OS(short)-lego(short)-app(full)
     3. OS(generic)-lego(short)-app(minor)
@@ -302,7 +303,7 @@ def lego_cell(record: Release) -> str:
 
 def ownership(releases: list[Release]) -> dict[str, int]:
     """Last CSV occurrence wins every shared tag (Docker Hub overwrite behavior)."""
-    return {tag: i for i, record in enumerate(releases) for tag in record.tags}
+    return {tag: i for i, record in enumerate(releases) if record.field("App URL") for tag in record.tags}
 
 
 def selected_aliases(record: Release, index: int, owners: dict[str, int], limit: int | None) -> list[str]:
@@ -357,6 +358,10 @@ def complete_table(
     for index in reversed(visible):
         record = releases[index]
         url = record.field("App URL")
+        if not url:
+            # Keep branch-only history in README without inventing tags or links.
+            lines.append(f"| `{record.app_full}` | - | - | Branch only; not published on Docker Hub |")
+            continue
         principal = [tag_link(record.app_full, url)]
         if owners.get("latest") == index:
             principal.insert(0, tag_link("latest", url or REPOSITORY_URL))
@@ -370,9 +375,9 @@ def complete_table(
 
 
 def short_table(releases: list[Release]) -> str:
-    """At most seven rows and four tags each, including the owner of latest."""
+    """Show only published images, including the owner of latest."""
     return complete_table(
-        releases,
+        [record for record in releases if record.field("App URL")],
         max_releases=SHORT_MAX_RELEASES,
         max_display_tags=SHORT_MAX_DISPLAY_TAGS,
     )
@@ -453,6 +458,8 @@ def main() -> int:
             selected = next((r for r in releases if r.app_full == args.buildx_version), None)
             if selected is None:
                 raise ValueError(f"Unknown App Version {args.buildx_version!r}.")
+            if not selected.field("App URL"):
+                raise ValueError(f"{selected.app_full} has no published image or Docker tags.")
             latest_owner = ownership(releases).get("latest")
             if ("latest" in selected.tags and latest_owner is not None
                     and releases[latest_owner] is not selected and not args.allow_old_latest):
@@ -462,7 +469,7 @@ def main() -> int:
                 )
         write_tables(releases)
         print(f"README.md: {len(releases)} releases")
-        print(f"DOCKERHUB.md: {min(len(releases), SHORT_MAX_RELEASES)} releases, up to {SHORT_MAX_DISPLAY_TAGS} visible tags each")
+        print(f"DOCKERHUB.md: {min(sum(bool(record.field('App URL')) for record in releases), SHORT_MAX_RELEASES)} published releases, up to {SHORT_MAX_DISPLAY_TAGS} visible tags each")
         if selected is not None:
             print("\n" + buildx_command(selected))
         return 0

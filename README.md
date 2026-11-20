@@ -643,7 +643,7 @@ openssl x509 -in ./ssl-certs/dns-smoke/<timestamp>/<request>/certificates/a-chec
 
 The [event policy](docs/ci-policy.md) implements the five event diagrams. Static analysis runs first for every used language. It blocks PRs to master and is advisory for version-branch activity, master pushes, releases and prereleases. Version branches then run the offline suites. Master activity and releases also validate both Markdown version tables and run the five parallel image smoke tests. Only release/prerelease events can publish, after all mandatory functional checks pass.
 
-Publication preserves the Buildx index digest and each architecture digest. Separate propagation waits precede tag/hash and Docker Hub description checks. Failed or cancelled functional checks cannot publish. The local badge workflow is introduced in beta-6 and inherited by subsequent snapshots.
+Publication preserves the Buildx index digest and each architecture digest. Separate propagation waits precede tag/hash and Docker Hub description checks. Failed or cancelled functional checks cannot publish. 
 
 ---
 
@@ -676,7 +676,7 @@ Compose keeps only these three capabilities and adds `no-new-privileges:true`. P
 
 The `scratch` runtime contains static Go binaries, CA certificates and timezone data. It carries no musl, system OpenSSL, zlib or Alpine package manager. Scan the final published image by digest, including its embedded Go modules and optional debugger dependencies; scanning only the build-stage distribution does not describe this runtime.
 
-This release stays on lego `v4.34.0` for simplicity. The plan is to move to lego `5.X.Y` after its CLI and the Cloudflare DNS-01 workflow are tested on all supported architectures. [lego releases](https://github.com/go-acme/lego/releases)
+This release uses lego `v4.34.0`. [lego releases](https://github.com/go-acme/lego/releases)
 
 ---
 
@@ -718,7 +718,7 @@ This release stays on lego `v4.34.0` for simplicity. The plan is to move to lego
 
 ## Version history
 
-Alpha, alfa and beta releases keep their suffix on every Docker tag. `latest` stays on the last eligible release. The full table lists every distinct tag generated from [`versions.csv`](ci/versions/versions.csv).
+Alpha, alfa and beta releases keep their suffix on every Docker tag. `latest` stays on the last eligible release. The full table lists Docker tags from [`versions.csv`](ci/versions/versions.csv). Branch-only versions without a published image are shown without links or tags.
 
 Maintainers append the upcoming release to the CSV and run `python3 ci/versions/tags_table.py` before committing the two Markdown files. [Release pipeline](ci/README.md)
 
@@ -727,6 +727,7 @@ Maintainers append the upcoming release to the CSV and run `python3 ci/versions/
 | tag | runtime | lego | other aliases |
 |---|---|---|---|
 | [`v6.0.1-beta-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.1-beta-1) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v6-beta-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.1-beta-1), [`v6.0-beta-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.1-beta-1), [`lego4.34-v6.0.1-beta-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.1-beta-1), [`lego4.34.0-v6.0.1-beta-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.1-beta-1), [`alpine3.24-lego4.34-v6.0.1-beta-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.1-beta-1), [`alpine3.24-lego4.34-v6.0-beta-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.1-beta-1), [`alpine3.24.4-lego4.34.0-v6.0.1-beta-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.1-beta-1) |
+| `v6.0.0-alpha-2` | - | - | Branch only; not published on Docker Hub |
 | [`v6.0.0-alpha-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.0-alpha-1) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v6-alpha-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.0-alpha-1), [`v6.0-alpha-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.0-alpha-1), [`lego4.34-v6.0.0-alpha-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.0-alpha-1), [`lego4.34.0-v6.0.0-alpha-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.0-alpha-1), [`alpine3.24-lego4.34-v6.0.0-alpha-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.0-alpha-1), [`alpine3.24-lego4.34-v6.0-alpha-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.0-alpha-1), [`alpine3.24.4-lego4.34.0-v6.0.0-alpha-1`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v6.0.0-alpha-1) |
 | [`latest`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4), [`v5.2.4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`v5`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4), [`v5.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4), [`lego4.34-v5.2.4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4), [`lego4.34.0-v5.2.4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4), [`alpine3.24-lego4.34-v5.2.4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4), [`alpine3.24-lego4.34-v5.2`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4), [`alpine3.24.4-lego4.34.0-v5.2.4`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.4) |
 | [`v5.2.3`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.3) | [Alpine 3.24.4 minimal on `scratch`](https://hub.docker.com/_/alpine) | [`v4.34.0`](https://github.com/go-acme/lego/releases/tag/v4.34.0) | [`lego4.34-v5.2.3`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.3), [`lego4.34.0-v5.2.3`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.3), [`alpine3.24-lego4.34-v5.2.3`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.3), [`alpine3.24.4-lego4.34.0-v5.2.3`](https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/releases/tag/v5.2.3) |

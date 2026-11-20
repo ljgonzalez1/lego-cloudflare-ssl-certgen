@@ -74,13 +74,13 @@ class WorkflowChecks(unittest.TestCase):
             self.assertNotIn('continue-on-error',str(self.jobs[name]['steps']))
 
     def test_branch_creation_and_deletion_do_nothing(self):
-        for branch in ['master','v6.0.3','V6.0.1-beta-7','6.3.0','v6.3.0/docs']:
+        for branch in ['master','v6.0.1-beta-1','V6.0.1-beta-1','5.2.4','v6.0.1-beta-1/docs']:
             self.assertEqual(self.passed('push',branch,created=True),set())
             self.assertEqual(self.passed('push',branch,deleted=True),set())
 
     def test_version_push_merge_and_pr_only_run_static_and_offline(self):
         for event in ['push','pull_request']:
-            for branch in ['v6.0.3','V6.0.1-beta-7','6.3.0']:
+            for branch in ['v6.0.1-beta-1','V6.0.1-beta-1','5.2.4']:
                 self.assertEqual(self.passed(event,branch),STATIC_JOBS|OFFLINE_JOBS)
 
     def test_master_push_and_pr_have_docs_offline_and_five_smokes(self):
@@ -90,13 +90,13 @@ class WorkflowChecks(unittest.TestCase):
 
     def test_published_release_and_prerelease_run_complete_graph(self):
         for prerelease in [False,True]:
-            self.assertEqual(self.passed('release','v6.3.0',prerelease=prerelease),set(self.jobs))
+            self.assertEqual(self.passed('release','v6.0.1-beta-1',prerelease=prerelease),set(self.jobs))
         triggers=self.workflow.get('on',self.workflow.get(True))
         self.assertEqual(triggers['release']['types'],['published'])
 
     def test_static_failure_is_blocking_only_for_pr_to_master(self):
         for failed in STATIC_JOBS:
-            for event,branch in [('push','master'),('pull_request','master'),('push','v6.3.0'),('pull_request','v6.3.0'),('release','v6.3.0')]:
+            for event,branch in [('push','master'),('pull_request','master'),('push','v6.0.1-beta-1'),('pull_request','v6.0.1-beta-1'),('release','v6.0.1-beta-1')]:
                 with self.subTest(failed=failed,event=event,branch=branch):
                     advisory=event!='pull_request' or branch!='master'
                     self.assertEqual(accepts(self.jobs[failed]['continue-on-error'],{'event_name':event,'base_ref':branch},{}),advisory)

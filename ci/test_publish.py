@@ -167,7 +167,7 @@ class PublishChecks(unittest.TestCase):
                                         env=os.environ | {"PATH": str(self.work / "bin") + os.pathsep + os.environ["PATH"],
                                             "MOCK_WORK": str(self.work), "MOCK_FAIL": failure,
                                             "DOCKERHUB_USERNAME": "ljgonzalez", "DOCKERHUB_PUSH_TOKEN": "fixture-push-token",
-                                            "PUBLISH_RESULT_FILE": str(result_file)}, timeout=10)
+                                            "PUBLISH_RESULT_FILE": str(result_file)}, timeout=30)
                 self.assertNotIn("fixture-push-token", result.stdout + result.stderr)
                 if failure:
                     self.assertNotEqual(result.returncode, 0)

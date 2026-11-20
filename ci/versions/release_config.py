@@ -26,6 +26,8 @@ def release_config():
         raise ValueError("Missing version keys in ci/versions/versions.txt")
 
     latest = read_releases(CSV_PATH)[-1]
+    if not latest.field("App URL"):
+        raise ValueError("The current release must have an App URL; empty URLs identify unpublished branches.")
     app = re.sub(r"^[vV]", "", latest.app_full)
     configured_app = values["APP_VERSION"]
     if app != configured_app:
