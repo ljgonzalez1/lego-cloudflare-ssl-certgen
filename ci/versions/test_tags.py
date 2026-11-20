@@ -19,7 +19,7 @@ from tags_table import (
 def make_fields(version, suffix=""):
     return dict(zip(COLUMNS, (
         "Alpine", "3.24.4", "scratch", "", "lego", "v4.34.0", "", "",
-        f"v{version}", suffix, "",
+        f"v{version}", suffix, f"https://example.org/releases/v{version}" + (f"-{suffix}" if suffix else ""),
     ), strict=True))
 
 
@@ -86,6 +86,25 @@ class TagPolicyTests(unittest.TestCase):
             self.assertNotIn("`latest`", renderer(prereleases))
         self.assertEqual(len(short_table([first, *prereleases]).splitlines()), 9)
 
+    def test_unpublished_branch_has_readme_history_but_no_docker_tags(self):
+        published = make_fields("6.0.0", "alpha-1")
+        unpublished = make_fields("6.0.0", "alpha-2")
+        unpublished["App URL"] = ""
+        current = make_fields("6.0.1", "beta-1")
+        published["App URL"] = "https://example.org/releases/v6.0.0-alpha-1"
+        current["App URL"] = "https://example.org/releases/v6.0.1-beta-1"
+        records = [make_release(row, index) for index, row in enumerate(
+            (published, unpublished, current), 1)]
+        readme_table = complete_table(records)
+        dockerhub_table = short_table(records)
+        branch_row = next(line for line in readme_table.splitlines()
+                          if "`v6.0.0-alpha-2`" in line)
+        self.assertNotIn("](", branch_row)
+        self.assertIn("Branch only; not published", branch_row)
+        self.assertNotIn("alpha-2", dockerhub_table)
+        self.assertIn("v6.0.1-beta-1", dockerhub_table)
+        self.assertNotIn("alpha-2", buildx_command(records[-1]))
+
     def test_release_requires_the_configured_suffix(self):
         self.write_versions("5.2.3")
         with (self.root / "ci/versions/versions.csv").open("w", newline="") as file:
@@ -98,6 +117,20 @@ class TagPolicyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("does not match APP_VERSION", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    def test_unpublished_branch_is_not_eligible_for_buildx_generation(self):
+        with (self.root / "ci/versions/versions.csv").open("w", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=COLUMNS)
+            writer.writeheader()
+            unpublished = make_fields("6.0.0", "alpha-2")
+            unpublished["App URL"] = ""
+            writer.writerow(unpublished)
+        for doc in ("README.md", "DOCKERHUB.md"):
+            (self.root / doc).write_text(f"{TABLE_BEGIN}\n{TABLE_END}\n")
+        result = self.run_command(sys.executable, "-B", "ci/versions/tags_table.py",
+                                  "--buildx-version", "v6.0.0-alpha-2")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("has no published image", result.stderr)
 
     def test_release_checks_both_committed_tables_for_a_beta(self):
         self.write_versions("5.2.4-beta-1")

@@ -76,13 +76,15 @@ args+=(--env-file "$work/.env"
     --mount "type=bind,source=$work/domains.yaml,target=/app/domains.yaml,readonly"
     --mount "type=bind,source=$work/debug,target=/ssl-certs/debug")
 plan=$(docker run "${args[@]}" "$image" --test)
+# Unicode presentation selectors may be omitted by terminal/output relays.
+plan=${plan//$'\uFE0F'/}
 printf '%s\n' "$plan"
 grep -Fxq '🧪 TEST MODE (offline)' <<< "$plan"
-grep -Fxq "ℹ️  lego version $LEGO_VERSION linux/$lego_arch" <<< "$plan"
+grep -Fxq "ℹ  lego version $LEGO_VERSION linux/$lego_arch" <<< "$plan"
 grep -Fxq '✅ Offline test passed.' <<< "$plan"
 grep -Fxq '🧪 STAGING MODE' <<< "$plan"
-grep -Fxq 'ℹ️  ACME server: https://acme-staging-v02.api.letsencrypt.org/directory' <<< "$plan"
-grep -Fxq 'ℹ️  Domains (3):' <<< "$plan"
+grep -Fxq 'ℹ  ACME server: https://acme-staging-v02.api.letsencrypt.org/directory' <<< "$plan"
+grep -Fxq 'ℹ  Domains (3):' <<< "$plan"
 for domain in example.com www.example.com '*.example.com'; do
     grep -Fxq "🔹 $domain" <<< "$plan"
 done

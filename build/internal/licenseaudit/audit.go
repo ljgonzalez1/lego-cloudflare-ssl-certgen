@@ -249,29 +249,20 @@ func (c *collector) collectTree(component *Component, root string, goSDK bool) e
 			return err
 		}
 	}
-	// nrdcg's modular Oracle OCI SDK omits the repository-level LICENSE.txt
-	// from these module ZIPs. The upstream offers UPL-1.0 OR Apache-2.0;
-	// include the complete Apache-2.0 alternative already shipped by us.
-	// This exception applies only to the verified SDK release with missing
-	// module notices; other missing licenses still fail closed.
-	if !termsFound && strings.HasPrefix(component.ID, "module:github.com/nrdcg/oci-go-sdk/") &&
-		strings.HasSuffix(component.ID, "@v1065.111.0") {
-		license, err := os.ReadFile(filepath.Join(c.options.Inputs, "Apache-2.0.txt"))
+	// Oracle OCI SDK split modules omit the repository-root LICENSE.txt.
+	// The upstream dual license permits choosing Apache-2.0; keep its complete
+	// terms and the module's source-header attributions in the final inventory.
+	if named == 0 && strings.HasPrefix(component.ID, "module:github.com/nrdcg/oci-go-sdk/") && strings.HasSuffix(component.ID, "@v1065.111.0") {
+		data, err := os.ReadFile(filepath.Join(c.options.Inputs, "Apache-2.0.txt"))
 		if err != nil {
 			return err
 		}
-		if err = c.addDocument(component, "supplemental/Apache-2.0.txt", license); err != nil {
+		if err := c.addDocument(component, "inherited/Apache-2.0.txt", data); err != nil {
 			return err
 		}
-		notice := "Oracle OCI Go SDK v1065.111.0 (nrdcg modular fork)\n" +
-			"Copyright (c) Oracle and/or its affiliates.\n" +
-			"Upstream license: UPL-1.0 OR Apache-2.0; Apache-2.0 is used here.\n" +
-			"Source: https://github.com/nrdcg/oci-go-sdk/blob/modules/LICENSE.txt\n"
-		if err = c.addDocument(component, "supplemental/NOTICE-OCI-SDK.txt", []byte(notice)); err != nil {
-			return err
-		}
-		named += 2
-		termsFound = terms(license)
+		component.DeclaredLicense = "Apache-2.0 OR UPL-1.0"
+		named++
+		termsFound = terms(data)
 	}
 	if named == 0 || !termsFound {
 		return fmt.Errorf("no license/notice files for %s", component.ID)
@@ -281,13 +272,6 @@ func (c *collector) collectTree(component *Component, root string, goSDK bool) e
 	for _, d := range component.Documents {
 		if bytes.Contains(c.blobs[d.SHA256], []byte("Apache")) {
 			apache = true
-		}
-	}
-	// Avoid duplicating the exact same supplemental license document.
-	for _, d := range component.Documents {
-		if d.Source == "supplemental/Apache-2.0.txt" {
-			apache = false
-			break
 		}
 	}
 	if apache {
