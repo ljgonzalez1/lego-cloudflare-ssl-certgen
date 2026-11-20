@@ -1,0 +1,41 @@
+name: Docker smoke test
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    name: Staging smoke test (${{ inputs.platform }})
+    runs-on: ${{ inputs.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    env:
+      PLATFORM: ${{ inputs.platform }}
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up native Go for final image license verification
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache: false
+
+      - name: Set up QEMU for the target architecture
+        uses: docker/setup-qemu-action@v4
+        if: inputs.platform != 'linux/amd64' && inputs.platform != 'linux/arm64'
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3-68
+          platforms: ${{ inputs.platform == 'linux/386' && '386' || 'arm' }}
+
+      - name: Build and run the staging simulation
+        shell: bash
+        run: bash ci/run-smoke.sh "$PLATFORM"

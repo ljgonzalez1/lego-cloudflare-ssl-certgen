@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the license diagnostic runner offline, including pipeline failures."""
 
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -16,6 +18,11 @@ class LicenseTraceTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.work = Path(directory.name)
+        self.project = self.work / "project"
+        scripts = self.project / "ci"
+        scripts.mkdir(parents=True)
+        for name in ("trace-build.sh", "trace-licenses.sh", "update-license-bundle.sh", "license_bundle.py"):
+            shutil.copyfile(ROOT / "ci" / name, scripts / name)
         fakebin = self.work / "bin"
         fakebin.mkdir()
         docker = fakebin / "docker"
@@ -32,7 +39,7 @@ class LicenseTraceTests(unittest.TestCase):
         }
 
     def run_trace(self, *arguments, runner="trace-licenses.sh"):
-        return subprocess.run(["bash", str(ROOT / "ci" / runner), *arguments],
+        return subprocess.run(["bash", str(self.project / "ci" / runner), *arguments],
                               cwd=self.work, env=self.environment, capture_output=True,
                               text=True, timeout=10)
 
@@ -94,12 +101,49 @@ class LicenseTraceTests(unittest.TestCase):
         result = self.run_trace("linux/amd64", str(self.log), runner="trace-build.sh")
         self.assertEqual(result.returncode, 23, result.stdout + result.stderr)
 
-    def test_default_log_path_is_outside_the_project(self):
+    def test_default_license_log_path_is_inside_the_project(self):
         result = self.run_trace()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        log = self.work / "certgen-beta4-license-linux-amd64.log"
+        log = self.project / "trace-licenses.log"
         self.assertTrue(log.exists())
         self.assertIn(str(log), result.stdout)
+
+    def test_default_full_trace_stays_inside_the_project(self):
+        result = self.run_trace(runner="trace-build.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        log = self.project / "trace.log"
+        self.assertTrue(log.exists())
+        self.assertIn(str(log), result.stdout)
+
+    def test_bundle_export_failure_keeps_build_status(self):
+        self.environment["TRACE_TEST_STATUS"] = "19"
+        result = self.run_trace(str(self.log), runner="update-license-bundle.sh")
+        self.assertEqual(result.returncode, 19, result.stdout + result.stderr)
+        arguments = self.arguments.read_text().splitlines()
+        self.assertEqual(arguments[arguments.index("--target") + 1], "license-bundle-export")
+        self.assertIn("REFRESH_LICENSE_BUNDLE=1", arguments)
+        self.assertNotIn("--push", arguments)
+        self.assertNotIn("--load", arguments)
+        self.assertIn("license trace stderr fixture", self.log.read_text())
+
+    def test_bundle_export_installs_texts_and_logs_the_installation(self):
+        source = self.work / "export-fixture"
+        (source / "texts").mkdir(parents=True)
+        notice = b"Copyright offline fixture authors\nPermission is hereby granted.\n"
+        digest = hashlib.sha256(notice).hexdigest()
+        (source / "texts" / (digest + ".txt")).write_bytes(notice)
+        bundle = {"schema": 1, "components": [{
+            "id": "module:fixture@v1.0.0", "origin": "offline fixture",
+            "documents": [{"source": "LICENSE", "sha256": digest}]}],
+            "data_files": [{"path": "fixture"}]}
+        (source / "bundle.json").write_text(json.dumps(bundle))
+        self.environment["TRACE_TEST_EXPORT"] = str(source)
+        result = self.run_trace(str(self.log), runner="update-license-bundle.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        target = self.project / "build/licenses/third-party"
+        self.assertTrue((target / "bundle.json").exists())
+        self.assertEqual((target / "texts" / (digest + ".txt")).read_bytes(), notice)
+        self.assertIn("Saved 1 third-party components", self.log.read_text())
 
 
 if __name__ == "__main__":

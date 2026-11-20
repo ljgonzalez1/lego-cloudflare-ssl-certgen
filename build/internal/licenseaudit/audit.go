@@ -70,7 +70,12 @@ type Manifest struct {
 	Files      []File            `json:"files"`
 	Aliases    map[string]string `json:"notice_aliases"`
 }
-type Source struct{ Directory, Origin, Sum, License, Version string }
+type Source struct {
+	Directory, Origin, Sum, License, Version string
+
+	// Frozen notices retain their original source names and checksum-bound provenance.
+	Notices map[string][]byte
+}
 type Options struct {
 	Root, Inputs, ProjectVersion, LegoVersion, Toolchain, VendorRoot string
 
@@ -112,6 +117,14 @@ func (c *collector) addDocument(component *Component, source string, data []byte
 		return fmt.Errorf("unsafe notice name: %q", source)
 	}
 	hash := digest(data)
+	for _, previous := range component.Documents {
+		if previous.Source == source {
+			if previous.SHA256 != hash {
+				return fmt.Errorf("conflicting notice %s for %s", source, component.ID)
+			}
+			return nil
+		}
+	}
 	c.blobs[hash] = data
 	alias := path.Join("components", digest([]byte(component.ID)), source)
 	c.aliases[alias] = path.Join("texts", hash+".txt")
@@ -314,15 +327,29 @@ func (c *collector) collectTree(component *Component, root string, goSDK bool) e
 	return nil
 }
 func (c *collector) component(id, kind, name, version string, source Source, sdk bool) (string, error) {
-	if _, ok := c.components[id]; ok {
-		return id, nil
-	}
 	if kind == "runtime-data" && source.Version != "" {
 		version = source.Version
 	}
+	if previous, ok := c.components[id]; ok {
+		if previous.Kind != kind || previous.Name != name || previous.Version != version || previous.Sum != source.Sum {
+			return "", fmt.Errorf("conflicting source identity for %s: recorded version=%q sum=%q; incoming version=%q sum=%q", id, previous.Version, previous.Sum, version, source.Sum)
+		}
+		return id, nil
+	}
 	component := Component{ID: id, Kind: kind, Name: name, Version: version, Origin: source.Origin, Sum: source.Sum, DeclaredLicense: source.License}
+	logProgress(c.options.Progress, "source binding: %s; version=%s sum=%q origin=%s", id, version, source.Sum, source.Origin)
 	logProgress(c.options.Progress, "scan notices: %s", id)
-	if err := c.collectTree(&component, source.Directory, sdk); err != nil {
+	if source.Notices != nil {
+		if len(source.Notices) == 0 {
+			return "", fmt.Errorf("empty frozen notices for %s", id)
+		}
+		for name, data := range source.Notices {
+			if err := c.addDocument(&component, name, data); err != nil {
+				return "", err
+			}
+		}
+		sort.Slice(component.Documents, func(i, j int) bool { return component.Documents[i].Source < component.Documents[j].Source })
+	} else if err := c.collectTree(&component, source.Directory, sdk); err != nil {
 		return "", err
 	}
 	logProgress(c.options.Progress, "notices ready: %s (%d documents)", id, len(component.Documents))
@@ -364,6 +391,11 @@ func (c *collector) module(m debug.Module, binary string, main bool) (Module, er
 		return record, err
 	}
 	id := "module:" + record.ResolvedPath + "@" + version
+	// A vendored subtree is not the authenticated upstream module ZIP. Keep
+	// its notices separate instead of reusing an empty-sum component for lego.
+	if binary == "usr/local/bin/certgen" && record.ResolvedPath == "gopkg.in/yaml.v3" && version == "v3.0.1" {
+		id += ":vendored"
+	}
 	if _, err = c.component(id, "go-module", record.ResolvedPath, version, source, false); err != nil {
 		return record, err
 	}
@@ -439,7 +471,7 @@ func Collect(options Options) error {
 			logProgress(options.Progress, "%s dependency %d/%d: %s@%s", p, dependency+1, len(info.Deps), dep.Path, dep.Version)
 			m, err := c.module(*dep, p, false)
 			if err != nil {
-				return err
+				return fmt.Errorf("%s dependency %s@%s: %w", p, dep.Path, dep.Version, err)
 			}
 			binary.Deps = append(binary.Deps, m)
 		}

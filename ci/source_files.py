@@ -14,6 +14,8 @@ SUFFIXES = {".go": "go", ".py": "python", ".sh": "shell", ".bash": "shell",
 
 def files(root=ROOT):
     return sorted(path for path in root.rglob("*") if path.is_file()
+                  and path.relative_to(root).as_posix() not in {
+                      "trace.log", "trace-licenses.log", "trace-license-bundle.log"}
                   and not any(part in EXCLUDED for part in path.relative_to(root).parts))
 
 

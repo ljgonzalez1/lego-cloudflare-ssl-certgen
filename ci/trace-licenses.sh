@@ -8,10 +8,9 @@ case "$platform" in
     linux/arm/v6|linux/arm/v7|linux/arm64|linux/386|linux/amd64) ;;
     *) printf 'Usage: bash ci/trace-licenses.sh [linux/ARCH|all] [LOG_PATH]\n' >&2; exit 2 ;;
 esac
-name=${1:-linux/amd64}
-log=${2:-${TMPDIR:-/tmp}/certgen-beta4-license-${name//\//-}.log}
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || exit 1
 cd -- "$root" || exit 1
+log=${2:-$root/trace-licenses.log}
 
 docker buildx build \
     --builder "${CERTGEN_BUILDER:-cf-lego-certgen-multiarch}" \
