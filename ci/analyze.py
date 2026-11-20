@@ -115,7 +115,6 @@ def main():
         run(['bash','ci/analyze-go.sh'])
     elif language == 'python':
         run(['python3','-B','ci/analyze-python.py'])
-        run(['python3','-B','ci/check_licenses.py'])
     elif language in {'bash','posix'}:
         shell(language)
     elif language in {'jq','awk','sed'}:

@@ -1,7 +1,0 @@
-Installed Alpine package: ca-certificates-bundle 20261020-r0
-Declared license: MPL-2.0 AND MIT
-Source recipe: https://raw.githubusercontent.com/alpinelinux/aports/e78f5987166c6ffbe23f6472e2e8f040298fe2da/main/ca-certificates/APKBUILD
-
-Corresponding source: https://gitlab.alpinelinux.org/alpine/ca-certificates/-/archive/20261020/ca-certificates-20261020.tar.bz2
-Retrieved from: https://distfiles.alpinelinux.org/distfiles/v3.24/ca-certificates-20261020.tar.bz2
-SHA-512: d28eb01751b1a914ffb5d8cb99e662f0a35a95148c21dcf98de1ab3108b54db9714a99472d07715023867f4f76a21f2a79a2bc1c7e9876ce5167fdd865ad2dd7

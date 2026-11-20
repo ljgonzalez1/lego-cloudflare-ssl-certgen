@@ -6,7 +6,6 @@ read_versions
 
 platform=$1
 image=$2
-bash ci/check-image-licenses.sh "$image" "$platform"
 
 work=$(mktemp -d)
 container=

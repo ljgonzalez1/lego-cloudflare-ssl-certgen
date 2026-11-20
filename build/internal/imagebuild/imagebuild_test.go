@@ -92,11 +92,12 @@ func TestDownloadChecksChecksumBeforeExtracting(t *testing.T) {
 	if err := downloader.Download(context.Background(), output, server.URL+"/checksums", "fixture.tar.gz", server.URL+"/archive", ""); err != nil {
 		t.Fatal(err)
 	}
-	for name, mode := range map[string]os.FileMode{"lego": 0755, "LICENSE": 0644} {
-		info, err := os.Stat(filepath.Join(output, name))
-		if err != nil || info.Mode().Perm() != mode || info.Size() == 0 {
-			t.Fatalf("%s: %v", name, err)
-		}
+	if info, err := os.Stat(filepath.Join(output, "lego")); err != nil || info.Mode().Perm() != 0755 || info.Size() == 0 {
+		t.Fatalf("lego: %v", err)
+	}
+	// The release archive's other files are not extracted.
+	if _, err := os.Stat(filepath.Join(output, "LICENSE")); !os.IsNotExist(err) {
+		t.Fatal("extracted a file other than lego")
 	}
 	for _, item := range []struct{ archive, digest string }{
 		{"fixture.tar.gz", strings.Repeat("0", 64)}, {"../escape", digest}, {"fixture.tar.gz", "invalid"},
@@ -129,7 +130,7 @@ func TestRejectMalformedOrLinkedArchiveFiles(t *testing.T) {
 		"empty executable":     makeArchive(t, archiveEntry{name: "lego"}, archiveEntry{name: "LICENSE", contents: "license"}),
 		"duplicate executable": makeArchive(t, archiveEntry{name: "lego", contents: "one"}, archiveEntry{name: "lego", contents: "two"}, archiveEntry{name: "LICENSE", contents: "license"}),
 		"symlink executable":   makeArchive(t, archiveEntry{name: "lego", kind: tar.TypeSymlink}, archiveEntry{name: "LICENSE", contents: "license"}),
-		"hardlink license":     makeArchive(t, archiveEntry{name: "lego", contents: "exe"}, archiveEntry{name: "LICENSE", kind: tar.TypeLink}),
+		"hardlink executable":  makeArchive(t, archiveEntry{name: "lego", kind: tar.TypeLink}, archiveEntry{name: "LICENSE", contents: "license"}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			output := filepath.Join(t.TempDir(), "out")
@@ -213,7 +214,7 @@ func TestTargetEnvironmentSetsIndependentCrossCompilation(t *testing.T) {
 	}
 }
 
-func TestPrepareRuntimeContainsOnlyRequiredDataAndLicenses(t *testing.T) {
+func TestPrepareRuntimeContainsOnlyRequiredData(t *testing.T) {
 	// Production uses the native Alpine stage. A fixture tree makes this test
 	// independent of the host distribution and needs no network or root account.
 	source := t.TempDir()
@@ -229,26 +230,8 @@ func TestPrepareRuntimeContainsOnlyRequiredDataAndLicenses(t *testing.T) {
 		}
 	}
 	root := filepath.Join(t.TempDir(), "runtime")
-	previous, err := os.Getwd()
-	if err != nil {
+	if err := prepareRuntimeFrom(root, source); err != nil {
 		t.Fatal(err)
-	}
-	if err := os.Chdir("../.."); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(previous); err != nil {
-			t.Error(err)
-		}
-	}()
-	if err := prepareRuntimeFrom(root, "licenses", source); err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{"Go/LICENSE", "go-yaml/LICENSE", "go-yaml/NOTICE", "certgen/LICENSE", "ca-certificates/MPL-2.0", "NOTICE"} {
-		info, err := os.Stat(filepath.Join(root, "usr/share/licenses", path))
-		if err != nil || info.Size() == 0 {
-			t.Fatalf("missing license %s: %v", path, err)
-		}
 	}
 	if info, err := os.Stat(filepath.Join(root, "tmp")); err != nil || info.Mode()&os.ModeSticky == 0 || info.Mode().Perm() != 0777 {
 		t.Fatal("incorrect /tmp permissions")

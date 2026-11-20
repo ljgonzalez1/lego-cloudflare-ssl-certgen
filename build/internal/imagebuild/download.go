@@ -183,10 +183,11 @@ func ExtractArchive(contents []byte, output string) error {
 		if entries > 1024 || header.Size < 0 || header.Size > maximumArchiveSize {
 			return errors.New("release archive exceeds the extraction limits")
 		}
-		if header.Name != "lego" && header.Name != "LICENSE" {
+		if header.Name != "lego" {
 			continue
 		}
-		if found[header.Name] || header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size <= 0 || header.Size > maximumArchiveSize {
+		// archive/tar reports old-style regular files (TypeRegA) as TypeReg.
+		if found[header.Name] || header.Typeflag != tar.TypeReg || header.Size <= 0 || header.Size > maximumArchiveSize {
 			return fmt.Errorf("The lego archive must contain a nonempty regular %s file.", header.Name)
 		}
 		file, err := os.OpenFile(filepath.Join(work, header.Name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
@@ -211,34 +212,23 @@ func ExtractArchive(contents []byte, output string) error {
 	if expanded.N == 0 {
 		return errors.New("release archive exceeds the expanded size limit")
 	}
-	for _, name := range []string{"lego", "LICENSE"} {
-		if !found[name] {
-			return fmt.Errorf("The lego archive must contain a nonempty regular %s file.", name)
-		}
-		info, err := os.Lstat(filepath.Join(output, name))
-		if err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
-			return errors.New("Refusing to replace a link or directory in the output.")
-		}
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
+	if !found["lego"] {
+		return errors.New("The lego archive must contain a nonempty regular lego file.")
+	}
+	info, err := os.Lstat(filepath.Join(output, "lego"))
+	if err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
+		return errors.New("Refusing to replace a link or directory in the output.")
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	if err = os.MkdirAll(output, 0755); err != nil {
 		return err
 	}
-	for _, name := range []string{"lego", "LICENSE"} {
-		mode := os.FileMode(0644)
-		if name == "lego" {
-			mode = 0755
-		}
-		if err = os.Chmod(filepath.Join(work, name), mode); err != nil {
-			return err
-		}
-		if err = os.Rename(filepath.Join(work, name), filepath.Join(output, name)); err != nil {
-			return err
-		}
+	if err = os.Chmod(filepath.Join(work, "lego"), 0755); err != nil {
+		return err
 	}
-	return nil
+	return os.Rename(filepath.Join(work, "lego"), filepath.Join(output, "lego"))
 }
 func DownloadFromEnvironment(output string) error {
 	architecture, err := ReleaseArchitecture(os.Getenv("TARGETARCH"), os.Getenv("TARGETVARIANT"))

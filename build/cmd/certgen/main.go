@@ -9,7 +9,7 @@ import (
 	"github.com/ljgonzalez1/lego-cloudflare-ssl-certgen/internal/debugrun"
 )
 
-var applicationVersion = "6.0.1-beta-6"
+var applicationVersion = "6.0.1-beta-7"
 
 func runWorker(bridge *debugrun.Bridge) (status int) {
 	diagnostics := certgen.NewDiagnostics(os.Stderr)
