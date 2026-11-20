@@ -19,6 +19,12 @@ import (
 
 func TestMain(m *testing.M) {
 	if mode := os.Getenv("DEBUGRUN_TEST_HELPER"); mode != "" {
+		if path := os.Getenv("DEBUGRUN_TEST_ENVIRONMENT"); path != "" {
+			value, set := os.LookupEnv(configHomeEnvironment)
+			record := fmt.Sprintf("%t\n%s\n%s\n", set, value, os.Getenv(savedConfigEnvironment))
+			_ = os.WriteFile(path+".tmp", []byte(record), 0600)
+			_ = os.Rename(path+".tmp", path)
+		}
 		fmt.Fprintln(os.Stderr, "fake debugger output")
 		for {
 			time.Sleep(time.Hour)
@@ -196,6 +202,105 @@ func (f *FakeAPI) Command(in CommandInput, out *DebuggerReply) error {
 	return nil
 }
 
+func TestDelveUsesPrivateConfigurationAndWorkerRestoresCaller(t *testing.T) {
+	for _, original := range []*string{nil, new(string), func() *string { value := "/caller/config"; return &value }()} {
+		name := "unset"
+		if original != nil {
+			name = "set:" + *original
+		}
+		t.Run(name, func(t *testing.T) {
+			if original == nil {
+				t.Setenv(configHomeEnvironment, "placeholder")
+				if err := os.Unsetenv(configHomeEnvironment); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				t.Setenv(configHomeEnvironment, *original)
+			}
+			t.Setenv(savedConfigEnvironment, "1/stale/outer/value")
+			work := t.TempDir()
+			extra := delveConfigEnvironment(work)
+			environment := workerEnvironment("/socket", "token", true, false, extra...)
+			values := map[string][]string{}
+			for _, entry := range environment {
+				key, value, _ := strings.Cut(entry, "=")
+				values[key] = append(values[key], value)
+			}
+			if got := values[configHomeEnvironment]; len(got) != 1 || got[0] != filepath.Join(work, "delve-config") {
+				t.Fatalf("Delve configuration home=%q", got)
+			}
+			if got := values[savedConfigEnvironment]; len(got) != 1 {
+				t.Fatalf("saved caller state=%q", got)
+			}
+			// Simulate the debugged worker receiving Delve's environment.
+			t.Setenv(configHomeEnvironment, values[configHomeEnvironment][0])
+			t.Setenv(savedConfigEnvironment, values[savedConfigEnvironment][0])
+			restoreConfigEnvironment()
+			value, set := os.LookupEnv(configHomeEnvironment)
+			if original == nil && set {
+				t.Fatalf("worker kept Delve's configuration home %q", value)
+			}
+			if original != nil && (!set || value != *original) {
+				t.Fatalf("worker restored %q (set=%t), want %q", value, set, *original)
+			}
+			if _, leaked := os.LookupEnv(savedConfigEnvironment); leaked {
+				t.Fatal("internal configuration marker reached descendants")
+			}
+		})
+	}
+}
+func TestDelveProcessReceivesPrivateConfigurationHome(t *testing.T) {
+	t.Setenv("DEBUGRUN_TEST_HELPER", "fake")
+	t.Setenv("GORACE", "atexit_sleep_ms=0")
+	t.Setenv(configHomeEnvironment, "/caller/config")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the fake debugger records its environment; start the target first.
+	target := exec.Command(executable)
+	target.Env = os.Environ()
+	if err := target.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = target.Process.Kill(); _ = target.Wait() }()
+	record := filepath.Join(t.TempDir(), "debugger-environment")
+	t.Setenv("DEBUGRUN_TEST_ENVIRONMENT", record)
+	output, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	session := newSession(t)
+	backend := &FakeAPI{PID: target.Process.Pid, Mode: "success"}
+	work := t.TempDir()
+	s := &supervisor{options: Options{Executable: executable, Debugger: executable, Input: os.Stdin, Output: output, Error: output}, session: session, work: work, groups: make(map[int]bool)}
+	s.dial = func(_ string) (net.Conn, error) {
+		// Answer only after the fake debugger has recorded its environment.
+		if _, err := os.Stat(record); err != nil {
+			return nil, err
+		}
+		server := rpc.NewServer()
+		if err := server.RegisterName("RPCServer", backend); err != nil {
+			return nil, err
+		}
+		client, remote := net.Pipe()
+		go server.ServeCodec(jsonrpc.NewServerCodec(remote))
+		return client, nil
+	}
+	if status, _, err := s.runDelve(false); status != 0 || err != nil {
+		t.Fatalf("status=%d err=%v", status, err)
+	}
+	session.Finalize(0)
+	data, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "true\n" + filepath.Join(work, "delve-config") + "\n1/caller/config\n"
+	if string(data) != want {
+		t.Fatalf("debugger environment=%q, want %q", data, want)
+	}
+}
 func TestDelveAPIExecutionAndNoReplayDecision(t *testing.T) {
 	t.Setenv("DEBUGRUN_TEST_HELPER", "fake")
 	t.Setenv("GORACE", "atexit_sleep_ms=0")

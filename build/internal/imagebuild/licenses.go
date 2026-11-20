@@ -19,10 +19,10 @@ func CollectLicenses(root, inputs string) error {
 	Tracef("local license bundle ready: %d components; verify actual target payload", len(bundle.Components))
 	return licenseaudit.Collect(licenseaudit.Options{
 		Root: root, Inputs: inputs, ProjectVersion: os.Getenv("APP_VERSION"),
-		LegoVersion: "v" + strings.TrimPrefix(os.Getenv("LEGO_VERSION"), "v"),
+		LegoVersion:   "v" + strings.TrimPrefix(os.Getenv("LEGO_VERSION"), "v"),
 		ResolveModule: bundle.Module, ResolveGo: bundle.GoSource,
 		ResolveData: func(kind string) (licenseaudit.Source, error) { return bundle.Data(root, "/", kind) },
-		Progress: Progress,
+		Progress:    Progress,
 	})
 }
 
@@ -39,7 +39,7 @@ func collectDownloadedLicenses(root, inputs string) error {
 		progress, stop = licenseaudit.NewProgressLog(os.Stderr, "linux/"+platform)
 	}
 	defer stop()
-	progress("diagnostic revision=beta5; authenticate upstream license sources once")
+	progress("diagnostic revision=beta6; authenticate upstream license sources once")
 	toolchain, err := licenseaudit.ToolchainRoot()
 	if err != nil {
 		return err

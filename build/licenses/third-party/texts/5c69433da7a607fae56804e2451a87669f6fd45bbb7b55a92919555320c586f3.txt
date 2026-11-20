@@ -1,0 +1,536 @@
+--- kakao/kakao.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package kakao provides constants for using OAuth2 to access Kakao.
+
+--- amazon/amazon.go ---
+// Copyright 2017 The oauth2 Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package amazon provides constants for using OAuth2 to access Amazon.
+
+--- clientcredentials/clientcredentials.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package clientcredentials implements the OAuth2.0 "client credentials" token flow,
+// also known as "two-legged OAuth 2.0".
+//
+// This should be used when the client is acting on its own behalf or when the client
+// is the resource owner. It may also be used when requesting access to protected
+// resources based on an authorization previously arranged with the authorization
+// server.
+//
+// See https://tools.ietf.org/html/rfc6749#section-4.4
+
+--- mailchimp/mailchimp.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package mailchimp provides constants for using OAuth2 to access MailChimp.
+
+--- vk/vk.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package vk provides constants for using OAuth2 to access VK.com.
+
+--- google/default.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- foursquare/foursquare.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package foursquare provides constants for using OAuth2 to access Foursquare.
+
+--- google/jwt_test.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- jwt/jwt.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package jwt implements the OAuth 2.0 JSON Web Token flow, commonly
+// known as "two-legged OAuth 2.0".
+//
+// See: https://tools.ietf.org/html/draft-ietf-oauth-jwt-bearer-12
+
+--- microsoft/microsoft.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package microsoft provides constants for using OAuth2 to access Windows Live ID.
+
+--- gitlab/gitlab.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package gitlab provides constants for using OAuth2 to access GitLab.
+
+--- mediamath/mediamath.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package mediamath provides constants for using OAuth2 to access MediaMath.
+
+--- yahoo/yahoo.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package yahoo provides constants for using OAuth2 to access Yahoo.
+
+--- bitbucket/bitbucket.go ---
+// Copyright 2015 The oauth2 Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package bitbucket provides constants for using OAuth2 to access Bitbucket.
+
+--- google/default_test.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- slack/slack.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package slack provides constants for using OAuth2 to access Slack.
+
+--- google/externalaccount/programmaticrefreshcredsource.go ---
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- fitbit/fitbit.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package fitbit provides constants for using OAuth2 to access the Fitbit API.
+
+--- google/error.go ---
+// Copyright 2022 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- nokiahealth/nokiahealth.go ---
+// Copyright 2018 The oauth2 Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package nokiahealth provides constants for using OAuth2 to access the Nokia Health Mate API.
+
+--- clientcredentials/clientcredentials_test.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- github/github.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package github provides constants for using OAuth2 to access Github.
+
+--- linkedin/linkedin.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package linkedin provides constants for using OAuth2 to access LinkedIn.
+
+--- stackoverflow/stackoverflow.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package stackoverflow provides constants for using OAuth2 to access Stack Overflow.
+
+--- paypal/paypal.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package paypal provides constants for using OAuth2 to access PayPal.
+
+--- endpoints/endpoints.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package endpoints provides constants for using OAuth2 to access various services.
+
+--- jira/jira_test.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- odnoklassniki/odnoklassniki.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package odnoklassniki provides constants for using OAuth2 to access Odnoklassniki.
+
+--- endpoints/endpoints_test.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- google/doc.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package google provides support for making OAuth2 authorized and authenticated
+// HTTP requests to Google APIs. It supports the Web server flow, client-side
+// credentials, service accounts, Google Compute Engine service accounts,
+// Google App Engine service accounts and workload identity federation
+// from non-Google cloud platforms.
+//
+// A brief overview of the package follows. For more information, please read
+// https://developers.google.com/accounts/docs/OAuth2
+// and
+// https://developers.google.com/accounts/docs/application-default-credentials.
+// For more information on using workload identity federation, refer to
+// https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation.
+//
+// # OAuth2 Configs
+//
+// Two functions in this package return golang.org/x/oauth2.Config values from Google credential
+// data. Google supports two JSON formats for OAuth2 credentials: one is handled by ConfigFromJSON,
+// the other by JWTConfigFromJSON. The returned Config can be used to obtain a TokenSource or
+// create an http.Client.
+//
+// # Workload and Workforce Identity Federation
+//
+// For information on how to use Workload and Workforce Identity Federation, see [golang.org/x/oauth2/google/externalaccount].
+//
+// # Credentials
+//
+// The Credentials type represents Google credentials, including Application Default
+// Credentials.
+//
+// Use FindDefaultCredentials to obtain Application Default Credentials.
+// FindDefaultCredentials looks in some well-known places for a credentials file, and
+// will call AppEngineTokenSource or ComputeTokenSource as needed.
+//
+// Application Default Credentials also support workload identity federation to
+// access Google Cloud resources from non-Google Cloud platforms including Amazon
+// Web Services (AWS), Microsoft Azure or any identity provider that supports
+// OpenID Connect (OIDC). Workload identity federation is recommended for
+// non-Google Cloud environments as it avoids the need to download, manage and
+// store service account private keys locally.
+//
+// DefaultClient and DefaultTokenSource are convenience methods. They first call FindDefaultCredentials,
+// then use the credentials to construct an http.Client or an oauth2.TokenSource.
+//
+// Use CredentialsFromJSON to obtain credentials from either of the two JSON formats
+// described in OAuth2 Configs, above. The TokenSource in the returned value is the
+// same as the one obtained from the oauth2.Config returned from ConfigFromJSON or
+// JWTConfigFromJSON, but the Credentials may contain additional information
+// that is useful is some circumstances.
+
+--- uber/uber.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package uber provides constants for using OAuth2 to access Uber.
+
+--- cern/cern.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package cern provides constants for using OAuth2 to access CERN services.
+
+--- internal/doc.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package internal contains support packages for [golang.org/x/oauth2].
+
+--- yandex/yandex.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package yandex provides constants for using OAuth2 to access Yandex APIs.
+
+--- spotify/spotify.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package spotify provides constants for using OAuth2 to access Spotify.
+
+--- jira/jira.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package jira provides claims and JWT signing for OAuth2 to access JIRA/Confluence.
+
+--- mailru/mailru.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package mailru provides constants for using OAuth2 to access Mail.Ru.
+
+--- oauth2.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package oauth2 provides support for making
+// OAuth2 authorized and authenticated HTTP requests,
+// as specified in RFC 6749.
+// It can additionally grant authorization with Bearer JWT.
+
+--- instagram/instagram.go ---
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package instagram provides constants for using OAuth2 to access Instagram.
+
+--- google/externalaccount/basecredentials.go ---
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package externalaccount provides support for creating workload identity
+federation and workforce identity federation token sources that can be
+used to access Google Cloud resources from external identity providers.
+
+# Workload Identity Federation
+
+Using workload identity federation, your application can access Google Cloud
+resources from Amazon Web Services (AWS), Microsoft Azure or any identity
+provider that supports OpenID Connect (OIDC) or SAML 2.0.
+Traditionally, applications running outside Google Cloud have used service
+account keys to access Google Cloud resources. Using identity federation,
+you can allow your workload to impersonate a service account.
+This lets you access Google Cloud resources directly, eliminating the
+maintenance and security burden associated with service account keys.
+
+Follow the detailed instructions on how to configure Workload Identity Federation
+in various platforms:
+
+Amazon Web Services (AWS): https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds#aws
+Microsoft Azure: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds#azure
+OIDC identity provider: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-providers#oidc
+SAML 2.0 identity provider: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-providers#saml
+
+For OIDC and SAML providers, the library can retrieve tokens in fours ways:
+from a local file location (file-sourced credentials), from a server
+(URL-sourced credentials), from a local executable (executable-sourced
+credentials), or from a user defined function that returns an OIDC or SAML token.
+For file-sourced credentials, a background process needs to be continuously
+refreshing the file location with a new OIDC/SAML token prior to expiration.
+For tokens with one hour lifetimes, the token needs to be updated in the file
+every hour. The token can be stored directly as plain text or in JSON format.
+For URL-sourced credentials, a local server needs to host a GET endpoint to
+return the OIDC/SAML token. The response can be in plain text or JSON.
+Additional required request headers can also be specified.
+For executable-sourced credentials, an application needs to be available to
+output the OIDC/SAML token and other information in a JSON format.
+For more information on how these work (and how to implement
+executable-sourced credentials), please check out:
+https://cloud.google.com/iam/docs/workload-identity-federation-with-other-providers#create_a_credential_configuration
+
+To use a custom function to supply the token, define a struct that implements the [SubjectTokenSupplier] interface for OIDC/SAML providers,
+or one that implements [AwsSecurityCredentialsSupplier] for AWS providers. This can then be used when building a [Config].
+The [golang.org/x/oauth2.TokenSource] created from the config using [NewTokenSource] can then be used to access Google
+Cloud resources. For instance, you can create a new client from the
+[cloud.google.com/go/storage] package and pass in option.WithTokenSource(yourTokenSource))
+
+Note that this library does not perform any validation on the token_url, token_info_url,
+or service_account_impersonation_url fields of the credential configuration.
+It is not recommended to use a credential configuration that you did not generate with
+the gcloud CLI unless you verify that the URL fields point to a googleapis.com domain.
+
+# Workforce Identity Federation
+
+Workforce identity federation lets you use an external identity provider (IdP) to
+authenticate and authorize a workforce—a group of users, such as employees, partners,
+and contractors—using IAM, so that the users can access Google Cloud services.
+Workforce identity federation extends Google Cloud's identity capabilities to support
+syncless, attribute-based single sign on.
+
+With workforce identity federation, your workforce can access Google Cloud resources
+using an external identity provider (IdP) that supports OpenID Connect (OIDC) or
+SAML 2.0 such as Azure Active Directory (Azure AD), Active Directory Federation
+Services (AD FS), Okta, and others.
+
+Follow the detailed instructions on how to configure Workload Identity Federation
+in various platforms:
+
+Azure AD: https://cloud.google.com/iam/docs/workforce-sign-in-azure-ad
+Okta: https://cloud.google.com/iam/docs/workforce-sign-in-okta
+OIDC identity provider: https://cloud.google.com/iam/docs/configuring-workforce-identity-federation#oidc
+SAML 2.0 identity provider: https://cloud.google.com/iam/docs/configuring-workforce-identity-federation#saml
+
+For workforce identity federation, the library can retrieve tokens in four ways:
+from a local file location (file-sourced credentials), from a server
+(URL-sourced credentials), from a local executable (executable-sourced
+credentials), or from a user supplied function that returns an OIDC or SAML token.
+For file-sourced credentials, a background process needs to be continuously
+refreshing the file location with a new OIDC/SAML token prior to expiration.
+For tokens with one hour lifetimes, the token needs to be updated in the file
+every hour. The token can be stored directly as plain text or in JSON format.
+For URL-sourced credentials, a local server needs to host a GET endpoint to
+return the OIDC/SAML token. The response can be in plain text or JSON.
+Additional required request headers can also be specified.
+For executable-sourced credentials, an application needs to be available to
+output the OIDC/SAML token and other information in a JSON format.
+For more information on how these work (and how to implement
+executable-sourced credentials), please check out:
+https://cloud.google.com/iam/docs/workforce-obtaining-short-lived-credentials#generate_a_configuration_file_for_non-interactive_sign-in
+
+To use a custom function to supply the token, define a struct that implements the [SubjectTokenSupplier] interface for OIDC/SAML providers.
+This can then be used when building a [Config].
+The [golang.org/x/oauth2.TokenSource] created from the config using [NewTokenSource] can then be used access Google
+Cloud resources. For instance, you can create a new client from the
+[cloud.google.com/go/storage] package and pass in option.WithTokenSource(yourTokenSource))
+
+# Security considerations
+
+Note that this library does not perform any validation on the token_url, token_info_url,
+or service_account_impersonation_url fields of the credential configuration.
+It is not recommended to use a credential configuration that you did not generate with
+the gcloud CLI unless you verify that the URL fields point to a googleapis.com domain.
+*/
+
+--- facebook/facebook.go ---
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package facebook provides constants for using OAuth2 to access Facebook.
+
+--- authhandler/authhandler_test.go ---
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- hipchat/hipchat.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package hipchat provides constants for using OAuth2 to access HipChat.
+
+--- authhandler/authhandler.go ---
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package authhandler implements a TokenSource to support
+// "three-legged OAuth 2.0" via a custom AuthorizationHandler.
+
+--- heroku/heroku.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package heroku provides constants for using OAuth2 to access Heroku.
+
+--- google/externalaccount/basecredentials_test.go ---
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- jws/jws.go ---
+// Copyright 2014 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package jws provides a partial implementation
+// of JSON Web Signature encoding and decoding.
+// It exists to support the [golang.org/x/oauth2] package.
+//
+// See RFC 7515.
+//
+// Deprecated: this package is not intended for public use and might be
+// removed in the future. It exists for internal use only.
+// Please switch to another JWS package or copy this package into your own
+// source tree.
+
+--- google/downscope/downscoping.go ---
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package downscope implements the ability to downscope, or restrict, the
+Identity and Access Management permissions that a short-lived Token
+can use. Please note that only Google Cloud Storage supports this feature.
+For complete documentation, see https://cloud.google.com/iam/docs/downscoping-short-lived-credentials
+
+To downscope permissions of a source credential, you need to define
+a Credential Access Boundary. Said Boundary specifies which resources
+the newly created credential can access, an upper bound on the permissions
+it has over those resources, and optionally attribute-based conditional
+access to the aforementioned resources. For more information on IAM
+Conditions, see https://cloud.google.com/iam/docs/conditions-overview.
+
+This functionality can be used to provide a third party with
+limited access to and permissions on resources held by the owner of the root
+credential or internally in conjunction with the principle of least privilege
+to ensure that internal services only hold the minimum necessary privileges
+for their function.
+
+For example, a token broker can be set up on a server in a private network.
+Various workloads (token consumers) in the same network will send authenticated
+requests to that broker for downscoped tokens to access or modify specific google
+cloud storage buckets. See the NewTokenSource example for an example of how a
+token broker would use this package.
+
+The broker will use the functionality in this package to generate a downscoped
+token with the requested configuration, and then pass it back to the token
+consumer. These downscoped access tokens can then be used to access Google
+Storage resources. For instance, you can create a NewClient from the
+"cloud.google.com/go/storage" package and pass in option.WithTokenSource(yourTokenSource))
+*/
+
+--- twitch/twitch.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package twitch provides constants for using OAuth2 to access Twitch.
+

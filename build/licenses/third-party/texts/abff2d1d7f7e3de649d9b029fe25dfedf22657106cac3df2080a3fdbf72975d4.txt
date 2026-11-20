@@ -1,0 +1,88 @@
+--- example_test.go ---
+// Copyright (c) 2015-2024 Jeevanandam M. (jeeva@myjeeva.com), All rights reserved.
+// resty source code and usage is governed by a MIT style
+// license that can be found in the LICENSE file.
+
+
+--- client.go ---
+// Copyright (c) 2015-2024 Jeevanandam M (jeeva@myjeeva.com), All rights reserved.
+// resty source code and usage is governed by a MIT style
+// license that can be found in the LICENSE file.
+
+
+--- transport112.go ---
+//go:build !go1.13
+// +build !go1.13
+
+// Copyright (c) 2015-2024 Jeevanandam M (jeeva@myjeeva.com), All rights reserved.
+// resty source code and usage is governed by a MIT style
+// license that can be found in the LICENSE file.
+
+
+--- digest.go ---
+// Copyright (c) 2015-2024 Jeevanandam M (jeeva@myjeeva.com)
+// 2023 Segev Dagan (https://github.com/segevda)
+// 2024 Philipp Wolfer (https://github.com/phw)
+// All rights reserved.
+// resty source code and usage is governed by a MIT style
+// license that can be found in the LICENSE file.
+
+
+--- resty.go ---
+// Copyright (c) 2015-2024 Jeevanandam M (jeeva@myjeeva.com), All rights reserved.
+// resty source code and usage is governed by a MIT style
+// license that can be found in the LICENSE file.
+
+// Package resty provides Simple HTTP and REST client library for Go.
+
+--- transport_js.go ---
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build js && wasm
+// +build js,wasm
+
+
+--- shellescape/shellescape.go ---
+// Copyright (c) 2015-present Jeevanandam M (jeeva@myjeeva.com)
+// 2024 Ahuigo (https://github.com/ahuigo)
+// All rights reserved.
+// resty source code and usage is governed by a MIT style
+// license that can be found in the LICENSE file.
+
+/*
+Package shellescape provides the methods to escape arbitrary
+strings for a safe use as command line arguments in the most common
+POSIX shells.
+
+The original Python package which this work was inspired by can be found
+at https://pypi.python.org/pypi/shellescape.
+*/
+
+--- context_test.go ---
+// Copyright (c) 2015-2024 Jeevanandam M (jeeva@myjeeva.com)
+// 2016 Andrew Grigorev (https://github.com/ei-grad)
+// All rights reserved.
+// resty source code and usage is governed by a MIT style
+// license that can be found in the LICENSE file.
+
+
+--- transport.go ---
+//go:build go1.13
+// +build go1.13
+
+// Copyright (c) 2015-2024 Jeevanandam M (jeeva@myjeeva.com), All rights reserved.
+// resty source code and usage is governed by a MIT style
+// license that can be found in the LICENSE file.
+
+
+--- transport_other.go ---
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build !(js && wasm)
+// +build !js !wasm
+
+

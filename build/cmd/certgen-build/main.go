@@ -24,7 +24,7 @@ func run() (status int) {
 	defer stop()
 	imagebuild.Progress = progress
 	started := time.Now()
-	progress("revision=beta5 START command=%q toolchain=%s", os.Args[1:], runtime.Version())
+	progress("revision=beta6 START command=%q toolchain=%s", os.Args[1:], runtime.Version())
 	defer func() {
 		if failure := recover(); failure != nil {
 			fmt.Fprintf(os.Stderr, "Build panic: %v\n%s", failure, debug.Stack())
