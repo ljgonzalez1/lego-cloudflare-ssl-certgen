@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.29.0
 ARG ALPINE_VERSION=3.24.4
 ARG GO_VERSION=1.27.4
-ARG APP_VERSION=6.0.1-beta-1
+ARG APP_VERSION=6.0.1-beta-2
 ARG LEGO_VERSION=v4.34.0
 
 # Build tools always run natively. Go cross-compiles the static target binary.

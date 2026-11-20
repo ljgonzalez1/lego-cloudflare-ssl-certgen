@@ -1,4 +1,4 @@
-# Local validation — v6.0.1-beta-1
+# Local validation — v6.0.1-beta-2
 
 Validated on 2026-11-20 on Linux AMD64, Go 1.27.4, Python 3.12, pinned Ruff 0.17.5 and the available ShellCheck 0.11 development build. All listed local suite groups pass. This report describes source and compiled-fixture validation, not a successful GitHub/Docker publication.
 
@@ -20,7 +20,7 @@ Validated on 2026-11-20 on Linux AMD64, Go 1.27.4, Python 3.12, pinned Ruff 0.17
 | Compressed application and lego alias CLI | Not part of this historical profile |
 | Fuzzing | PASS: argument, YAML and lego log targets, 15 seconds each; two workers per campaign |
 | Source license copies and asset fingerprints | PASS; artwork/trademark grants remain identified as unresolved source-asset rights |
-| CSV and generated version tables | PASS; 55 historical release records |
+| CSV and generated version tables | PASS; 56 historical release records |
 
 Static format contracts check syntax, duplicate keys, workflow dependencies/cycles/step shape, expression structure, embedded shell, jq compilation, awk/sed programs, strict JSON, TOML, CSV, environment assignments, Markdown file targets, SVG XML and PNG integrity. These project checks do not claim the full feature set of actionlint/hadolint or an actual Docker engine. Unknown source formats fail inventory. The two SC2016 child-shell constructs from the screenshot are standalone analyzed fixtures, with their process-group regression tests preserved.
 
