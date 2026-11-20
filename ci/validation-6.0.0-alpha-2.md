@@ -1,6 +1,8 @@
-# Local validation — v6.0.1-beta-1
+# Local validation — v6.0.0-alpha-2
 
 Validated on 2026-11-19 with Go 1.27.4 on native Linux amd64, as an ordinary non-root user. Profile: Debug with Delve capability and explicit trace controls. These are source archives, not locally built Docker images.
+
+This supersedes the original alpha-1 for publication; alpha-1 remains an unchanged archival ZIP.
 
 ## Executed checks
 
@@ -8,7 +10,7 @@ Validated on 2026-11-19 with Go 1.27.4 on native Linux amd64, as an ordinary non
 | --- | --- |
 | Go unit tests, shuffled, all project packages | PASS |
 | Go race detector, shuffled | PASS |
-| Go statement coverage, unit run including build helpers | 43.3% |
+| Go statement coverage, unit run including build helpers | 43.1% |
 | Compiled CLI tests | 23 passed; 2 intentional skips |
 | Offline shell scenarios | 48 passed; no failures/skips |
 | Docker Hub protocol/digest tests against local mock registry | 19 passed |
@@ -18,7 +20,7 @@ Validated on 2026-11-19 with Go 1.27.4 on native Linux amd64, as an ordinary non
 | Go vet and executable ELF cross-compilation/inspection | PASS for all five target architectures |
 | gofmt, ShellCheck and Ruff | PASS |
 | Source license copies, asset hashes and embedded font notices | PASS; artwork grants remain a separate open review |
-| README and Docker Hub tables/identity | PASS; 55 historical CSV rows |
+| README and Docker Hub tables/identity | PASS; 54 historical CSV rows |
 | FuzzParseOptions, FuzzLoadDomains and FuzzLegoLog | PASS; 15 seconds per target with 2 workers |
 
 The five Linux targets are arm/v6, arm/v7, arm64, 386 and amd64. Cross-compiling and inspecting an ELF is not a native/emulated Docker execution. Two pulse checks are intentionally skipped because this snapshot predates the pulse introduced in beta-3.
