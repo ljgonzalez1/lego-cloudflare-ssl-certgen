@@ -1,0 +1,28 @@
+--- query/encode.go ---
+// Copyright 2013 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package query implements encoding of structs into URL query parameters.
+//
+// As a simple example:
+//
+//	type Options struct {
+//		Query   string `url:"q"`
+//		ShowAll bool   `url:"all"`
+//		Page    int    `url:"page"`
+//	}
+//
+//	opt := Options{ "foo", true, 2 }
+//	v, _ := query.Values(opt)
+//	fmt.Print(v.Encode()) // will output: "q=foo&all=true&page=2"
+//
+// The exact mapping between Go values and url.Values is described in the
+// documentation for the Values() function.
+
+--- query/encode_test.go ---
+// Copyright 2013 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+

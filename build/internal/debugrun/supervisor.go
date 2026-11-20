@@ -357,7 +357,7 @@ type runningCommand struct {
 	err            error
 }
 
-func (s *supervisor) start(command *exec.Cmd, probe, pipe bool) (*runningCommand, error) {
+func (s *supervisor) start(command *exec.Cmd, probe, pipe bool, extra ...string) (*runningCommand, error) {
 	out, err := newRelay(s.options.Output, s.session, "stdout")
 	if err != nil {
 		return nil, err
@@ -371,7 +371,7 @@ func (s *supervisor) start(command *exec.Cmd, probe, pipe bool) (*runningCommand
 	command.Stdin = s.options.Input
 	command.Stdout = out.child
 	command.Stderr = errorOut.child
-	command.Env = workerEnvironment(s.socket, s.token, probe, pipe)
+	command.Env = workerEnvironment(s.socket, s.token, probe, pipe, extra...)
 	var childDescriptors []*os.File
 	if pipe {
 		requestRead, requestWrite, e := os.Pipe()

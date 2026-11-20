@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -17,6 +18,8 @@ const socketEnvironment = "CERTGEN_INTERNAL_SOCKET"
 const tokenEnvironment = "CERTGEN_INTERNAL_TOKEN"
 const probeEnvironment = "CERTGEN_INTERNAL_PROBE"
 const pipeEnvironment = "CERTGEN_INTERNAL_PIPE"
+const savedConfigEnvironment = "CERTGEN_INTERNAL_XDG_CONFIG_HOME"
+const configHomeEnvironment = "XDG_CONFIG_HOME"
 
 type connection interface {
 	io.ReadWriteCloser
@@ -61,6 +64,8 @@ func IsWorker() bool {
 	return (os.Getenv(socketEnvironment) != "" || os.Getenv(pipeEnvironment) == "1") && os.Getenv(tokenEnvironment) != ""
 }
 func ConnectWorker() (*Bridge, error) {
+	// Delve's private configuration directory is never the application's.
+	restoreConfigEnvironment()
 	var stream connection
 	var err error
 	if os.Getenv(pipeEnvironment) == "1" {
@@ -144,14 +149,46 @@ func (b *Bridge) RecordPeriodic(done <-chan struct{}) {
 	}
 }
 
-func workerEnvironment(path, token string, probe, pipe bool) []string {
+// delveConfigEnvironment gives Delve a private configuration directory inside
+// the supervisor's 0700 workspace. Delve passes its environment to the target,
+// so the caller's original XDG_CONFIG_HOME state travels with it and the worker
+// restores it before lego or any other descendant can start.
+func delveConfigEnvironment(work string) []string {
+	saved := "0"
+	if value, ok := os.LookupEnv(configHomeEnvironment); ok {
+		saved = "1" + value
+	}
+	return []string{configHomeEnvironment + "=" + filepath.Join(work, "delve-config"), savedConfigEnvironment + "=" + saved}
+}
+
+// restoreConfigEnvironment undoes delveConfigEnvironment in the debugged worker.
+func restoreConfigEnvironment() {
+	saved, ok := os.LookupEnv(savedConfigEnvironment)
+	if !ok {
+		return
+	}
+	if value, wasSet := strings.CutPrefix(saved, "1"); wasSet {
+		_ = os.Setenv(configHomeEnvironment, value)
+	} else {
+		_ = os.Unsetenv(configHomeEnvironment)
+	}
+	_ = os.Unsetenv(savedConfigEnvironment)
+}
+
+func workerEnvironment(path, token string, probe, pipe bool, extra ...string) []string {
+	replaced := map[string]bool{socketEnvironment: true, tokenEnvironment: true, probeEnvironment: true, pipeEnvironment: true, savedConfigEnvironment: true}
+	for _, entry := range extra {
+		key, _, _ := strings.Cut(entry, "=")
+		replaced[key] = true
+	}
 	environment := []string{}
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if key != socketEnvironment && key != tokenEnvironment && key != probeEnvironment && key != pipeEnvironment {
+		if !replaced[key] {
 			environment = append(environment, entry)
 		}
 	}
+	environment = append(environment, extra...)
 	environment = append(environment, socketEnvironment+"="+path, tokenEnvironment+"="+token)
 	if pipe {
 		environment = append(environment, pipeEnvironment+"=1")

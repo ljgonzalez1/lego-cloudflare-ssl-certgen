@@ -1,0 +1,449 @@
+--- cmd/gotelemetry/internal/view/view.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// The view command is a server intended to be run on a user's machine to
+// display the local counters and time series charts of counters.
+
+--- internal/configstore/download_windows.go ---
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build windows
+
+
+--- internal/mmap/mmap_windows.go ---
+// Copyright 2011 The Go Authors.  All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- internal/counter/counter.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package internal/counter implements the internals of the public counter package.
+// In addition to the public API, this package also includes APIs to parse and
+// manage the counter files, needed by the upload package.
+
+--- internal/regtest/regtest.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package regtest provides helpers for end-to-end testing
+// involving counter and upload packages.
+
+--- internal/proxy/proxy.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package proxy provides functions for writing module data to a directory
+// in proxy format, so that it can be used as a module proxy by setting
+// GOPROXY="file://<dir>".
+// This is copied from golang.org/x/tools/gopls/internal/{proxydir,proxy}.
+
+--- internal/content/generate.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build ignore
+
+
+--- cmd/gotelemetry/help_test.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- internal/crashmonitor/crash_go123.go ---
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.23
+// +build go1.23
+
+
+--- internal/configtest/configtest.go ---
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package configtest provides a helper for testing using a local proxy
+// containing a fake upload config.
+
+--- internal/telemetry/dir_test.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package telemetrymode manages the telemetry mode file.
+
+--- counter/counter_test.go ---
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- internal/unionfs/unionfs.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package unionfs allows multiple file systems to be read as a union.
+
+--- internal/chartconfig/chartconfig.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// The chartconfig package defines configuration that specifies both the data
+// that is uploaded to telemetry.go.dev, and the resulting charts that are
+// rendered. Each record in [config.txt] defines the collection and aggregation
+// of a group of related counters, in the custom format specified below. We
+// refer to these records as "chart configs" (and represent them with the
+// [ChartConfig] type), based on the principle that telemetry collection should
+// be derived from views of the data that we want to see. For basic counters,
+// this is indeed the case: chart configs correspond 1:1 with charts on
+// telemetry.go.dev. For stack counters, we use the same format, but have no
+// way to render them graphically.
+//
+// The format itself is based on the original telemetry blog post, though it
+// has been modified slightly and may be subject to further change:
+//
+// https://research.swtch.com/telemetry-design#configuration
+//
+// # Chart records
+//
+// Chart config records consist of fields, comments, and whitespace. A field is
+// defined by a line starting with a valid key, followed immediately by ":",
+// and then a textual value, which cannot include the comment separator '#'.
+//
+// Comments start with '#', and extend to the end of the line.
+//
+// The following keys are supported. Any entry not marked as (optional) must be
+// provided for the record to pass validation.
+//
+//   - counter: an expression for the group of counters this chart aggregates.
+//     More detail on the syntax of this expression is provided below.
+//   - title: the chart title.
+//   - description: (optional) a longer description of the chart.
+//   - issue: a Go issue tracker URL proposing the chart configuration.
+//     Multiple issues may be provided by including additional 'issue:' lines.
+//   - type: the chart type. Currently only partition and stack are supported.
+//   - program: the package path of the program for which this chart applies.
+//   - version: (optional) the first program version for which this chart
+//     applies. Must be a valid semver value. If not provided, the chart
+//     applies to all versions.
+//   - depth: (optional) stack counters only; the maximum stack depth to collect
+//   - error: (optional) the desired error rate for this chart, which
+//     determines collection rate
+//
+// Multiple records are separated by "---" lines.
+//
+// # Counter expressions
+//
+// Each record must specify in its 'counter' field either a single counter, or
+// a group of related counters.
+//
+// As described in the [counter documentation], we decompose counter names into
+// two parts, separated by a ':'. The part before the ':' is referred to as the
+// 'chart name', and the part after the ':' is the 'bucket'. So in the example
+// gopls/gotoolchain:auto, gopls/gotoolchain is the chart name, and auto is the
+// bucket name.
+//
+// In order to be grouped into a single chart, counters must share a common
+// chart name, and so we specify the group of counters using the following
+// compact syntax:
+//
+//	chartname:{bucket1,bucket2,bucket3}
+//
+// Which expands to the following group of counters:
+//
+//	chartname:bucket1
+//	chartname:bucket2
+//	chartname:bucket3
+//
+// # Chart types
+//
+// There are two supported chart types for the 'type' field:
+//
+//   - A 'partition' chart is a bar chart with one bar for each related counter.
+//     The value of the bar is the aggregation of all counts for the program
+//     over the applicable time period.
+//   - A 'stack' chart is not a real chart. It just means that we want to
+//     collect the given stack counter or group of stack counters.
+//
+// # Example
+//
+// Here is a fully worked example, including both partition and stack records:
+//
+//	# This config defines an ordinary counter.
+//	counter: gopls/editor:{emacs,vim,vscode,other} # TODO(golang/go#34567): add more editors
+//	title: Editor Distribution
+//	description: measure editor distribution for gopls users.
+//	type: partition
+//	issue: https://go.dev/issue/12345
+//	program: golang.org/x/tools/gopls
+//	version: v1.0.0
+//
+//	---
+//
+//	# This config defines a stack counter.
+//	counter: gopls/bug
+//	title: Gopls bug reports.
+//	description: Stacks of bugs encountered on the gopls server.
+//	issue: https://go.dev/12345
+//	issue: https://go.dev/23456 # increase stack depth
+//	type: stack
+//	program: golang.org/x/tools/gopls
+//	depth: 10
+//
+// [config.txt]: https://go.googlesource.com/telemetry/+/refs/heads/master/internal/chartconfig/config.txt
+// [counter documentation]: https://go.dev/doc/telemetry#counters
+
+--- cmd/gotelemetry/internal/csv/csv.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// csv dumps all the active counters. The output is
+// a sequence of lines
+// value,"counter-name",program, version,go-version,goos, garch
+// sorted by counter name. It looks at the files in
+// telemetry.LocalDir that are counter files or local reports
+// By design it pays no attention to dates. The combination
+// of program version and go version are deemed sufficient.
+
+--- internal/configstore/download.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package configstore abstracts interaction with the telemetry config server.
+// Telemetry config (golang.org/x/telemetry/config) is distributed as a go
+// module containing go.mod and config.json. Programs that upload collected
+// counters download the latest config using `go mod download`. This provides
+// verification of downloaded configuration and cacheability.
+
+--- counter/countertest/countertest.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// countertest provides testing utilities for counters.
+// This package cannot be used except for testing.
+
+--- counter/countertest/countertest_go121.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.21
+
+
+--- internal/mmap/mmap_other.go ---
+// Copyright 2022 The Go Authors.  All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build (js && wasm) || wasip1 || plan9 || (solaris && !go1.20)
+
+
+--- internal/mmap/mmap.go ---
+// Copyright 2011 The Go Authors.  All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// This package is a lightly modified version of the mmap code
+// in github.com/google/codesearch/index.
+
+// The mmap package provides an abstraction for memory mapping files
+// on different platforms.
+
+--- internal/config/config.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// package config provides methods for loading and querying a
+// telemetry upload config file.
+
+--- cmd/gotelemetry/internal/browser/browser.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package browser provides utilities for interacting with users' browsers.
+// This is a copy of the go project's src/cmd/internal/browser.
+
+--- cmd/gotelemetry/internal/view/view_test.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// The view command is a server intended to be run on a users machine to
+// display the local counters and time series charts of counters.
+
+--- cmd/gotelemetry/doc.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Code generated by TestDocHelp; DO NOT EDIT.
+
+// Gotelemetry is a tool for managing Go telemetry data and settings.
+//
+// Usage:
+//
+//	gotelemetry <command> [arguments]
+//
+// The commands are:
+//
+//	on	enable telemetry collection and uploading
+//	local	enable telemetry collection but disable uploading
+//	off	disable telemetry collection and uploading
+//	view	run a web viewer for local telemetry data
+//	env	print the current telemetry environment
+//	clean	remove all local telemetry data
+//
+// Use "gotelemetry help <command>" for details about any command.
+//
+// The following additional commands are available for diagnostic
+// purposes, and may change or be removed in the future:
+//
+//	csv	print all known counters
+//	dump	view counter file data
+//	upload	run upload with logging enabled
+
+--- internal/configgen/main.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:generate go run . -w
+
+//go:build go1.22
+
+// Package configgen generates the upload config file stored in the config.json
+// file of golang.org/x/telemetry/config based on the chartconfig stored in
+// config.txt.
+
+--- cmd/gotelemetry/main.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:generate go test -run=TestDocHelp -update
+
+
+--- internal/mmap/mmap_test.go ---
+// Copyright 2024 The Go Authors.  All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- internal/mmap/mmap_unix.go ---
+// Copyright 2011 The Go Authors.  All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build unix && (!solaris || go1.20)
+
+
+--- counter/doc.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package counter implements a simple counter system for collecting
+// totally public telemetry data.
+//
+// There are two kinds of counters, basic counters and stack counters.
+// Basic counters are created by [New].
+// Stack counters are created by [NewStack].
+// Both are incremented by calling Inc().
+//
+// Basic counters are very cheap. Stack counters are more expensive, as they
+// require parsing the stack. (Stack counters are implemented as basic counters
+// whose names are the concatenation of the name and the stack trace. There is
+// an upper limit on the size of this name, about 4K bytes. If the name is too
+// long the stack will be truncated and "truncated" appended.)
+//
+// When counter files expire they are turned into reports by the upload
+// package. The first time any counter file is created for a user, a random day
+// of the week is selected on which counter files will expire. For the first
+// week, that day is more than 7 days (but not more than two weeks) in the
+// future. After that the counter files expire weekly on the same day of the
+// week.
+//
+// # Counter Naming
+//
+// Counter names passed to [New] and [NewStack] should follow these
+// conventions:
+//
+//   - Names cannot contain whitespace or newlines.
+//
+//   - Names must be valid unicode, with no unprintable characters.
+//
+//   - Names may contain at most one ':'. In the counter "foo:bar", we refer to
+//     "foo" as the "chart name" and "bar" as the "bucket name".
+//
+//   - The '/' character should partition counter names into a hierarchy. The
+//     root of this hierarchy should identify the logical entity that "owns"
+//     the counter. This could be an application, such as "gopls" in the case
+//     of "gopls/client:vscode", or a shared library, such as "crash" in the
+//     case of the "crash/crash" counter owned by the crashmonitor library. If
+//     the entity name itself contains a '/', that's ok: "cmd/go/flag" is fine.
+//
+//   - Words should be '-' separated, as in "gopls/completion/errors-latency"
+//
+//   - Histograms should use bucket names identifying upper bounds with '<'.
+//     For example given two counters "gopls/completion/latency:<50ms" and
+//     "gopls/completion/latency:<100ms", the "<100ms" bucket counts events
+//     with latency in the half-open interval [50ms, 100ms).
+//
+// # Debugging
+//
+// The GODEBUG environment variable can enable printing of additional debug
+// information for counters. Adding GODEBUG=countertrace=1 to the environment
+// of a process using counters causes the x/telemetry/counter package to log
+// counter information to stderr.
+
+--- start_posix.go ---
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
+
+
+--- internal/configgen/main_test.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.22
+
+
+--- internal/testenv/testenv.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package testenv contains helper functions for skipping tests
+// based on which tools are present in the environment.
+
+--- internal/telemetry/dir.go ---
+// Copyright 2023 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package telemetry manages the telemetry mode file.
+

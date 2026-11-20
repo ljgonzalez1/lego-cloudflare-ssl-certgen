@@ -1,0 +1,476 @@
+--- 0/asctime.c ---
+/* asctime a la ISO C.  */
+
+/*
+** This file is in the public domain, so clarified as of
+** 1996-06-05 by Arthur David Olson.
+*/
+
+/*
+** Avoid the temptation to punt entirely to strftime;
+** strftime can behave badly when tm components are out of range, and
+** the output of strftime is supposed to be locale specific
+** whereas the output of asctime is supposed to be constant.
+*/
+
+/*LINTLIBRARY*/
+
+#include "private.h"
+#include <stdio.h>
+
+
+--- 0/strftime.c ---
+/* Convert a broken-down timestamp to a string.  */
+
+/* Copyright 1989 The Regents of the University of California.
+   All rights reserved.
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions
+   are met:
+   1. Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+   2. Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+   3. Neither the name of the University nor the names of its contributors
+      may be used to endorse or promote products derived from this software
+      without specific prior written permission.
+
+   THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS "AS IS" AND
+   ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+   ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+   OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+   LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+   OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+   SUCH DAMAGE.  */
+
+/*
+** Based on the UCB version with the copyright notice appearing above.
+**
+** This is ANSIish only when "multibyte character == plain character".
+*/
+
+#include "private.h"
+
+#include <fcntl.h>
+#include <locale.h>
+#include <stdio.h>
+
+/* If true, the value returned by an idealized unlimited-range mktime
+   always fits into an integer type with bounds MIN and MAX.
+   If false, the value might not fit.
+   This macro is usable in #if if its arguments are.
+   Add or subtract 2**31 - 1 for the maximum UT offset allowed in a TZif file,
+   divide by the maximum number of non-leap seconds in a year,
+   divide again by two just to be safe,
+   and account for the tm_year origin (1900) and time_t origin (1970).  */
+#define MKTIME_FITS_IN(min, max) \
+
+--- 0/zic.c ---
+/* Compile .zi time zone data into TZif binary files.  */
+
+/*
+** This file is in the public domain, so clarified as of
+** 2006-07-17 by Arthur David Olson.
+*/
+
+/* Use the system 'time' function, instead of any private replacement.
+   This avoids creating an unnecessary dependency on localtime.c.  */
+#undef EPOCH_LOCAL
+#undef EPOCH_OFFSET
+#undef RESERVE_STD_EXT_IDS
+#undef time_tz
+
+#include "version.h"
+#include "private.h"
+#include "tzdir.h"
+#include "tzfile.h"
+
+#include <fcntl.h>
+#ifndef O_BINARY
+# define O_BINARY 0 /* MS-Windows */
+#endif
+
+#include <locale.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <stdio.h>
+
+
+--- 0/localtime.c ---
+/* Convert timestamp from time_t to struct tm.  */
+
+/*
+** This file is in the public domain, so clarified as of
+** 1996-06-05 by Arthur David Olson.
+*/
+
+/*
+** Leap second handling from Bradley White.
+** POSIX.1-1988 style TZ environment variable handling from Guy Harris.
+*/
+
+/*LINTLIBRARY*/
+
+#define LOCALTIME_IMPLEMENTATION
+#include "private.h"
+
+#include "tzdir.h"
+#include "tzfile.h"
+#include <fcntl.h>
+
+#if HAVE_SYS_STAT_H
+# include <sys/stat.h>
+# ifndef S_ISREG
+#  define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG) /* Ancient UNIX.  */
+# endif
+#else
+
+--- 0/private.h ---
+/* Private header for tzdb code.  */
+
+#ifndef PRIVATE_H
+
+#define PRIVATE_H
+
+/*
+** This file is in the public domain, so clarified as of
+** 1996-06-05 by Arthur David Olson.
+*/
+
+/*
+** This header is for use ONLY with the time conversion code.
+** There is no guarantee that it will remain unchanged,
+** or that it will remain at all.
+** Do NOT copy it to any system include directory.
+** Thank you!
+*/
+
+/* PORT_TO_C89 means the code should work even if the underlying
+   compiler and library support only C89 plus C99's 'long long'
+   and perhaps a few other extensions to C89.
+
+   This macro is obsolescent, and the plan is to remove it along with
+   associated code.  A good time to do that might be in the year 2029
+   because RHEL 7 (whose GCC defaults to C89) extended life cycle
+   support (ELS) is scheduled to end on 2028-06-30.  */
+#ifndef PORT_TO_C89
+# define PORT_TO_C89 0
+#endif
+
+/* SUPPORT_C89 means the tzcode library should support C89 callers
+   in addition to the usual support for C99-and-later callers.
+   This defaults to 1 as POSIX requires, even though that can trigger
+   latent bugs in callers.  */
+#ifndef SUPPORT_C89
+# define SUPPORT_C89 1
+#endif
+
+
+/* The following feature-test macros should be defined before
+   any #include of a system header.  */
+
+/* Enable tm_gmtoff, tm_zone, and environ on GNUish systems.  */
+#define _GNU_SOURCE 1
+/* Fix asctime_r on Solaris 11.  */
+#define _POSIX_PTHREAD_SEMANTICS 1
+/* Enable strtoimax on pre-C99 Solaris 11.  */
+#define __EXTENSIONS__ 1
+/* Cause MS-Windows headers to define POSIX names.  */
+#define _CRT_DECLARE_NONSTDC_NAMES 1
+/* Prevent MS-Windows headers from defining min and max.  */
+#define NOMINMAX 1
+
+/* On GNUish systems where time_t might be 32 or 64 bits, use 64.
+   On these platforms _FILE_OFFSET_BITS must also be 64; otherwise
+   setting _TIME_BITS to 64 does not work.  The code does not
+   otherwise rely on _FILE_OFFSET_BITS being 64, since it does not
+   use off_t or functions like 'stat' that depend on off_t.  */
+#ifndef _TIME_BITS
+# ifndef _FILE_OFFSET_BITS
+#  define _FILE_OFFSET_BITS 64
+# endif
+# if _FILE_OFFSET_BITS == 64
+#  define _TIME_BITS 64
+# endif
+#endif
+
+/* End of feature-test macro definitions.  */
+
+
+#ifndef __STDC_VERSION__
+# define __STDC_VERSION__ 0
+#endif
+
+/* Define true, false and bool if they don't work out of the box.  */
+#if PORT_TO_C89 && __STDC_VERSION__ < 199901
+# define true 1
+# define false 0
+# define bool int
+#elif __STDC_VERSION__ < 202311
+# include <stdbool.h>
+#endif
+
+/* For pre-C23 compilers, a substitute for static_assert.
+   Some of these compilers may warn if it is used outside the top level.  */
+#if __STDC_VERSION__ < 202311 && !defined static_assert
+# define static_assert(cond) extern int static_assert_check[(cond) ? 1 : -1]
+#endif
+
+/*
+** zdump has been made independent of the rest of the time
+** conversion package to increase confidence in the verification it provides.
+** You can use zdump to help in verifying other implementations.
+** To do this, compile with -DUSE_LTZ=0 and link without the tz library.
+*/
+#ifndef USE_LTZ
+# define USE_LTZ 1
+#endif
+
+/* This string was in the Factory zone through version 2016f.  */
+#ifndef GRANDPARENTED
+# define GRANDPARENTED	"Local time zone must be set--see zic manual page"
+#endif
+
+/*
+** Defaults for preprocessor symbols.
+** You can override these in your C compiler options, e.g. '-DHAVE_GETTEXT=1'.
+*/
+
+#if !defined HAVE__GENERIC && defined __has_extension
+# if !__has_extension(c_generic_selections)
+#  define HAVE__GENERIC 0
+# endif
+#endif
+/* _Generic is buggy in pre-4.9 GCC.  */
+#if !defined HAVE__GENERIC && defined __GNUC__ && !defined __STRICT_ANSI__
+# define HAVE__GENERIC (4 < __GNUC__ + (9 <= __GNUC_MINOR__))
+#endif
+#ifndef HAVE__GENERIC
+# define HAVE__GENERIC (201112 <= __STDC_VERSION__)
+#endif
+
+#ifndef HAVE_GETEUID
+# define HAVE_GETEUID 1
+#endif
+
+#ifndef HAVE_GETRESUID
+# define HAVE_GETRESUID 1
+#endif
+
+#if !defined HAVE_GETTEXT && defined __has_include
+# if __has_include(<libintl.h>)
+#  define HAVE_GETTEXT 1
+# endif
+#endif
+#ifndef HAVE_GETTEXT
+# define HAVE_GETTEXT 0
+#endif
+
+#ifndef HAVE_INCOMPATIBLE_CTIME_R
+# define HAVE_INCOMPATIBLE_CTIME_R 0
+#endif
+
+#ifndef HAVE_LINK
+# define HAVE_LINK 1
+#endif /* !defined HAVE_LINK */
+
+#ifndef HAVE_MALLOC_ERRNO
+# define HAVE_MALLOC_ERRNO 1
+#endif
+
+#ifndef HAVE_POSIX_DECLS
+# define HAVE_POSIX_DECLS 1
+#endif
+
+#ifndef HAVE_SETENV
+# define HAVE_SETENV 1
+#endif
+
+#ifndef HAVE_STRDUP
+# define HAVE_STRDUP 1
+#endif
+
+#ifndef HAVE_SYMLINK
+# define HAVE_SYMLINK 1
+#endif /* !defined HAVE_SYMLINK */
+
+#if !defined HAVE_SYS_STAT_H && defined __has_include
+# if !__has_include(<sys/stat.h>)
+#  define HAVE_SYS_STAT_H 0
+# endif
+#endif
+#ifndef HAVE_SYS_STAT_H
+# define HAVE_SYS_STAT_H 1
+#endif
+
+#if !defined HAVE_UNISTD_H && defined __has_include
+# if !__has_include(<unistd.h>)
+#  define HAVE_UNISTD_H 0
+# endif
+#endif
+#ifndef HAVE_UNISTD_H
+# define HAVE_UNISTD_H 1
+#endif
+
+#ifndef NETBSD_INSPIRED
+# define NETBSD_INSPIRED 1
+#endif
+
+#if HAVE_INCOMPATIBLE_CTIME_R
+# define asctime_r _incompatible_asctime_r
+# define ctime_r _incompatible_ctime_r
+#endif /* HAVE_INCOMPATIBLE_CTIME_R */
+
+#ifndef TZ_RUNTIME_LEAPS
+# define TZ_RUNTIME_LEAPS 1
+#endif
+
+/*
+** Nested includes
+*/
+
+#include <stddef.h>
+
+/* If defining the 'timezone' variable a la POSIX, avoid clashing with the old
+   'timezone' function of FreeBSD <= 14, by renaming the latter's declaration.
+   This hack can be removed after 2028-11-30, FreeBSD 14's expected EOL.  */
+#if (defined __FreeBSD__  && __FreeBSD__ < 15 && defined __BSD_VISIBLE \
+
+--- 0/date.c ---
+/* Display or set the current time and date.  */
+
+/* Copyright 1985, 1987, 1988 The Regents of the University of California.
+   All rights reserved.
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions
+   are met:
+   1. Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+   2. Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+   3. Neither the name of the University nor the names of its contributors
+      may be used to endorse or promote products derived from this software
+      without specific prior written permission.
+
+   THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS "AS IS" AND
+   ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+   ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+   OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+   LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+   OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+   SUCH DAMAGE.  */
+
+#include "private.h"
+#include <locale.h>
+#include <stdio.h>
+
+
+--- 0/difftime.c ---
+/* Return the difference between two timestamps.  */
+
+/*
+** This file is in the public domain, so clarified as of
+** 1996-06-05 by Arthur David Olson.
+*/
+
+/*LINTLIBRARY*/
+
+#include "private.h"	/* for time_t and TYPE_SIGNED */
+
+/* Return -X as a double.  Using this avoids casting to 'double'.  */
+
+--- 0/tzfile.h ---
+/* Layout and location of TZif files.  */
+
+#ifndef TZFILE_H
+
+#define TZFILE_H
+
+/*
+** This file is in the public domain, so clarified as of
+** 1996-06-05 by Arthur David Olson.
+*/
+
+/*
+** This header is for use ONLY with the time conversion code.
+** There is no guarantee that it will remain unchanged,
+** or that it will remain at all.
+** Do NOT copy it to any system include directory.
+** Thank you!
+*/
+
+/* Information about time zone files.
+   See Internet RFC 9636 for more details about the following format.  */
+
+/*
+** Each file begins with. . .
+*/
+
+#define TZ_MAGIC "TZif"
+
+
+--- 0/zdump.c ---
+/* Dump time zone data in a textual format.  */
+
+/*
+** This file is in the public domain, so clarified as of
+** 2009-05-17 by Arthur David Olson.
+*/
+
+#include "version.h"
+
+#ifndef NETBSD_INSPIRED
+# define NETBSD_INSPIRED 1
+#endif
+
+#include "private.h"
+#include <stdio.h>
+
+#ifndef HAVE_LOCALTIME_R
+# define HAVE_LOCALTIME_R 1
+#endif
+
+#ifndef HAVE_LOCALTIME_RZ
+# ifdef TM_ZONE
+#  define HAVE_LOCALTIME_RZ (NETBSD_INSPIRED && USE_LTZ)
+# else
+#  define HAVE_LOCALTIME_RZ 0
+# endif
+#endif
+
+#ifndef HAVE_TZSET
+# define HAVE_TZSET 1
+#endif
+
+#ifndef ZDUMP_LO_YEAR
+# define ZDUMP_LO_YEAR (-500)
+#endif /* !defined ZDUMP_LO_YEAR */
+
+#ifndef ZDUMP_HI_YEAR
+# define ZDUMP_HI_YEAR 2500
+#endif /* !defined ZDUMP_HI_YEAR */
+
+#define SECSPERNYEAR	(SECSPERDAY * DAYSPERNYEAR)
+#define SECSPERLYEAR	(SECSPERNYEAR + SECSPERDAY)
+#define SECSPER400YEARS	(SECSPERNYEAR * (intmax_t) (300 + 3)	\
+
+--- 0/workman.sh ---
+#! /bin/sh
+# Convert manual page troff stdin to formatted .txt stdout.
+
+# This file is in the public domain, so clarified as of
+# 2009-05-17 by Arthur David Olson.
+
+
