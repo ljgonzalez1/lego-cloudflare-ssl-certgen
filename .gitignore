@@ -13,6 +13,3 @@ cloudflare_api_token
 /build/dist/
 /build/*.test
 /build/coverage*
-/.ruff_cache/
-/ci/.ruff_cache/
-__pycache__/
