@@ -84,10 +84,13 @@ HEADER_ALIASES = {
 
 VALID_TAG = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 APP_VERSION = re.compile(
-    r"(?P<prefix>[vV]?)(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)"
-    r"(?P<suffix>-[A-Za-z0-9_][A-Za-z0-9_.-]*)?\Z"
+    r"(?P<prefix>[vV]?)(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)"
+    r"(?P<extra>(?:\.(?:0|[1-9][0-9]*)){0,2})"
+    r"(?P<suffix>[-.+]?(?:(?:alpha|alfa|beta|audit)(?:[-.]?[1-9][0-9]*)?|(?:rc|build)[-.]?[1-9][0-9]*))?\Z",
+    re.IGNORECASE,
 )
-PRERELEASE = re.compile(r"(?:^|[._-])(?:alpha|alfa|beta)[0-9]*(?:$|[._-])", re.IGNORECASE)
+PRERELEASE = re.compile(r"(?:^|[._-])(?:alpha|alfa|beta|rc)[0-9]*(?:$|[._-])", re.IGNORECASE)
+
 
 
 def normalize_header(value: str) -> str:
@@ -177,9 +180,8 @@ def make_release(fields: dict[str, str], line: int) -> Release:
     match = APP_VERSION.fullmatch(app_version)
     if not match:
         raise ValueError(
-            f"CSV line {line}: App Version must have major.minor.patch "
-            f"(optionally prefixed with v and/or followed by -prerelease); got {app_version!r}. "
-            "Three numeric components are necessary to generate distinct tags."
+            f"CSV line {line}: invalid application version {app_version!r}. "
+            "Expected 2–4 numeric components and an optional recognized suffix."
         )
 
     for key, value in (("Docker OS Version", os_version), ("Lego Version", lego_version)):
@@ -193,9 +195,16 @@ def make_release(fields: dict[str, str], line: int) -> Release:
     prefix = match.group("prefix")
     minor_base = f"{prefix}{match.group('major')}.{match.group('minor')}"
     major_base = f"{prefix}{match.group('major')}"
-    embedded_suffix = (match.group("suffix") or "").removeprefix("-")
+    embedded_suffix = (match.group("suffix") or "").lstrip("-.+")
     combined_suffix = "-".join(part for part in (embedded_suffix, app_suffix) if part)
     app_full = with_suffix(app_version, app_suffix)
+    if not APP_VERSION.fullmatch(app_full):
+        raise ValueError(f"CSV line {line}: invalid combined application version {app_full!r}.")
+    if "+" in app_full:
+        raise ValueError(
+            f"CSV line {line}: {app_full!r} is valid as a version branch, "
+            "but '+' is not permitted in Docker image tags."
+        )
     app_minor = with_suffix(minor_base, combined_suffix)
     app_major = with_suffix(major_base, combined_suffix)
 
