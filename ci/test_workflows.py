@@ -83,7 +83,7 @@ class WorkflowChecks(unittest.TestCase):
         documents = ("version_readme", "version_dockerhub")
         for failures in ((documents[0],), (documents[1],), documents):
             for event, branch in (("push", "master"), ("pull_request", "master"),
-                                  ("release", "master"), ("release", "v6.0.1-beta-1"), ("push", "v6.0.1-beta-1")):
+                                  ("release", "master"), ("release", "v6.0.0-alpha-2"), ("push", "v6.0.0-alpha-2")):
                 with self.subTest(failures=failures, event=event, branch=branch):
                     passed = self.route(event, branch, version_failures=failures)
                     if event == "push" and branch == "master":
@@ -102,7 +102,7 @@ class WorkflowChecks(unittest.TestCase):
             job = self.jobs[name]
             check = next(step for step in job["steps"] if step.get("id") == "check")
             warning = next(step for step in job["steps"] if step.get("name") == "Report advisory version failure")
-            for event, branch in (("push", "master"), ("pull_request", "master"), ("release", "master"), ("push", "v6.0.1-beta-1")):
+            for event, branch in (("push", "master"), ("pull_request", "master"), ("release", "master"), ("push", "v6.0.0-alpha-2")):
                 github = {"event_name": event, "ref": "refs/heads/" + branch}
                 advisory = event == "push" and branch == "master"
                 self.assertEqual(accepts(check["continue-on-error"], github, {}), advisory)

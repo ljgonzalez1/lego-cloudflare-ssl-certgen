@@ -65,4 +65,4 @@ Automated collection and integrity checks are not a legal compatibility opinion.
 - Font notices: metadata embedded in the supplied SVG files, retained verbatim alongside the source
 - Cloudflare brand guidance: https://www.cloudflare.com/trademark/
 
-See the release's `ci/validation-6.0.1-beta-1.md` report for what was actually executed locally and what still requires Docker/network access. Source and fixture tests must not be presented as a completed audit of a real upstream lego image.
+See the release's `ci/validation-6.0.0-alpha-2.md` report for what was actually executed locally and what still requires Docker/network access. Source and fixture tests must not be presented as a completed audit of a real upstream lego image.
