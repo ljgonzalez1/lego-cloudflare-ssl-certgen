@@ -16,6 +16,8 @@ The collector preserves upstream LICENSE, COPYING, NOTICE, COPYRIGHT, PATENTS, A
 
 CA data and beta timezone files are matched to the actual installed Alpine payload. The installed package's version, declared license and exact aports commit identify its recipe and checksum-bound corresponding source archives. The exact APKBUILD, including its contributor notices and declared license, is retained; aports has no repository-root COPYING. Recipes must match the installed origin, version, revision and license. Source archives can fall back to the release-specific Alpine distfiles mirror only when the exact recipe's SHA-512 matches. Generated alpine-base release metadata retains the recipe's attribution with supplemental standard MIT terms from SPDX License List v3.29.0 (`build/licenses/MIT.txt`); those terms are not used to license other sources. Beta's retained Alpine release metadata has its own package attribution. Production uses the Go SDK's `zoneinfo.zip`, matched by SHA-256 to that exact SDK; its public-domain provenance replaces beta's Alpine timezone attribution. The native compiler's license is not assumed to cover lego compiled with a different Go release.
 
+Beta 5 keeps source evidence for the vendored YAML subtree separate from its complete authenticated upstream module, even when the path and version match. A checksum for the full upstream archive is never assigned to a partial vendored source tree.
+
 Notice collection runs again when executable contents/versions change. A retained Delve receives its own notices and transitive dependencies; when a probe removes Delve, its unused components and notices do not survive. Production includes no Delve. Source downloads, module caches, Go tools and the verifier remain in build stages.
 
 ## Locations in each final image
@@ -39,12 +41,14 @@ The local verifier rejects missing or modified texts, changed links, incorrect m
 ## CI and local use
 
 - `python3 -B ci/check_licenses.py` verifies source license copies, asset hashes and embedded font notice copies.
-- Every Docker build runs `certgen-build licenses /runtime /licenses`, then `verify-licenses /runtime` with networking disabled.
+- `bash ci/update-license-bundle.sh` prepares original third-party texts and authenticated metadata in `build/licenses/third-party/`, excluding all executables and source archives. Commit the generated `bundle.json` and `texts/` there.
+- When that bundle is absent, a shared native build stage prepares it once; each architecture reuses it. This fallback is a BuildKit artifact until explicitly exported into the project.
+- Every target runs `certgen-build licenses /runtime /licenses`, then `verify-licenses /runtime`, both with networking disabled. The local notices must match binary metadata and Alpine package provenance/data fingerprints.
 - Every architecture's smoke test exports the **final image**, safely extracts it and invokes the native verifier. No target Go compiler or license checker is added to scratch.
 - Missing/unavailable upstream source evidence or an unsupported recipe/version fails the build. Fix the source mapping and notices; do not disable the check or substitute the project's license.
 - Existing Go unit, race, fuzz, compiled CLI, shell, Python, version/tag, workflow and five-architecture checks remain required.
 
-For an already assembled root, run `go build -C build -mod=vendor -trimpath -o /tmp/certgen-build ./cmd/certgen-build`, then `/tmp/certgen-build verify-licenses /path/to/root`. Collection is a native Alpine build-stage operation requiring the installed package database, matching SDK, `APP_VERSION`, `LEGO_VERSION`, vendored source working directory and network access to authenticated upstream sources. Verification itself needs neither network nor source downloads.
+For an already assembled root, run `go build -C build -mod=vendor -trimpath -o /tmp/certgen-build ./cmd/certgen-build`, then `/tmp/certgen-build verify-licenses /path/to/root`. Collection is a native Alpine build-stage operation requiring the local notice bundle, installed package database, `APP_VERSION`, `LEGO_VERSION` and vendored source working directory. Only explicit initial bundle preparation or refresh requires network access to authenticated upstream sources. Verification needs neither network nor source downloads. The editing environment could not fetch the complete upstream set; the delivered bundle directory documents the one-time preparation instead of claiming to include evidence that was not obtained.
 
 ## Artwork, fonts and scope
 
@@ -65,4 +69,4 @@ Automated collection and integrity checks are not a legal compatibility opinion.
 - Font notices: metadata embedded in the supplied SVG files, retained verbatim alongside the source
 - Cloudflare brand guidance: https://www.cloudflare.com/trademark/
 
-See the release's `ci/validation-6.0.1-beta-4.md` report for what was actually executed locally and what still requires Docker/network access. Source and fixture tests must not be presented as a completed audit of a real upstream lego image.
+See the release's `ci/validation-6.0.1-beta-5.md` report for what was actually executed locally and what still requires Docker/network access. Source and fixture tests must not be presented as a completed audit of a real upstream lego image.

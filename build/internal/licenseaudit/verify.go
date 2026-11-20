@@ -43,7 +43,7 @@ func sameModule(record Module, actual Module, components map[string]Component, m
 	}
 	override := main && (actual.ResolvedVersion == "" || actual.ResolvedVersion == "(devel)") && ((actual.ResolvedPath == Project && binary == "usr/local/bin/certgen") || (actual.ResolvedPath == Lego && binary == "usr/local/bin/lego"))
 	if record.ResolvedSum != "" && record.ResolvedSum != component.Sum {
-		return fmt.Errorf("module source checksum binding changed")
+		return fmt.Errorf("module source checksum binding changed: binary=%s module=%s@%s component=%s binary sum=%q source sum=%q", binary, record.ResolvedPath, record.ResolvedVersion, id, record.ResolvedSum, component.Sum)
 	}
 	if !override && component.Version != record.ResolvedVersion {
 		return fmt.Errorf("wrong source version for %s", id)

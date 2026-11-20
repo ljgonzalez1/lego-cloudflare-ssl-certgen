@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.29.0
 ARG ALPINE_VERSION=3.24.4
 ARG GO_VERSION=1.27.4
-ARG APP_VERSION=6.0.1-beta-4
+ARG APP_VERSION=6.0.1-beta-5
 ARG LEGO_VERSION=v4.34.0
 
 # Build tools always run natively. Go cross-compiles the static target binary.
@@ -18,6 +18,21 @@ COPY spinner/ ./spinner/
 COPY cmd/ ./cmd/
 COPY licenses/ /licenses/
 RUN ["go", "build", "-v", "-x", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags=-compressdwarf=false", "-o", "/certgen-build", "./cmd/certgen-build"]
+
+# One native, target-independent evidence stage for the whole build. A committed
+# bundle is preferred; a missing bundle is prepared once and can be exported.
+# AMD64 is inspected without execution, so Delve evidence is included on every host.
+FROM tools AS license-seed
+ARG APP_VERSION
+ARG LEGO_VERSION
+ARG DELVE_VERSION=v1.27.2
+ARG REFRESH_LICENSE_BUNDLE=0
+ENV TARGETARCH=amd64 TARGETVARIANT="" GOMODCACHE=/root/go/pkg/mod
+RUN --mount=type=cache,id=certgen-license-go-mod-v1,target=/root/go/pkg/mod,sharing=shared ["/certgen-build", "prepare-license-bundle", "/evidence-runtime", "/licenses", "/bundle"]
+
+# Export contains JSON and notice texts only, without third-party binaries.
+FROM scratch AS license-bundle-export
+COPY --from=license-seed /bundle/ /
 
 # Download and SHA-256 verify the official lego binary for the requested CPU.
 FROM tools AS downloader
@@ -96,9 +111,9 @@ ARG TARGETARCH
 ARG TARGETVARIANT
 ENV GOMODCACHE=/root/go/pkg/mod
 COPY --from=runtime-check / /runtime/
-# Go serializes individual module downloads; the cache is safe to share across
-# target architectures. ZIP h1 authentication still runs before collecting notices.
-RUN --mount=type=cache,id=certgen-license-go-mod-v1,target=/root/go/pkg/mod,sharing=shared ["/certgen-build", "licenses", "/runtime", "/licenses"]
+COPY --from=license-seed /bundle/ /licenses/third-party/
+# Rebind local notices to each actual retained payload with networking disabled.
+RUN --network=none ["/certgen-build", "licenses", "/runtime", "/licenses"]
 RUN --network=none ["/certgen-build", "verify-licenses", "/runtime"]
 
 FROM scratch AS target

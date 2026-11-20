@@ -34,7 +34,7 @@ class StaticContracts(unittest.TestCase):
     def test_recursive_inventory_includes_nested_fixtures_and_skips_vendor(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ["ci/tests/fixtures/example.sh", "build/vendor/third.go", "build/cmd/example.go"]:
+            for name in ["ci/tests/fixtures/example.sh", "build/vendor/third.go", "build/cmd/example.go", "trace.log", "trace-licenses.log", "trace-license-bundle.log"]:
                 path = root / name;path.parent.mkdir(parents=True, exist_ok=True);path.write_text("text")
             self.assertEqual({str(path.relative_to(root)) for path in files(root)},
                              {"ci/tests/fixtures/example.sh", "build/cmd/example.go"})

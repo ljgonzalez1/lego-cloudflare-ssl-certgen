@@ -24,7 +24,7 @@ func run() (status int) {
 	defer stop()
 	imagebuild.Progress = progress
 	started := time.Now()
-	progress("revision=beta4-build-trace-r3 START command=%q toolchain=%s", os.Args[1:], runtime.Version())
+	progress("revision=beta5 START command=%q toolchain=%s", os.Args[1:], runtime.Version())
 	defer func() {
 		if failure := recover(); failure != nil {
 			fmt.Fprintf(os.Stderr, "Build panic: %v\n%s", failure, debug.Stack())
@@ -47,10 +47,12 @@ func run() (status int) {
 		err = certgen.CheckDebugBinary(args[1])
 	case len(args) == 3 && args[0] == "licenses":
 		err = imagebuild.CollectLicenses(args[1], args[2])
+	case len(args) == 4 && args[0] == "prepare-license-bundle":
+		err = imagebuild.PrepareLicenseBundle(args[1], args[2], args[3])
 	case len(args) == 2 && args[0] == "verify-licenses":
 		err = imagebuild.VerifyLicenses(args[1])
 	default:
-		fmt.Fprintln(os.Stderr, "Usage: certgen-build licenses ROOT INPUTS | verify-licenses ROOT | download OUTPUT | prepare ROOT LICENSES | compile OUTPUT | delve ROOT | verify-debug BINARY")
+		fmt.Fprintln(os.Stderr, "Usage: certgen-build licenses ROOT INPUTS | prepare-license-bundle ROOT INPUTS OUTPUT | verify-licenses ROOT | download OUTPUT | prepare ROOT LICENSES | compile OUTPUT | delve ROOT | verify-debug BINARY")
 		return 2
 	}
 	if err != nil {
