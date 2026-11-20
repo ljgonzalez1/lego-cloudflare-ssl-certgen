@@ -49,10 +49,10 @@ printf '%s' "$DOCKERHUB_PUSH_TOKEN" |
     docker login --username "$DOCKERHUB_USERNAME" --password-stdin
 unset DOCKERHUB_PUSH_TOKEN
 
-docker run --privileged --rm tonistiigi/binfmt --install arm,arm64,386
-docker run --rm tonistiigi/binfmt
+docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3-68 --install arm,arm64,386
+docker run --rm tonistiigi/binfmt:qemu-v10.2.3-68
 docker buildx ls
-docker buildx create --name "$builder" --driver docker-container --use
+docker buildx create --name "$builder" --driver docker-container --driver-opt image=moby/buildkit:v0.35.1 --use
 builder_created=true
 docker buildx inspect "$builder" --bootstrap
 
