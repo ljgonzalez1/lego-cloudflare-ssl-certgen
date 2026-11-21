@@ -1,0 +1,53 @@
+--- semaphore/semaphore_bench_test.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- errgroup/errgroup_example_md5all_test.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- semaphore/semaphore.go ---
+// Copyright 2017 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package semaphore provides a weighted semaphore implementation.
+
+--- singleflight/singleflight.go ---
+// Copyright 2013 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package singleflight provides a duplicate function call suppression
+// mechanism.
+
+--- singleflight/singleflight_test.go ---
+// Copyright 2013 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- errgroup/errgroup.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package errgroup provides synchronization, error propagation, and Context
+// cancellation for groups of goroutines working on subtasks of a common task.
+//
+// [errgroup.Group] is related to [sync.WaitGroup] but adds handling of tasks
+// returning errors.
+
+--- syncmap/map.go ---
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package syncmap provides a concurrent map implementation.
+// This was the prototype for sync.Map which was added to the standard library's
+// sync package in Go 1.9. https://golang.org/pkg/sync/#Map.
+

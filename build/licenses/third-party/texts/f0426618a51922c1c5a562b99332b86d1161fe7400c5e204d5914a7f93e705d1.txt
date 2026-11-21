@@ -1,0 +1,76 @@
+--- flock_windows.go ---
+// Copyright 2015 Tim Heckman. All rights reserved.
+// Copyright 2018-2025 The Gofrs. All rights reserved.
+// Use of this source code is governed by the BSD 3-Clause
+// license that can be found in the LICENSE file.
+
+//go:build windows
+
+
+--- flock_unix.go ---
+// Copyright 2015 Tim Heckman. All rights reserved.
+// Copyright 2018-2025 The Gofrs. All rights reserved.
+// Use of this source code is governed by the BSD 3-Clause
+// license that can be found in the LICENSE file.
+
+//go:build darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd
+
+
+--- flock_others.go ---
+// Copyright 2015 Tim Heckman. All rights reserved.
+// Copyright 2018-2025 The Gofrs. All rights reserved.
+// Use of this source code is governed by the BSD 3-Clause
+// license that can be found in the LICENSE file.
+
+//go:build (!unix && !windows) || plan9
+
+
+--- flock.go ---
+// Copyright 2015 Tim Heckman. All rights reserved.
+// Copyright 2018-2025 The Gofrs. All rights reserved.
+// Use of this source code is governed by the BSD 3-Clause
+// license that can be found in the LICENSE file.
+
+// Package flock implements a thread-safe interface for file locking.
+// It also includes a non-blocking TryLock() function to allow locking
+// without blocking execution.
+//
+// Package flock is released under the BSD 3-Clause License. See the LICENSE file
+// for more details.
+//
+// While using this library, remember that the locking behaviors are not
+// guaranteed to be the same on each platform. For example, some UNIX-like
+// operating systems will transparently convert a shared lock to an exclusive
+// lock. If you Unlock() the flock from a location where you believe that you
+// have the shared lock, you may accidentally drop the exclusive lock.
+
+--- flock_unix_fcntl.go ---
+// Copyright 2015 Tim Heckman. All rights reserved.
+// Copyright 2018-2025 The Gofrs. All rights reserved.
+// Use of this source code is governed by the BSD 3-Clause
+// license that can be found in the LICENSE file.
+
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// This code implements the filelock API using POSIX 'fcntl' locks,
+// which attach to an (inode, process) pair rather than a file descriptor.
+// To avoid unlocking files prematurely when the same file is opened through different descriptors,
+// we allow only one read-lock at a time.
+//
+// This code is adapted from the Go package (go.22):
+// https://github.com/golang/go/blob/release-branch.go1.22/src/cmd/go/internal/lockedfile/internal/filelock/filelock_fcntl.go
+
+//go:build aix || (solaris && !illumos)
+
+
+--- flock_example_test.go ---
+// Copyright 2015 Tim Heckman. All rights reserved.
+// Copyright 2018-2025 The Gofrs. All rights reserved.
+// Use of this source code is governed by the BSD 3-Clause
+// license that can be found in the LICENSE file.
+
+//go:build !js && !plan9 && !wasip1
+
+

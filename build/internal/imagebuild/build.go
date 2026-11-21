@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode"
 )
 
 func TargetEnvironment() ([]string, error) {
@@ -98,14 +99,11 @@ func copyTree(source, target string) error {
 		return copyFile(path, destination, 0644)
 	})
 }
-
-// PrepareRuntime assembles the runtime data. The license notices are fixed
-// files in build/licenses, copied by the Dockerfile.
-func PrepareRuntime(root string) error {
-	return prepareRuntimeFrom(root, "/")
+func PrepareRuntime(root, licenses string) error {
+	return prepareRuntimeFrom(root, licenses, "/")
 }
-func prepareRuntimeFrom(root, sourceRoot string) error {
-	for _, dir := range []string{"usr/local/bin", "etc/ssl/certs", "usr/share/zoneinfo", "app", "tmp", "ssl-certs", "root"} {
+func prepareRuntimeFrom(root, licenses, sourceRoot string) error {
+	for _, dir := range []string{"usr/local/bin", "etc/ssl/certs", "usr/share/zoneinfo", "usr/share/licenses", "app", "tmp", "ssl-certs", "root"} {
 		Tracef("MKDIR runtime %s mode=0755", filepath.Join(root, dir))
 		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
 			return err
@@ -137,7 +135,27 @@ func prepareRuntimeFrom(root, sourceRoot string) error {
 			return err
 		}
 	}
-	return nil
+	target := filepath.Join(root, "usr/share/licenses")
+	sources := map[string]string{filepath.Join(runtime.GOROOT(), "LICENSE"): "Go/LICENSE", "vendor/gopkg.in/yaml.v3/LICENSE": "go-yaml/LICENSE", "vendor/gopkg.in/yaml.v3/NOTICE": "go-yaml/NOTICE", filepath.Join(licenses, "MPL-2.0.txt"): "ca-certificates/MPL-2.0", filepath.Join(licenses, "project.txt"): "certgen/LICENSE"}
+	for source, destination := range sources {
+		if err := copyFile(source, filepath.Join(target, destination), 0644); err != nil {
+			return err
+		}
+	}
+	notice := "lego-cloudflare-certgen is MIT licensed.\n\nlego " + os.Getenv("LEGO_VERSION") + ": MIT, see lego/LICENSE\n  https://github.com/go-acme/lego\n\nGo " + runtime.Version() + ": BSD-3-Clause, see Go/LICENSE\n  https://go.dev/\n\ngo-yaml v3.0.1: MIT and Apache-2.0, see go-yaml/LICENSE and go-yaml/NOTICE\n  https://github.com/go-yaml/yaml/tree/v3.0.1\n\nCA certificate bundle: Mozilla trust store under MPL-2.0, see ca-certificates/MPL-2.0\n  https://curl.se/docs/caextract.html\n\nTimezone database: public domain, https://www.iana.org/time-zones\n"
+	return os.WriteFile(filepath.Join(target, "NOTICE"), []byte(notice), 0644)
+}
+func escapedModule(text string) string {
+	var result strings.Builder
+	for _, ch := range text {
+		if unicode.IsUpper(ch) {
+			result.WriteByte('!')
+			result.WriteRune(unicode.ToLower(ch))
+		} else {
+			result.WriteRune(ch)
+		}
+	}
+	return result.String()
 }
 func BuildDelve(root string) error {
 	architecture := value("TARGETARCH", runtime.GOARCH)
@@ -185,8 +203,48 @@ func BuildDelve(root string) error {
 	if err != nil {
 		return err
 	}
-	if info.Main.Path != "github.com/go-delve/delve" || info.Main.Version != version {
-		return fmt.Errorf("built Delve reports %s %s, expected %s", info.Main.Path, info.Main.Version, version)
+	modules := append([]*structModule{}, moduleDescription(info.Main.Path, info.Main.Version))
+	for _, dependency := range info.Deps {
+		modules = append(modules, moduleDescription(dependency.Path, dependency.Version))
 	}
-	return nil
+	cache := filepath.Join(work, "pkg/mod")
+	notice := "\nDelve and its Go modules. Each copied license is under delve-modules/.\n"
+	for _, module := range modules {
+		if module.Version == "" {
+			continue
+		}
+		Tracef("Delve dependency notices: %s@%s", module.Path, module.Version)
+		directory := filepath.Join(cache, escapedModule(module.Path)+"@"+escapedModule(module.Version))
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			return err
+		}
+		copied := 0
+		for _, entry := range entries {
+			name := strings.ToLower(entry.Name())
+			if entry.IsDir() || !(strings.HasPrefix(name, "license") || strings.HasPrefix(name, "notice") || strings.HasPrefix(name, "copying") || strings.HasPrefix(name, "copyright")) {
+				continue
+			}
+			destination := filepath.Join(root, "usr/share/licenses/delve-modules", strings.ReplaceAll(module.Path, "/", "_"), entry.Name())
+			if err = copyFile(filepath.Join(directory, entry.Name()), destination, 0644); err != nil {
+				return err
+			}
+			copied++
+		}
+		if copied == 0 {
+			return fmt.Errorf("cannot find the license of Delve dependency %s", module.Path)
+		}
+		notice += module.Path + " " + module.Version + "\n"
+	}
+	file, err := os.OpenFile(filepath.Join(root, "usr/share/licenses/NOTICE"), os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.WriteString(notice)
+	return err
 }
+
+type structModule struct{ Path, Version string }
+
+func moduleDescription(path, version string) *structModule { return &structModule{path, version} }

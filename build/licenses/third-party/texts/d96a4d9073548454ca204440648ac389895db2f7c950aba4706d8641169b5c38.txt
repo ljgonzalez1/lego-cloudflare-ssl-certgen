@@ -1,0 +1,22 @@
+--- internal/sync/singleflight/singleflight.go ---
+// Copyright 2013 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+
+--- encoding/json/escape.go ---
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Copied and modified from Go 1.8 stdlib's encoding/json/#safeSet
+
+
+--- encoding/xml/element.go ---
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Copied and modified from Go 1.14 stdlib's encoding/xml
+
+

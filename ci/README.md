@@ -1,6 +1,6 @@
 # CI and release checks
 
-This snapshot is **v6.0.1-beta-7** (debug with traces and Delve probes). See the [event matrix](../docs/ci-policy.md) for the implemented routing and dependencies.
+This snapshot is **v6.0.1-beta-6** (debug with traces and Delve probes). See the [event matrix](../docs/ci-policy.md) for the implemented routing and dependencies.
 
 Static analysis finishes first. It is blocking for PRs to master and advisory for master pushes, version-branch activity, releases and prereleases. Advisory failures emit visible warnings; they do not suppress the offline tests. Failed, skipped or cancelled functional prerequisites never permit publication. Version branches (including their initial push), master activity, pull requests and releases check README.md and DOCKERHUB.md against the committed CSV and versions.txt after static analysis; only master activity and releases also run five parallel Docker smoke tests. Branch names are checked for valid version syntax (2–4 numeric components and alpha/alfa/beta/audit/rc/build suffixes, with -, . or + before the suffix), but do not need to equal the release version in the documents. Docker image tags cannot contain +; a valid version branch is not automatically a publishable Docker tag.
 
@@ -17,13 +17,14 @@ done
 sh ci/tests/run.sh
 python3 -B ci/test_workflows.py
 python3 -B ci/test_publish.py
-python3 -B ci/test_trace_build.py
+python3 -B ci/test_license_trace.py
+python3 -B ci/test_license_bundle.py
 bash ci/test-dockerhub.sh
 python3 -B ci/versions/test_tags.py
 python3 -B ci/test_go_binary.py
 ```
 
-Go unit/race/fuzz tests are retained in the workflow. Test fixtures are offline and never submit ACME orders. Each image smoke job builds the actual target image, exercises its entrypoint and lego, and records image size plus a process-resource sample. The resource probe is not a measurement of live issuance or a simultaneous cgroup peak. See this snapshot's [validation report](validation-6.0.1-beta-7.md) for what was actually executed here.
+Go unit/race/fuzz tests are retained in the workflow. Test fixtures are offline and never submit ACME orders. Each image smoke job builds the actual target image, exercises its entrypoint and lego, verifies retained program/license inventory and records image size plus a process-resource sample. The resource probe is not a measurement of live issuance or a simultaneous cgroup peak. See this snapshot's [validation report](validation-6.0.1-beta-6.md) for what was actually executed here.
 
 ## Release identity
 
@@ -33,8 +34,8 @@ Go unit/race/fuzz tests are retained in the workflow. Test fixtures are offline 
 
 ```sh
 python3 -B ci/versions/tags_table.py
-python3 -B ci/versions/check_version.py README.md --ref v6.0.1-beta-7
-python3 -B ci/versions/check_version.py DOCKERHUB.md --ref v6.0.1-beta-7
+python3 -B ci/versions/check_version.py README.md --ref v6.0.1-beta-6
+python3 -B ci/versions/check_version.py DOCKERHUB.md --ref v6.0.1-beta-6
 ```
 
 No workflow automatically edits Markdown. A Git tag alone does not publish; the workflow subscribes to release.published, including prereleases. Only that event may run the publisher, after the mandatory offline suites and all five smokes pass. Pull requests cannot receive Docker Hub credentials. Configure DOCKERHUB_USERNAME, DOCKERHUB_PUSH_TOKEN and DOCKERHUB_DESCRIPTION_TOKEN as repository secrets for publication.
@@ -43,17 +44,30 @@ The publisher records the immutable Buildx index and all five platform digests. 
 
 All builder/tool image versions are explicit: Go 1.27.4, Alpine 3.24.4, BuildKit 0.35.1, Dockerfile frontend 1.29.0 and binfmt qemu-v10.2.3-68. Debugger profiles pin Delve 1.27.2. This debug beta retains application sources and a debugger only when its execution probe passes. The final runtime receives no compiler or shell.
 
-## Build traces
+## Local licenses and build traces
 
-Build all five platforms without publishing or loading an image:
+The notice bundle is already committed. Build all five platforms without
+publishing; refresh the bundle first only when its inputs changed:
 
 ```sh
 bash ci/trace-build.sh all
+bash ci/update-license-bundle.sh   # only after a dependency, SDK or Alpine change
 ```
 
-The log is saved as `trace.log` in the project root, which Git ignores. A failed
-build still returns its real status through `tee`. Override the builder with
-`CERTGEN_BUILDER`.
+The committed `build/licenses/third-party/` bundle holds original license texts
+and authenticated provenance. Rerun the preparation only after a dependency, SDK
+or Alpine package change, then commit `bundle.json` and `texts/` there. No
+third-party executables or source archives are exported. Each target consumes this common
+bundle with `--network=none` and checks it against its actual retained payload.
+When the bundle is absent, Docker prepares it once in a shared native stage;
+that fallback alone does not save the texts into the host project.
 
-See the [beta-7 validation report](validation-6.0.1-beta-7.md) for the fixes,
-the commands that were executed and the remaining verification limits.
+Logs stay in the project root: `trace-license-bundle.log`, `trace.log`, or
+`trace-licenses.log`. All three are ignored by Git. A failed build still returns
+its real status through `tee`. Override the builder with `CERTGEN_BUILDER`.
+Full tracing rebuilds the complete target; `bash ci/trace-licenses.sh all` reruns
+only the `licensed` stage. Neither diagnostic script pushes or loads an image.
+
+See the [beta-6 validation report](validation-6.0.1-beta-6.md) for the fixes,
+the commands that were executed and the remaining verification limits. The
+[beta-5 guide](validation-6.0.1-beta-5.md) still describes the trace scripts.

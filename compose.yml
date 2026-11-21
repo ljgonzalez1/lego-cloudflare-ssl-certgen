@@ -10,7 +10,7 @@ x-certgen-mode: &certgen-mode "--staging"
 
 services:
   certgen:
-    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:v6.0.1-beta-7}"
+    image: "${CERTGEN_IMAGE:-ljgonzalez/lego-cloudflare-certgen:v6.0.1-beta-6}"
     command: [*certgen-mode]
 
     env_file:

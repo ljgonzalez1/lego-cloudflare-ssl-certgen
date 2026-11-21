@@ -412,8 +412,10 @@ jobs:
       run: bash ci/test-dockerhub.sh
     - name: Test Buildx metadata, platform hashes and release tag configuration
       run: python3 -B ci/test_publish.py
-    - name: Test the build trace runner and pipeline exit statuses
-      run: python3 -B ci/test_trace_build.py
+    - name: Test license diagnostic runner and pipeline exit statuses
+      run: python3 -B ci/test_license_trace.py
+    - name: Test local license bundle installation
+      run: python3 -B ci/test_license_bundle.py
     - name: Test CI event routing and job dependencies
       run: python3 -B ci/test_workflows.py
     - name: Test prerelease tag policy
