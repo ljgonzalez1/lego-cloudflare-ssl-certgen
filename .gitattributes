@@ -1,3 +1,0 @@
-# License evidence is checksum-bound: never convert line endings or whitespace.
-build/licenses/third-party/bundle.json -text
-build/licenses/third-party/texts/** -text

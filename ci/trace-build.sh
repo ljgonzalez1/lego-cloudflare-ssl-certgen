@@ -11,9 +11,17 @@ esac
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || exit 1
 cd -- "$root" || exit 1
 log=${2:-$root/trace.log}
+builder=${CERTGEN_BUILDER:-cf-lego-certgen-multiarch}
+
+# Reuse the named builder, or create it with the BuildKit pinned for CI.
+if ! docker buildx inspect "$builder" >/dev/null 2>&1; then
+    docker buildx create --name "$builder" --driver docker-container \
+        --driver-opt image=moby/buildkit:v0.35.1 >/dev/null || exit 1
+    printf 'Created Buildx builder %s\n' "$builder"
+fi
 
 docker buildx build \
-    --builder "${CERTGEN_BUILDER:-cf-lego-certgen-multiarch}" \
+    --builder "$builder" \
     --platform "$platform" \
     --target target \
     --no-cache \

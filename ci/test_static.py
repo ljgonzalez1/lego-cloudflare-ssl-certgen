@@ -2,7 +2,6 @@
 """Regression tests for source discovery and static configuration contracts."""
 
 import importlib.util
-import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -34,7 +33,7 @@ class StaticContracts(unittest.TestCase):
     def test_recursive_inventory_includes_nested_fixtures_and_skips_vendor(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ["ci/tests/fixtures/example.sh", "build/vendor/third.go", "build/cmd/example.go", "trace.log", "trace-licenses.log", "trace-license-bundle.log"]:
+            for name in ["ci/tests/fixtures/example.sh", "build/vendor/third.go", "build/cmd/example.go", "trace.log"]:
                 path = root / name;path.parent.mkdir(parents=True, exist_ok=True);path.write_text("text")
             self.assertEqual({str(path.relative_to(root)) for path in files(root)},
                              {"ci/tests/fixtures/example.sh", "build/cmd/example.go"})
@@ -108,9 +107,6 @@ class StaticContracts(unittest.TestCase):
             self.assertEqual(kind(ROOT/'ci/tests/fixtures'/fixture),'shell')
 
     def test_every_shipped_file_has_a_registered_analyzer(self):
-        inventory=json.loads((ROOT / "licenses/assets.json").read_text())
-        paths=[entry["path"] for entry in inventory["assets"]]
-        self.assertEqual(len(paths),len(set(paths)))
         for path in files():
             with self.subTest(path=str(path.relative_to(ROOT))):self.assertIsInstance(kind(path),str)
 

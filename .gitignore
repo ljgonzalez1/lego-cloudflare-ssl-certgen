@@ -17,5 +17,3 @@ cloudflare_api_token
 /ci/.ruff_cache/
 __pycache__/
 /trace.log
-/trace-licenses.log
-/trace-license-bundle.log
