@@ -45,6 +45,7 @@
 - [Security and permissions](#shield-security-and-permissions)
 - [Project files](#file_folder-project-files)
 - [Notes](#information_source-notes)
+- [A more detailed idea of roadmap](#a_more_detailed_idea_of_roadmap)
 - [Version history](#version-history)
 - [License](#page_facing_up-license)
 
@@ -737,6 +738,171 @@ This release stays on lego `v4.34.0` for simplicity. The plan is to move to lego
 - **Cancelling issuance.** Ctrl+C or a stop signal ends the current request and skips the remaining groups. lego has up to two seconds to stop before its process group is force-stopped.
 - **Each group has its own deadline.** The [per-certificate limit](#stopwatch-time-limit-per-certificate) is at most two hours. A definitive failure ends that group's request early. For rate limits, see the ACME response for any retry time.
 - **Lowercase names.** Names are passed to lego in lowercase, so the certificate files always match the names in the summary.
+
+---
+
+##A more detailed idea of the possible roadmap:
+
+### M0 · Green CI and safety net
+
+> **Done when:** `master` is green and current behavior is captured in snapshots.
+
+- [ ] Reproduce the smoke-test failure locally (`bash ci/run-smoke.sh linux/amd64`) and document the cause in an issue.
+- [ ] Fix only what the smoke test needs; no new features in this milestone.
+- [ ] Pull base images and tools from a mirror (`mirror.gcr.io`, `public.ecr.aws/docker/library`) instead of Docker Hub.
+- [ ] Add golden tests for `--help`, `--list`, `--dry-run` and `--test` output (`NO_COLOR=1`) as a refactor safety net.
+- [ ] Quick win: pin the `DOCKERHUB.md` banner to the release tag instead of `master` (re-point after M2).
+- [ ] Protect `master` with a ruleset: required PRs and required checks.
+- [ ] Create a GitHub Project with labels (`bug`, `debt`, `breaking`, `good first issue`) and load this roadmap.
+
+### M1 · Diet: drop debug, traces and clutter
+
+> **Done when:** the image ships without Delve or dumps and `latest` points to a stable v6.
+
+- [ ] Remove Delve, `debugrun` (supervisor, probes, 5-second snapshots, dumps), `GOGC=off` and `GOTRACEBACK=system`.
+- [ ] Release build: drop `-N -l -d=checkptr=2`; use `-trimpath -ldflags="-s -w"`.
+- [ ] Console-only logs by default; file logging becomes opt-in (`--log-file`, `CERTGEN_LOG_LEVEL=debug`).
+- [ ] Optionally keep a `debug` Dockerfile target for local use, never published.
+- [ ] Delete generated leftovers: `ci/validation-*.md`, `build-trace-r3.md`, `diagnostics-*.md`, `trace-*.sh`.
+- [ ] Licenses, phase 1: replace `licenseaudit`, the 332 notice texts and `bundle.json` with a CI-generated `THIRD_PARTY_NOTICES`.
+- [ ] Shrink `LICENSES.md` to one page: project MIT license, component table, where notices live.
+- [ ] Optimize the SVGs (1.2 MB and 760 KB) with SVGO or by converting text to paths.
+- [ ] Decide on the Cloudflare mark in the artwork and add a "not affiliated with Cloudflare" disclaimer.
+- [ ] Record a baseline: image size per architecture, `--test` runtime, staging issuance duration.
+- [ ] README: remove debug sections and the huge tag table (move to GitHub Releases and `CHANGELOG.md`).
+
+### M2 · Restructure and modularize
+
+> **Done when:** every package has one responsibility and the M0 golden tests still pass.
+
+- [ ] Move `go.mod` to the repo root; layout: `cmd/`, `internal/`, `docker/`, `scripts/`, `docs/`, `examples/`, `test/`.
+- [ ] Split layers: `config`, `issuer` (lego), `dns`, `runner` (orchestration), `ui` (view, menu, spinner), `report`.
+- [ ] Business logic never prints: it emits events that the UI consumes (enables the M6 spinner and ETA).
+- [ ] Interfaces for everything external (lego, clock, filesystem, terminal) so tests run without a network.
+- [ ] `context.Context` end to end and typed errors (`errors.Is/As`) instead of string matching.
+- [ ] One `Settings` struct with defaults and documented precedence: flag > env > file > default.
+- [ ] Move all user-facing strings into an embedded catalog (`locales/en.toml`) as the base for translations.
+- [ ] Configurable timestamp format, ISO 8601 by default (logs currently use year-day-month).
+- [ ] Add `golangci-lint` and `gofumpt` with a versioned config.
+- [ ] Retire the Python that only tests CI itself, plus `versions.csv` and `tags_table.py`.
+
+### M3 · CI/CD rebuild: build once, test, promote
+
+> **Done when:** a release publishes exactly the tested digest and uses almost no Docker Hub pulls.
+
+- [ ] Three workflows: `ci.yml` (lint + unit on PRs), `image.yml` (multi-arch build to GHCR as `:sha-…`), `release.yml` (promote).
+- [ ] Cross-compile with Go (`GOARCH`/`GOARM`) and assemble the image with `COPY`; QEMU only to *run* smoke tests.
+- [ ] Smoke tests run `docker run --platform` against the GHCR image; no per-architecture rebuilds.
+- [ ] Releases retag the tested digest (`buildx imagetools create` or `crane copy`), never rebuild.
+- [ ] GHCR as the primary registry; Docker Hub optional via `vars.DOCKERHUB_ENABLED` + secrets, skipped cleanly if missing.
+- [ ] Sync `DOCKERHUB.md` only when Docker Hub is enabled (mind Docker Hub's description length limit).
+- [ ] Collapse the 14 static jobs (jq, awk, sed, csv…) into golangci-lint, shellcheck, actionlint and hadolint.
+- [ ] BuildKit cache `type=gha` and `concurrency: cancel-in-progress` on PRs.
+- [ ] SBOM and provenance (`--sbom --provenance`), plus keyless signing with cosign.
+- [ ] `govulncheck` and Trivy or Grype scans on the final image.
+- [ ] Renovate or Dependabot for Go modules, Actions (pinned by SHA) and base images.
+- [ ] Evaluate GoReleaser: binaries, images, checksums and changelog from a single file.
+- [ ] Full OCI labels (`source`, `version`, `revision`, `licenses`) plus logo via `io.artifacthub.package.logo-url` and `net.unraid.docker.icon`.
+
+## M4 · New engine: lego v5 as a library, Cloudflare only
+
+> **Done when:** a single static binary issues certificates against Pebble and staging without downloading lego.
+
+- [ ] One-day spike: minimal `main.go` with `lego/v5` + `providers/dns/cloudflare`; compare size with the CLI.
+- [ ] Read the v4→v5 library migration guide and map every lego flag used today.
+- [ ] E2E harness in `test/e2e/` with Pebble and `pebble-challtestsrv`, using an injected test DNS provider.
+- [ ] Implement `issuer` on the library: account, order, DNS-01, and saving in today's output layout.
+- [ ] Reuse one ACME account per email and environment instead of one per group per run.
+- [ ] Delete the lego tarball downloader and all subprocess supervision and log parsing (`process.go`, `lego_log.go`).
+- [ ] Structured errors: map ACME problems (`rateLimited`, `unauthorized`…) and Cloudflare errors to clear messages with `retry-after`.
+- [ ] Final image: `scratch` + one binary + CA bundle; timezone data embedded via `time/tzdata`.
+- [ ] Licenses, phase 2: run `go-licenses` on the module; CI fails on anything outside MIT, BSD, Apache or ISC.
+- [ ] Realistic goal: permissive licenses only (100% MIT isn't possible; lego depends on Apache-2.0 go-jose).
+- [ ] Evaluate UPX carefully: it often hurts startup and memory and triggers antivirus false positives.
+- [ ] Plan B, if staying on the CLI: build lego v5 from source with a trimmed provider registry.
+
+### M5 · Robustness: clean shutdown, zero leftovers, edge cases
+
+> **Done when:** Ctrl+C, `docker stop` or a failure never leave orphan TXT records or half-written folders.
+
+- [ ] Handle SIGINT/SIGTERM as PID 1: cancel the context and call `CleanUp` for every presented challenge.
+- [ ] Provider wrapper that records every created TXT record in a journal (`/ssl-certs/.certgen/journal.json`).
+- [ ] On startup, if a stale journal exists, clean up (or ask) before issuing.
+- [ ] `certgen cleanup` command to delete orphan `_acme-challenge` TXT records via the API, with `--dry-run`.
+- [ ] Atomic writes (temp directory + `rename` at the end); remove incomplete folders.
+- [ ] Document `stop_grace_period` and `--stop-timeout` (Docker sends SIGKILL after 10 s).
+- [ ] Documented exit codes: `0` ok, `1` partial, `2` config error, `130` interrupted.
+- [ ] Table tests: IDN/punycode, uppercase, trailing dot, duplicates, wildcard + apex, >100 names, zones outside the token.
+- [ ] Also: expired token, clock skew, read-only output, full disk, Cloudflare 429/5xx with backoff.
+- [ ] Fuzz the config parser and name normalization.
+- [ ] Coverage gate in CI (≥80% in `internal/`) with a badge.
+- [ ] Read real expiry from the certificate (`NotAfter`) instead of estimating it; lifetimes are getting shorter.
+
+### M6 · TOML config and UX
+
+> **Done when:** v7.0.0 ships with TOML config, the new spinner, calibrated ETAs and `run.sh`.
+
+- [ ] A single `certgen.toml` with domain groups and all `.env` settings except the token.
+- [ ] Use `BurntSushi/toml` or `pelletier/go-toml/v2` (both MIT); drop the archived `yaml.v3`.
+- [ ] Transition: accept `.yaml` with a deprecation warning and provide `certgen migrate-config`.
+- [ ] ETA: measure real phases (account, presenting TXT, propagation, validation, finalization).
+- [ ] Recalibrate the formula: lego presents all TXT records before waiting, so it shouldn't scale as names × propagation (verify).
+- [ ] Store historical durations per zone and use a moving average for the ETA.
+- [ ] Phase-aware spinner: icon, phase, propagation countdown and per-group progress bar.
+- [ ] Respect `NO_COLOR`, `TERM=dumb`, non-TTY output (plain text, no animation) and narrow terminals.
+- [ ] POSIX `run.sh`: checks Docker, creates folders, prompts for the token without echo and stores it as a `0600` secret.
+- [ ] `run.sh` pins the image by digest, applies `--cap-drop` and `no-new-privileges`, and passes arguments through.
+- [ ] Publish `run.sh` as a release asset with a checksum and signature.
+
+### M7 · Presentation: README, GIF, shields, logo
+
+> **Done when:** a newcomer understands what it is, why it exists, and has it running in under 5 minutes.
+
+- [ ] README of ~200 lines max: what it is, why it exists, quick start with `run.sh`, minimal config, links.
+- [ ] "Why does this exist?" section: motivation and when to use it over certbot, acme.sh, plain lego or Traefik/Caddy.
+- [ ] Move everything else to `docs/`: configuration, security, building, CI, troubleshooting, licenses.
+- [ ] Generate `DOCKERHUB.md` from README sections (single source of truth).
+- [ ] GIF recorded with VHS from a versioned `.tape` against Pebble, so CI can regenerate it without using quota.
+- [ ] Dynamic shields (release, image tag, size, CI, coverage, Go version, license, OpenSSF Scorecard) replacing hardcoded ones.
+- [ ] Arrange shields in two rows: project and image.
+- [ ] Repository social preview (Settings → Social preview) using the banner PNG.
+- [ ] Apply to Docker-Sponsored Open Source once polished: repository logo on Docker Hub plus unlimited pulls.
+
+### M8 · Community: PRs and issues done right
+
+> **Done when:** an external PR can go from opened to merged without explanations over chat.
+
+- [ ] `CONTRIBUTING.md`: local setup, running unit and Pebble e2e tests, commit style.
+- [ ] Conventional Commits with release-please (or GoReleaser) for automatic versions and changelog.
+- [ ] Issue forms (bug with version, architecture and output; feature; question) and a PR template with a checklist.
+- [ ] `SECURITY.md` with private vulnerability reporting enabled, plus `CODE_OF_CONDUCT.md`.
+- [ ] `CODEOWNERS`, required checks and squash merges.
+- [ ] Triage labels (`needs-repro`, `help wanted`) and Discussions for questions.
+- [ ] Written support policy: which versions receive fixes.
+- [ ] Fork PRs never get secrets: no `pull_request_target` checking out PR code.
+
+### M9 · Translations
+
+> **Done when:** the CLI and README are available in English and Spanish, and adding languages is easy.
+
+- [ ] Language from `CERTGEN_LANG`, then `LC_ALL`/`LANG`, falling back to English.
+- [ ] One TOML catalog per language (from M2), with a test that fails on missing keys.
+- [ ] Spanish first by the maintainer; other languages as `good first issue`.
+- [ ] `README.es.md` with a language selector at the top of the README.
+- [ ] Check summary-table widths for languages with long words.
+
+### M10 · Maintenance and multi-provider spin-off
+
+> **Done when:** the project mostly updates itself and the spin-off reuses the core without copying code.
+
+- [ ] Renovate automerge for Go, lego and base-image patches when CI is green.
+- [ ] Weekly scheduled workflow: Pebble e2e and `govulncheck`.
+- [ ] Manual staging canary (one zone) before each release; production never runs in CI.
+- [ ] Optional renewal mode: skip groups whose certificate is valid for more than N days.
+- [ ] Extract the core (config, runner, ui, journal) as a Go module, with the DNS provider behind an interface.
+- [ ] The spin-off imports any lego providers needed while keeping the same UX.
+- [ ] Test the spin-off mostly with Pebble and fakes; label providers as "tested" or "community".
+- [ ] Before opening a new repo, consider a monorepo with two images: `-cloudflare` (small) and `-multi`.
 
 ---
 
