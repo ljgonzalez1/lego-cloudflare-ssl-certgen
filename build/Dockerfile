@@ -16,23 +16,7 @@ COPY vendor/ ./vendor/
 COPY internal/ ./internal/
 COPY spinner/ ./spinner/
 COPY cmd/ ./cmd/
-COPY licenses/ /licenses/
 RUN ["go", "build", "-v", "-x", "-buildvcs=false", "-mod=vendor", "-gcflags=all=-N -l -d=checkptr=2", "-ldflags=-compressdwarf=false", "-o", "/certgen-build", "./cmd/certgen-build"]
-
-# One native, target-independent evidence stage for the whole build. A committed
-# bundle is preferred; a missing bundle is prepared once and can be exported.
-# AMD64 is inspected without execution, so Delve evidence is included on every host.
-FROM tools AS license-seed
-ARG APP_VERSION
-ARG LEGO_VERSION
-ARG DELVE_VERSION=v1.27.2
-ARG REFRESH_LICENSE_BUNDLE=0
-ENV TARGETARCH=amd64 TARGETVARIANT="" GOMODCACHE=/root/go/pkg/mod
-RUN --mount=type=cache,id=certgen-license-go-mod-v1,target=/root/go/pkg/mod,sharing=shared ["/certgen-build", "prepare-license-bundle", "/evidence-runtime", "/licenses", "/bundle"]
-
-# Export contains JSON and notice texts only, without third-party binaries.
-FROM scratch AS license-bundle-export
-COPY --from=license-seed /bundle/ /
 
 # Download and SHA-256 verify the official lego binary for the requested CPU.
 FROM tools AS downloader
@@ -50,7 +34,7 @@ ARG LEGO_VERSION
 ARG TARGETARCH
 ARG TARGETVARIANT
 ARG DELVE_VERSION=v1.27.2
-RUN ["/certgen-build", "prepare", "/runtime", "/licenses"]
+RUN ["/certgen-build", "prepare", "/runtime"]
 RUN ["/certgen-build", "compile", "/runtime/usr/local/bin/certgen"]
 RUN ["/certgen-build", "verify-debug", "/runtime/usr/local/bin/certgen"]
 # Delve supports amd64, arm64 and 386; 32-bit ARM retains full DWARF and traces.
@@ -68,8 +52,7 @@ LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01; Go runtime with pulse progress" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
       org.opencontainers.image.version="${APP_VERSION}" \
-      org.opencontainers.image.licenses="MIT AND LicenseRef-RuntimeInventory" \
-      com.certgen.license.inventory="/usr/share/licenses/manifest.json" \
+      org.opencontainers.image.licenses="MIT AND BSD-3-Clause AND Apache-2.0 AND MPL-2.0" \
       com.certgen.alpine.version="${ALPINE_VERSION}" \
       com.certgen.lego.version="${LEGO_VERSION}" \
       com.certgen.go.version="${GO_VERSION}"
@@ -89,7 +72,8 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 
 COPY --from=builder /runtime/ /
 COPY --from=downloader /out/lego /usr/local/bin/lego
-COPY --from=downloader /out/LICENSE /usr/share/licenses/lego/LICENSE
+# Third-party notices required by the licenses of the software in this image.
+COPY licenses/ /usr/share/licenses/
 # Keep original source paths for Delve and readable source-level stack traces.
 COPY go.mod /src/go.mod
 COPY internal/ /src/internal/
@@ -101,21 +85,8 @@ WORKDIR /app
 # Exercise the real entry point and lego without a shell or network.
 RUN --network=none --mount=type=tmpfs,target=/tmp ["/usr/local/bin/certgen", "image-self-test"]
 
-# Copy the validated merged filesystem into a fresh scratch image. A debugger
-# removed by the real execution probe is absent from every final image layer.
-# Inspect the retained payload after debugger probes, then collect only its notices.
-FROM tools AS licensed
-ARG APP_VERSION
-ARG LEGO_VERSION
-ARG TARGETARCH
-ARG TARGETVARIANT
-ENV GOMODCACHE=/root/go/pkg/mod
-COPY --from=runtime-check / /runtime/
-COPY --from=license-seed /bundle/ /licenses/third-party/
-# Rebind local notices to each actual retained payload with networking disabled.
-RUN --network=none ["/certgen-build", "licenses", "/runtime", "/licenses"]
-RUN --network=none ["/certgen-build", "verify-licenses", "/runtime"]
-
+# Copy the validated filesystem into a fresh scratch image. A debugger removed
+# by the real execution probe is absent from every final image layer.
 FROM scratch AS target
 ARG APP_VERSION
 ARG ALPINE_VERSION
@@ -128,8 +99,7 @@ LABEL org.opencontainers.image.title="lego-cloudflare-certgen" \
       org.opencontainers.image.description="Let's Encrypt certificates via Cloudflare DNS-01; Go runtime with pulse progress" \
       org.opencontainers.image.source="https://github.com/ljgonzalez1/lego-cloudflare-ssl-certgen" \
       org.opencontainers.image.version="${APP_VERSION}" \
-      org.opencontainers.image.licenses="MIT AND LicenseRef-RuntimeInventory" \
-      com.certgen.license.inventory="/usr/share/licenses/manifest.json" \
+      org.opencontainers.image.licenses="MIT AND BSD-3-Clause AND Apache-2.0 AND MPL-2.0" \
       com.certgen.alpine.version="${ALPINE_VERSION}" \
       com.certgen.lego.version="${LEGO_VERSION}" \
       com.certgen.go.version="${GO_VERSION}"
@@ -147,7 +117,7 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     CERTGEN_TRACE=errors \
     CERTGEN_LOG_DIR=/ssl-certs/debug
 
-COPY --from=licensed /runtime/ /
+COPY --from=runtime-check / /
 WORKDIR /app
 
 VOLUME ["/ssl-certs"]

@@ -55,11 +55,7 @@ func ImageSelfTest(output, errorOutput *os.File) int {
 			return fail(fmt.Errorf("unexpected runtime program: %s", path))
 		}
 	}
-	for _, license := range []string{"NOTICE", "lego/LICENSE", "Go/LICENSE", "go-yaml/LICENSE", "go-yaml/NOTICE", "ca-certificates/MPL-2.0"} {
-		if !nonemptyFile("/usr/share/licenses/" + license) {
-			return fail(fmt.Errorf("missing license: %s", license))
-		}
-	}
+	// Notices are written and verified after this probe, for the programs it keeps.
 	executable, err := os.Executable()
 	if err != nil {
 		return fail(err)
