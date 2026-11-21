@@ -15,6 +15,20 @@
 
 ---
 
+## NOTE: This project is still in the early stages of development.
+
+- **Issues are more than welcome.**
+- **Pull requests do not serve a practical purpose at this stage.**
+
+## General roadmap:
+1. [ ] Fix existing bugs
+2. [ ] Finish core features
+3. [ ] Implement minor additional features
+4. [ ] Make the code "decent" and "presentable"
+5. [ ] Address potential issues and pull requests
+
+---
+
 ## :bookmark_tabs: Contents
 
 - [Features](#sparkles-features)
