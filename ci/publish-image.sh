@@ -18,8 +18,12 @@ if [[ ${1:-} == --print-tags ]]; then
     exit 0
 fi
 
-if (( $# != 0 )); then
-    printf 'Usage: bash ci/publish-image.sh [--print-tags]\n' >&2
+# --no-push runs every step of the release build, without login or registry writes.
+push=true
+if (( $# == 1 )) && [[ $1 == --no-push ]]; then
+    push=false
+elif (( $# != 0 )); then
+    printf 'Usage: bash ci/publish-image.sh [--print-tags | --no-push]\n' >&2
     exit 2
 fi
 
@@ -28,8 +32,10 @@ if [[ ! -s DOCKERHUB.md ]] || (( $(wc -c < DOCKERHUB.md) > 25000 )); then
     exit 1
 fi
 
-: "${DOCKERHUB_USERNAME:?Missing Docker Hub username}"
-: "${DOCKERHUB_PUSH_TOKEN:?Missing Docker Hub push token}"
+if [[ "$push" == true ]]; then
+    : "${DOCKERHUB_USERNAME:?Missing Docker Hub username}"
+    : "${DOCKERHUB_PUSH_TOKEN:?Missing Docker Hub push token}"
+fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/certgen-release.XXXXXXXX")
 builder="cf-lego-certgen-multiarch-${work##*.}"
@@ -45,9 +51,11 @@ trap cleanup EXIT
 export DOCKER_CONFIG="$work/docker"
 mkdir -m 700 "$DOCKER_CONFIG"
 
-printf '%s' "$DOCKERHUB_PUSH_TOKEN" |
-    docker login --username "$DOCKERHUB_USERNAME" --password-stdin
-unset DOCKERHUB_PUSH_TOKEN
+if [[ "$push" == true ]]; then
+    printf '%s' "$DOCKERHUB_PUSH_TOKEN" |
+        docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+    unset DOCKERHUB_PUSH_TOKEN
+fi
 
 docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3-68 --install arm,arm64,386
 docker run --rm tonistiigi/binfmt:qemu-v10.2.3-68
@@ -58,8 +66,17 @@ docker buildx inspect "$builder" --bootstrap
 
 platforms=linux/arm/v6,linux/arm/v7,linux/arm64,linux/386,linux/amd64
 printf 'Building release %s for %s\n' "$APP_TAG" "$platforms"
+output=--push
+if [[ "$push" == false ]]; then
+    output=--output=type=cacheonly
+fi
 docker buildx build --builder "$builder" --platform "$platforms" --progress=plain \
-    "${version_build_args[@]}" --metadata-file "$work/build-metadata.json" --tag "${tags[0]}" --push ./build
+    "${version_build_args[@]}" --metadata-file "$work/build-metadata.json" --tag "${tags[0]}" "$output" ./build
+if [[ "$push" == false ]]; then
+    printf 'Release build passed for %s. Not pushed; these tags would be published:\n' "$platforms"
+    printf '  %s\n' "${tags[@]}"
+    exit 0
+fi
 
 digest=$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$work/build-metadata.json")
 image="$repository@$digest"

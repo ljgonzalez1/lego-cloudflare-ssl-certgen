@@ -33,7 +33,10 @@ with (work / "docker-commands.jsonl").open("a") as log:
 if args[0] == "login":
     assert sys.stdin.read() == "fixture-push-token"
 elif args[:2] == ["buildx", "build"]:
-    assert "--push" in args
+    if os.environ.get("MOCK_NO_PUSH"):
+        assert "--push" not in args and "--output=type=cacheonly" in args
+    else:
+        assert "--push" in args
     assert args[args.index("--platform") + 1] == "linux/arm/v6,linux/arm/v7,linux/arm64,linux/386,linux/amd64"
     metadata = Path(args[args.index("--metadata-file") + 1])
     assert metadata.name == "build-metadata.json"
@@ -183,6 +186,30 @@ class PublishChecks(unittest.TestCase):
                     self.assertEqual("latest" in tags, PRERELEASE.search(tags[5]) is None)
                     if "latest" in tags:
                         self.assertEqual(tags[-1], "latest")
+
+
+    def test_no_push_runs_the_release_build_without_credentials_or_registry_writes(self):
+        self.write_build()
+        (self.work / "bin").mkdir()
+        docker = self.work / "bin/docker"; docker.write_text(DOCKER_MOCK); docker.chmod(0o755)
+        commands = self.work / "docker-commands.jsonl"; commands.write_text("")
+        environment = {key: value for key, value in os.environ.items() if not key.startswith("DOCKERHUB_")}
+        result = subprocess.run(["bash", "ci/publish-image.sh", "--no-push"], cwd=ROOT, text=True, capture_output=True,
+                                env=environment | {"PATH": str(self.work / "bin") + os.pathsep + os.environ["PATH"],
+                                                   "MOCK_WORK": str(self.work), "MOCK_NO_PUSH": "1"}, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = [json.loads(line) for line in commands.read_text().splitlines()]
+        self.assertEqual([call for call in calls if call[0] == "login"], [])
+        self.assertEqual([call for call in calls if call[:2] == ["buildx", "imagetools"]], [])
+        builds = [call for call in calls if call[:2] == ["buildx", "build"]]
+        self.assertEqual(len(builds), 1)
+        _, tags = publish.release_config()
+        self.assertIn("ljgonzalez/lego-cloudflare-certgen:" + tags[0], result.stdout)
+        for arguments in (["--no-push", "--push"], ["--push"]):
+            result = subprocess.run(["bash", "ci/publish-image.sh", *arguments], cwd=ROOT, text=True, capture_output=True,
+                                    env=environment | {"PATH": str(self.work / "bin") + os.pathsep + os.environ["PATH"],
+                                                       "MOCK_WORK": str(self.work)}, timeout=30)
+            self.assertEqual(result.returncode, 2, arguments)
 
 
 class ReleaseIdentityChecks(unittest.TestCase):
