@@ -22,7 +22,7 @@
 
 ## General roadmap:
 1. [ ] Fix existing bugs
-2. [ ] Finish core features (should be here by December. Had some stuff to do lately. Couldn't make progress)
+2. [ ] Finish core features (**should be here by December**. Had some stuff to do lately. Couldn't make progress)
 3. [ ] Implement minor additional features
 4. [ ] Make the code "decent" and "presentable"
 5. [ ] Address potential issues and pull requests
